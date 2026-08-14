@@ -1237,7 +1237,7 @@ git commit -m "feat(api): expose extraction and review workflows"
 - Consumes: `ExtractionObserver` events and compiled module bytecode.
 - Produces: Micrometer metrics, OpenAPI endpoints, and executable dependency rules.
 
-- [ ] **Step 1: Write failing OpenAPI, metrics, and architecture tests**
+- [x] **Step 1: Write failing OpenAPI, metrics, and architecture tests**
 
 Architecture assertions:
 
@@ -1254,7 +1254,7 @@ noClasses().that().haveSimpleNameContaining("Eligibility")
 
 MockMvc must return `200` for `/v3/api-docs` and include `/api/v1/extractions` and `/api/v1/reviews` paths.
 
-- [ ] **Step 2: Run and observe RED**
+- [x] **Step 2: Run and observe RED**
 
 ```powershell
 mvn -q -pl career-web -am -Dtest=ArchitectureTest,ExtractionMetricsTest,CareerOsApplicationTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -1262,7 +1262,7 @@ mvn -q -pl career-web -am -Dtest=ArchitectureTest,ExtractionMetricsTest,CareerOs
 
 Expected: missing test dependencies/beans or architecture violations.
 
-- [ ] **Step 3: Add dependencies**
+- [x] **Step 3: Add dependencies**
 
 ```xml
 <springdoc.version>2.8.17</springdoc.version>
@@ -1277,7 +1277,7 @@ Web dependencies:
 <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><version>${archunit.version}</version><scope>test</scope></dependency>
 ```
 
-- [ ] **Step 4: Implement Micrometer observation**
+- [x] **Step 4: Implement Micrometer observation**
 
 Record exact metric names:
 
@@ -1291,7 +1291,7 @@ Timer.builder("extraction_duration").tag("parser", parser).register(registry).re
 
 Publish pending review size as `review_queue_size`. Under the Prometheus registry, counters and timers are exposed with the approved `_total` and `_seconds` suffixes.
 
-- [ ] **Step 5: Run enforcement tests**
+- [x] **Step 5: Run enforcement tests**
 
 ```powershell
 mvn -q -pl career-web -am -Dtest=ArchitectureTest,ExtractionMetricsTest,CareerOsApplicationTest -Dsurefire.failIfNoSpecifiedTests=false test
@@ -1299,7 +1299,7 @@ mvn -q -pl career-web -am -Dtest=ArchitectureTest,ExtractionMetricsTest,CareerOs
 
 Expected: architecture is inward-only, metrics increment, and OpenAPI contains both new resources.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add pom.xml career-web
@@ -1320,7 +1320,7 @@ git commit -m "test: enforce extraction architecture and observability"
 - Consumes: all Phase 2 components.
 - Produces: verified offline acceptance evidence and user-facing run instructions.
 
-- [ ] **Step 1: Add end-to-end tests before declaring completion**
+- [x] **Step 1: Add end-to-end tests before declaring completion**
 
 Using Testcontainers + MockMvc + real fixtures, assert:
 
@@ -1343,7 +1343,7 @@ void repeatRealHtmlDoesNotCreateSecondRun() throws Exception {
 }
 ```
 
-- [ ] **Step 2: Run the complete verification suite**
+- [x] **Step 2: Run the complete verification suite**
 
 ```powershell
 mvn -q clean test
@@ -1351,7 +1351,7 @@ mvn -q clean test
 
 Expected: all modules pass. Docker-dependent tests run when Docker is available; none call a real model.
 
-- [ ] **Step 3: Package and smoke-start with model disabled**
+- [x] **Step 3: Package and smoke-start with model disabled**
 
 ```powershell
 mvn -q -DskipTests package
@@ -1362,11 +1362,11 @@ java -jar career-web\target\career-web-0.1.0-SNAPSHOT.jar
 
 In a second terminal verify `/actuator/health`, `/v3/api-docs`, and `/swagger-ui.html`; then stop only the launched Java process.
 
-- [ ] **Step 4: Document exact usage**
+- [x] **Step 4: Document exact usage**
 
 `docs/PHASE2_API.md` must contain curl examples for multipart HTML/PDF upload, extraction lookup, Review Queue pagination, and each review decision. `README.md` must describe offline default behavior, required environment variables for real LLM mode, artifact location, and test commands.
 
-- [ ] **Step 5: Final diff and secret checks**
+- [x] **Step 5: Final diff and secret checks**
 
 ```powershell
 git diff --check
