@@ -9,7 +9,6 @@ import com.careeros.domain.ReviewIssue;
 import com.careeros.domain.DomainEnums.ReviewStatus;
 import java.time.Clock;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -66,6 +65,7 @@ public final class ReviewService {
         RecruitmentExtractionProposal proposal,
         ApplyReviewActionCommand command
     ) {
+        requireSameSource(details.item().proposal(), proposal);
         validator.validate(proposal);
         List<ReviewIssue> issues = evidenceVerifier.verify(proposal, details.fragments());
         if (!issues.isEmpty()) {
@@ -93,8 +93,7 @@ public final class ReviewService {
     ) {
         ReviewAction action = new ReviewAction(
             UUID.randomUUID(), command.reviewId(), command.decision(), command.expectedVersion(),
-            payloadSummary(details.item().proposal()),
-            command.correctedPayload() == null ? Map.of() : payloadSummary(command.correctedPayload()),
+            details.item().proposal(), command.correctedPayload(),
             command.note(), clock.instant());
         return new ReviewResolution(details.item(), action, proposal);
     }
@@ -106,11 +105,13 @@ public final class ReviewService {
         return command.correctedPayload();
     }
 
-    private static Map<String, Object> payloadSummary(RecruitmentExtractionProposal proposal) {
-        return Map.of(
-            "schemaVersion", proposal.schemaVersion(),
-            "sourceUrl", proposal.source().sourceUrl(),
-            "confidence", proposal.confidence(),
-            "jobCount", proposal.jobs().size());
+    private static void requireSameSource(
+        RecruitmentExtractionProposal original,
+        RecruitmentExtractionProposal candidate
+    ) {
+        if (!original.source().equals(candidate.source())) {
+            throw new ExtractionExceptions.InvalidProposalException(
+                "Corrected proposal source must match the uploaded evidence");
+        }
     }
 }

@@ -109,10 +109,11 @@ public final class ExtractionService {
         ExtractionAttempt attempt = extractor.extract(
             parsed, new ExtractionContext(evidence, command.organizationId(), command.recruitmentEventId(), command.requireModel()));
         observer.modelCall(extractorDescriptor.modelName(), attempt.rawResponse() == null ? "disabled" : "success");
-        validator.validate(attempt.proposal());
+        var proposal = bindSource(attempt.proposal(), evidence);
+        validator.validate(proposal);
 
-        List<ReviewIssue> evidenceIssues = evidenceVerifier.verify(attempt.proposal(), parsed.fragments());
-        ReviewPolicy.Evaluation policy = reviewPolicy.evaluate(parsed, attempt.proposal(), evidenceIssues.isEmpty());
+        List<ReviewIssue> evidenceIssues = evidenceVerifier.verify(proposal, parsed.fragments());
+        ReviewPolicy.Evaluation policy = reviewPolicy.evaluate(parsed, proposal, evidenceIssues.isEmpty());
         UUID runId = UUID.randomUUID();
         UUID reviewId = policy.autoVerified() ? null : policy.reviewItemId();
         List<ReviewIssue> issues = new ArrayList<>(policy.issues());
@@ -129,21 +130,21 @@ public final class ExtractionService {
             runId, evidenceId, command.organizationId(), command.recruitmentEventId(), fingerprint,
             sourceType(command.mediaType()), parsed.parserName(), parsed.parserVersion(),
             extractorDescriptor.strategy(), extractorDescriptor.version(), extractorDescriptor.modelName(),
-            extractorDescriptor.promptVersion(), attempt.proposal().schemaVersion(), status,
-            attempt.proposal().confidence(), attempt.proposal(), attempt.rawResponse(), null, null,
+            extractorDescriptor.promptVersion(), proposal.schemaVersion(), status,
+            proposal.confidence(), proposal, attempt.rawResponse(), null, null,
             startedAt, clock.instant());
 
         ReviewItem review = null;
         if (status == DataQualityStatus.REVIEW_REQUIRED) {
             review = new ReviewItem(
                 Objects.requireNonNull(reviewId), runId, ReviewStatus.PENDING, 0,
-                attempt.proposal(), issues, List.of(), clock.instant(), null);
+                proposal, issues, List.of(), clock.instant(), null);
         }
         ExtractionBundle bundle = new ExtractionBundle(artifact, evidence, parsed, run, review);
         PersistedExtraction saved;
         if (status == DataQualityStatus.VERIFIED) {
             saved = unitOfWork.execute(() -> {
-                writer.write(attempt.proposal(), List.of(evidenceId));
+                writer.write(proposal, List.of(evidenceId));
                 return persistence.save(bundle);
             });
         } else {
@@ -169,6 +170,17 @@ public final class ExtractionService {
             extractorDescriptor.strategy(), extractorDescriptor.version(),
             extractorDescriptor.modelName(), extractorDescriptor.promptVersion(),
             com.careeros.domain.RecruitmentExtractionProposal.SCHEMA_VERSION));
+    }
+
+    private static com.careeros.domain.RecruitmentExtractionProposal bindSource(
+        com.careeros.domain.RecruitmentExtractionProposal proposal,
+        Evidence evidence
+    ) {
+        var source = new com.careeros.domain.RecruitmentExtractionProposal.SourceProposal(
+            evidence.id(), evidence.sourceUrl(), evidence.sourceTitle());
+        return new com.careeros.domain.RecruitmentExtractionProposal(
+            proposal.schemaVersion(), source, proposal.organization(), proposal.recruitmentEvent(),
+            proposal.jobs(), proposal.warnings(), proposal.confidence(), proposal.completeSnapshot());
     }
 
     private static ExtractionSourceType sourceType(String mediaType) {

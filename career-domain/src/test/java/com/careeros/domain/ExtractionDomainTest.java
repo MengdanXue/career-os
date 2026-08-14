@@ -45,8 +45,8 @@ class ExtractionDomainTest {
             item.id(),
             ReviewDecision.NEED_MORE_EVIDENCE,
             3L,
-            Map.of("schemaVersion", "1.0.0"),
-            Map.of(),
+            ExtractionFixtures.proposal(),
+            null,
             "补充用工性质原文",
             Instant.parse("2026-08-14T10:00:00Z"));
 
@@ -63,7 +63,7 @@ class ExtractionDomainTest {
         ReviewItem item = ExtractionFixtures.pendingReview(4L);
         ReviewAction stale = new ReviewAction(
             UUID.randomUUID(), item.id(), ReviewDecision.CONFIRM, 3L,
-            Map.of(), Map.of(), "确认", Instant.parse("2026-08-14T10:00:00Z"));
+            ExtractionFixtures.proposal(), null, "确认", Instant.parse("2026-08-14T10:00:00Z"));
 
         assertThatThrownBy(() -> item.apply(stale))
             .isInstanceOf(IllegalStateException.class)

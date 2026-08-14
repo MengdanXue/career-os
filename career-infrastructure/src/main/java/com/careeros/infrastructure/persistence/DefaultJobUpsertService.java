@@ -141,10 +141,15 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
     @Transactional
     public JobUpsertResult write(RecruitmentExtractionProposal proposal, List<UUID> evidenceIds) {
         Objects.requireNonNull(proposal, "proposal");
+        if (evidenceIds == null || !evidenceIds.contains(proposal.source().evidenceId())) {
+            throw new ExtractionExceptions.InvalidProposalException(
+                "Verified proposal source evidence is not part of the extraction");
+        }
         rejectInterpretedFacts(proposal);
         JpaModels.OrganizationEntity organization = organizations.findFirstByName(proposal.organization().name())
             .orElseGet(() -> createOrganization(proposal));
         JpaModels.RecruitmentEventEntity event = events.findFirstBySourceUrl(proposal.source().sourceUrl())
+            .map(existing -> refreshEvent(existing, proposal, evidenceIds))
             .orElseGet(() -> createEvent(proposal));
 
         List<NormalizedJob> normalized = proposal.jobs().stream()
@@ -184,6 +189,30 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         entity.sourceUrl = source.sourceUrl();
         entity.defaultEmploymentType = EmploymentType.UNKNOWN;
         entity.evidenceIds = new ArrayList<>(List.of(source.evidenceId()));
+        return events.save(entity);
+    }
+
+    private JpaModels.RecruitmentEventEntity refreshEvent(
+        JpaModels.RecruitmentEventEntity entity,
+        RecruitmentExtractionProposal proposal,
+        List<UUID> evidenceIds
+    ) {
+        var event = proposal.recruitmentEvent();
+        entity.title = event.title();
+        entity.recruitmentYear = event.recruitmentYear();
+        entity.eventType = event.eventType();
+        if (event.publishedOn().value() != null) entity.publishedOn = event.publishedOn().value();
+        if (event.applicationStartsOn().value() != null) {
+            entity.applicationStartsOn = event.applicationStartsOn().value();
+        }
+        if (event.applicationEndsOn().value() != null) {
+            entity.applicationEndsOn = event.applicationEndsOn().value();
+        }
+        LinkedHashSet<UUID> mergedEvidence = new LinkedHashSet<>();
+        if (entity.evidenceIds != null) mergedEvidence.addAll(entity.evidenceIds);
+        mergedEvidence.add(proposal.source().evidenceId());
+        mergedEvidence.addAll(evidenceIds);
+        entity.evidenceIds = new ArrayList<>(mergedEvidence);
         return events.save(entity);
     }
 

@@ -146,7 +146,7 @@ class ExtractionPersistenceIntegrationTest {
     private static ReviewAction action(ReviewItem item, ReviewDecision decision, long version) {
         return new ReviewAction(
             UUID.randomUUID(), item.id(), decision, version,
-            Map.of("schemaVersion", "1.0.0"), Map.of(), "集成测试", NOW.plusSeconds(10 + version));
+            item.proposal(), null, "集成测试", NOW.plusSeconds(10 + version));
     }
 
     @SpringBootConfiguration

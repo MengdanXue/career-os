@@ -52,6 +52,23 @@ class ExtractionServiceTest {
         assertThat(writer.calls).isZero();
     }
 
+    @Test
+    void immutableSourceMetadataIsBoundToTheUploadedEvidence() {
+        Fixtures.CountingExtractor extractor = new Fixtures.CountingExtractor(Fixtures.verifiedProposal(), true);
+        ExtractionService service = service(
+            extractor, new Fixtures.MemoryExtractionPersistence(), new Fixtures.RecordingWriter());
+        SubmitExtractionCommand command = Fixtures.htmlCommand("<h1>招聘公告</h1>");
+
+        ExtractionResult result = service.submit(command);
+
+        assertThat(result.run().proposedPayload().source().evidenceId())
+            .isEqualTo(result.run().evidenceId());
+        assertThat(result.run().proposedPayload().source().sourceUrl())
+            .isEqualTo(command.sourceUrl());
+        assertThat(result.run().proposedPayload().source().sourceTitle())
+            .isEqualTo(command.sourceTitle());
+    }
+
     private static ExtractionService service(
         Fixtures.CountingExtractor extractor,
         Fixtures.MemoryExtractionPersistence persistence,

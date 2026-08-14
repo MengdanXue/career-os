@@ -6,14 +6,12 @@ import static com.careeros.domain.DomainEnums.*;
 import com.careeros.application.ExtractionExceptions;
 import com.careeros.application.RepositoryPorts;
 import com.careeros.domain.*;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,8 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class JpaExtractionPersistence {
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
-
     private final SourceArtifactJpaRepository artifacts;
     private final RepositoryPorts.EvidenceRecords evidenceRecords;
     private final EvidenceFragmentJpaRepository fragments;
@@ -280,7 +276,7 @@ public class JpaExtractionPersistence {
         entity.decision = action.decision();
         entity.expectedVersion = action.expectedVersion();
         entity.originalPayload = toJson(action.originalPayload());
-        entity.correctedPayload = action.correctedPayload().isEmpty() ? null : toJson(action.correctedPayload());
+        entity.correctedPayload = action.correctedPayload() == null ? null : toJson(action.correctedPayload());
         entity.note = action.note();
         entity.actedAt = action.actedAt();
         return entity;
@@ -289,7 +285,8 @@ public class JpaExtractionPersistence {
     private ReviewAction toAction(ExtractionJpaModels.ReviewActionEntity entity) {
         return new ReviewAction(
             entity.id, entity.reviewItemId, entity.decision, entity.expectedVersion,
-            toMap(entity.originalPayload), toMap(entity.correctedPayload), entity.note, entity.actedAt);
+            toProposal(entity.originalPayload), toNullableProposal(entity.correctedPayload),
+            entity.note, entity.actedAt);
     }
 
     private JsonNode toJson(Object value) {
@@ -304,8 +301,8 @@ public class JpaExtractionPersistence {
         }
     }
 
-    private Map<String, Object> toMap(JsonNode value) {
-        return value == null || value.isNull() ? Map.of() : json.convertValue(value, MAP_TYPE);
+    private RecruitmentExtractionProposal toNullableProposal(JsonNode value) {
+        return value == null || value.isNull() ? null : toProposal(value);
     }
 
     private static ExtractionExceptions.ReviewConflictException conflict(String message) {

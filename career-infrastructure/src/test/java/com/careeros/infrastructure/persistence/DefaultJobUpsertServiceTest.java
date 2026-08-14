@@ -52,6 +52,8 @@ class DefaultJobUpsertServiceTest {
         });
         eventRepo = mock(RecruitmentEventJpaRepository.class);
         organizationRepo = mock(OrganizationJpaRepository.class);
+        when(eventRepo.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(organizationRepo.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         service = new DefaultJobUpsertService(
             jobs, eventRepo, organizationRepo, Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -139,6 +141,36 @@ class DefaultJobUpsertServiceTest {
 
         assertThat(result.deactivated()).isZero();
         assertThat(stored.values()).allMatch(entity -> entity.active);
+    }
+
+    @Test
+    void verifiedRepeatRefreshesEventFieldsAndAppendsEvidence() {
+        RecruitmentExtractionProposal proposal = proposal();
+        var organization = new JpaModels.OrganizationEntity();
+        organization.id = ORGANIZATION_ID;
+        organization.name = proposal.organization().name();
+        organization.organizationType = OrganizationType.PUBLIC_INSTITUTION;
+        var event = new JpaModels.RecruitmentEventEntity();
+        event.id = EVENT_ID;
+        event.title = "旧公告标题";
+        event.recruitmentYear = 2025;
+        event.eventType = EventType.OTHER;
+        event.sourceUrl = proposal.source().sourceUrl();
+        UUID oldEvidence = UUID.randomUUID();
+        event.evidenceIds = new ArrayList<>(List.of(oldEvidence));
+        when(organizationRepo.findFirstByName(organization.name)).thenReturn(Optional.of(organization));
+        when(eventRepo.findFirstBySourceUrl(event.sourceUrl)).thenReturn(Optional.of(event));
+        when(eventRepo.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.write(proposal, List.of(proposal.source().evidenceId()));
+
+        assertThat(event.title).isEqualTo(proposal.recruitmentEvent().title());
+        assertThat(event.recruitmentYear).isEqualTo(proposal.recruitmentEvent().recruitmentYear());
+        assertThat(event.eventType).isEqualTo(proposal.recruitmentEvent().eventType());
+        assertThat(event.applicationEndsOn)
+            .isEqualTo(proposal.recruitmentEvent().applicationEndsOn().value());
+        assertThat(event.evidenceIds)
+            .containsExactly(oldEvidence, proposal.source().evidenceId());
     }
 
     private static JobUpsertBatch batch(
