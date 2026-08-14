@@ -3,5 +3,9 @@
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>com.careeros</groupId><artifactId>career-os-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
     <artifactId>career-application</artifactId>
-    <dependencies><dependency><groupId>com.careeros</groupId><artifactId>career-domain</artifactId><version>${project.version}</version></dependency></dependencies>
+    <dependencies>
+        <dependency><groupId>com.careeros</groupId><artifactId>career-domain</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.12.2</version><scope>test</scope></dependency>
+        <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>3.27.3</version><scope>test</scope></dependency>
+    </dependencies>
 </project>
