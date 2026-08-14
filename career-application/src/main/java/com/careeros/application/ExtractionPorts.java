@@ -55,7 +55,12 @@ public final class ExtractionPorts {
     public interface ExtractionPersistence {
         Optional<PersistedExtraction> findByInputFingerprint(String fingerprint);
         PersistedExtraction save(ExtractionBundle bundle);
+        PersistedExtraction saveFailure(FailedExtractionBundle bundle);
         PersistedExtraction findById(UUID id);
+    }
+
+    public interface FingerprintLock {
+        <T> T execute(String fingerprint, Supplier<T> operation);
     }
 
     public interface ReviewPersistence {
@@ -163,6 +168,21 @@ public final class ExtractionPorts {
             Objects.requireNonNull(evidence, "evidence");
             Objects.requireNonNull(parsed, "parsed");
             Objects.requireNonNull(run, "run");
+        }
+    }
+
+    public record FailedExtractionBundle(
+        SourceArtifact artifact,
+        Evidence evidence,
+        ExtractionRun run
+    ) {
+        public FailedExtractionBundle {
+            Objects.requireNonNull(artifact, "artifact");
+            Objects.requireNonNull(evidence, "evidence");
+            Objects.requireNonNull(run, "run");
+            if (run.status() != com.careeros.domain.DomainEnums.DataQualityStatus.FAILED) {
+                throw new IllegalArgumentException("failed extraction bundle requires FAILED run");
+            }
         }
     }
 

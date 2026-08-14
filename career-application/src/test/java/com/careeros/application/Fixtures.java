@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -81,7 +82,7 @@ final class Fixtures {
     }
 
     static final class MemoryArtifactStore implements ArtifactStore {
-        private final Map<UUID, byte[]> content = new HashMap<>();
+        private final Map<UUID, byte[]> content = new ConcurrentHashMap<>();
 
         @Override
         public SourceArtifact put(byte[] bytes, String mediaType, Instant capturedAt) {
@@ -127,7 +128,8 @@ final class Fixtures {
     }
 
     static final class MemoryExtractionPersistence implements ExtractionPersistence {
-        private final Map<String, PersistedExtraction> byFingerprint = new HashMap<>();
+        private final Map<String, PersistedExtraction> byFingerprint = new ConcurrentHashMap<>();
+        private RuntimeException findFailure;
 
         @Override public Optional<PersistedExtraction> findByInputFingerprint(String fingerprint) {
             return Optional.ofNullable(byFingerprint.get(fingerprint));
@@ -140,8 +142,33 @@ final class Fixtures {
             return value;
         }
 
+        @Override public PersistedExtraction saveFailure(FailedExtractionBundle bundle) {
+            PersistedExtraction value = new PersistedExtraction(bundle.run(), Optional.empty());
+            byFingerprint.put(bundle.run().inputFingerprint(), value);
+            return value;
+        }
+
         @Override public PersistedExtraction findById(UUID id) {
+            if (findFailure != null) throw findFailure;
             return byFingerprint.values().stream().filter(value -> value.run().id().equals(id)).findFirst().orElseThrow();
+        }
+
+        PersistedExtraction onlyValue() { return byFingerprint.values().iterator().next(); }
+        void failFindWith(RuntimeException failure) { this.findFailure = failure; }
+    }
+
+    static final class SynchronizedFingerprintLock implements FingerprintLock {
+        private final Map<String, Object> locks = new ConcurrentHashMap<>();
+
+        @Override public <T> T execute(String fingerprint, java.util.function.Supplier<T> operation) {
+            Object lock = locks.computeIfAbsent(fingerprint, ignored -> new Object());
+            try {
+                synchronized (lock) {
+                    return operation.get();
+                }
+            } finally {
+                locks.remove(fingerprint, lock);
+            }
         }
     }
 

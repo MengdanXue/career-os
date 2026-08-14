@@ -56,7 +56,7 @@ final class ExtractionJpaModels {
         @Column(name = "schema_version", nullable = false) String schemaVersion;
         @Enumerated(EnumType.STRING) @Column(nullable = false) DataQualityStatus status;
         @Column(nullable = false) double confidence;
-        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "proposed_payload", nullable = false, columnDefinition = "jsonb")
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "proposed_payload", columnDefinition = "jsonb")
         JsonNode proposedPayload;
         @Column(name = "model_response") String modelResponse;
         @Column(name = "error_code") String errorCode;

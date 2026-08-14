@@ -11,6 +11,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,6 +94,39 @@ class ExtractionEndToEndTest {
         assertThat(second.path("id").asText()).isEqualTo(first.path("id").asText());
         assertThat(first.path("reused").asBoolean()).isFalse();
         assertThat(second.path("reused").asBoolean()).isTrue();
+        assertThat(runs.count()).isEqualTo(runsBefore + 1);
+    }
+
+    @Test
+    void concurrentIdenticalOfficialHtmlCreatesOnePostgresRun(
+        @Autowired MockMvc mvc,
+        @Autowired ObjectMapper json,
+        @Autowired ExtractionRunJpaRepository runs
+    ) throws Exception {
+        Path fixture = findWorkspaceFile("output/career-os-samples/raw/10-hzfi-social-recruiting.html");
+        Assumptions.assumeTrue(Files.exists(fixture), "local official concurrent HTML fixture is not available");
+        long runsBefore = runs.count();
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = executor.submit(() -> {
+                start.await();
+                return upload(mvc, json, fixture, "text/html",
+                    "https://www.hzfi.com/social-recruiting", "杭州金投社会招聘");
+            });
+            var second = executor.submit(() -> {
+                start.await();
+                return upload(mvc, json, fixture, "text/html",
+                    "https://www.hzfi.com/social-recruiting", "杭州金投社会招聘");
+            });
+            start.countDown();
+            JsonNode one = first.get();
+            JsonNode two = second.get();
+
+            assertThat(two.path("id").asText()).isEqualTo(one.path("id").asText());
+            assertThat(List.of(one.path("reused").asBoolean(), two.path("reused").asBoolean()))
+                .containsExactlyInAnyOrder(false, true);
+        }
         assertThat(runs.count()).isEqualTo(runsBefore + 1);
     }
 

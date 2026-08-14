@@ -4,6 +4,7 @@ import com.careeros.application.RepositoryPorts;
 import com.careeros.application.ExtractionPorts.ExtractionPersistence;
 import com.careeros.application.ExtractionPorts.ReviewPersistence;
 import com.careeros.application.ExtractionPorts.ExtractionBundle;
+import com.careeros.application.ExtractionPorts.FailedExtractionBundle;
 import com.careeros.application.ExtractionPorts.PersistedExtraction;
 import com.careeros.application.ExtractionPorts.ReviewDetails;
 import com.careeros.application.ExtractionPorts.ReviewPage;
@@ -24,6 +25,7 @@ public class PersistenceAdaptersConfiguration {
         return new ExtractionPersistence() {
             public Optional<PersistedExtraction> findByInputFingerprint(String fingerprint) { return persistence.findByInputFingerprint(fingerprint); }
             public PersistedExtraction save(ExtractionBundle bundle) { return persistence.save(bundle); }
+            public PersistedExtraction saveFailure(FailedExtractionBundle bundle) { return persistence.saveFailure(bundle); }
             public PersistedExtraction findById(UUID id) { return persistence.findExtractionById(id); }
         };
     }

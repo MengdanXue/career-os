@@ -74,6 +74,16 @@ public class JpaExtractionPersistence {
         return new PersistedExtraction(toRun(run), Optional.empty());
     }
 
+    @Transactional
+    public PersistedExtraction saveFailure(FailedExtractionBundle bundle) {
+        Objects.requireNonNull(bundle, "bundle");
+        artifacts.saveAndFlush(toArtifactEntity(bundle.artifact()));
+        evidenceRecords.save(bundle.evidence());
+        entityManager.flush();
+        ExtractionJpaModels.ExtractionRunEntity run = runs.saveAndFlush(toRunEntity(bundle.run()));
+        return new PersistedExtraction(toRun(run), Optional.empty());
+    }
+
     @Transactional(readOnly = true)
     public PersistedExtraction findExtractionById(UUID id) {
         return toPersisted(runs.findById(id).orElseThrow(() ->
@@ -223,7 +233,7 @@ public class JpaExtractionPersistence {
         entity.schemaVersion = run.schemaVersion();
         entity.status = run.status();
         entity.confidence = run.confidence();
-        entity.proposedPayload = toJson(run.proposedPayload());
+        entity.proposedPayload = run.proposedPayload() == null ? null : toJson(run.proposedPayload());
         entity.modelResponse = run.modelResponse();
         entity.errorCode = run.errorCode();
         entity.errorMessage = run.errorMessage();
@@ -237,7 +247,7 @@ public class JpaExtractionPersistence {
             entity.id, entity.evidenceId, entity.organizationId, entity.recruitmentEventId,
             entity.inputFingerprint, entity.sourceType, entity.parserName, entity.parserVersion,
             entity.extractorName, entity.extractorVersion, entity.modelName, entity.promptVersion,
-            entity.schemaVersion, entity.status, entity.confidence, toProposal(entity.proposedPayload),
+            entity.schemaVersion, entity.status, entity.confidence, toNullableProposal(entity.proposedPayload),
             entity.modelResponse, entity.errorCode, entity.errorMessage, entity.startedAt, entity.completedAt);
     }
 

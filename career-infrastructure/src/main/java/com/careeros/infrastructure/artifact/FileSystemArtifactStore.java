@@ -40,17 +40,13 @@ public final class FileSystemArtifactStore implements ArtifactStore {
                     Files.write(temporary, content, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
                     try {
                         Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
-                    } catch (java.nio.file.FileAlreadyExistsException race) {
-                        Files.deleteIfExists(temporary);
                     } catch (AtomicMoveNotSupportedException unsupported) {
-                        Files.move(temporary, target);
+                        moveNonAtomically(temporary, target);
+                    } catch (IOException raceOrFailure) {
+                        if (Files.notExists(target)) throw raceOrFailure;
                     }
                 } finally {
-                    try (var files = Files.list(directory)) {
-                        files.filter(path -> path.getFileName().toString().startsWith(sha256 + "."))
-                            .filter(path -> path.getFileName().toString().endsWith(".tmp"))
-                            .forEach(FileSystemArtifactStore::deleteQuietly);
-                    }
+                    Files.deleteIfExists(temporary);
                 }
             }
             UUID id = UUID.nameUUIDFromBytes(sha256.getBytes(StandardCharsets.US_ASCII));
@@ -80,7 +76,11 @@ public final class FileSystemArtifactStore implements ArtifactStore {
         }
     }
 
-    private static void deleteQuietly(Path path) {
-        try { Files.deleteIfExists(path); } catch (IOException ignored) { }
+    private static void moveNonAtomically(Path temporary, Path target) throws IOException {
+        try {
+            Files.move(temporary, target);
+        } catch (IOException raceOrFailure) {
+            if (Files.notExists(target)) throw raceOrFailure;
+        }
     }
 }

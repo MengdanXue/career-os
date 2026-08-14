@@ -34,6 +34,7 @@ public final class ExtractionService {
     private final ExtractionPersistence persistence;
     private final VerifiedProposalWriter writer;
     private final UnitOfWork unitOfWork;
+    private final FingerprintLock fingerprintLock;
     private final ExtractionObserver observer;
     private final ReviewPolicy reviewPolicy;
     private final Clock clock;
@@ -49,6 +50,7 @@ public final class ExtractionService {
         ExtractionPersistence persistence,
         VerifiedProposalWriter writer,
         UnitOfWork unitOfWork,
+        FingerprintLock fingerprintLock,
         ExtractionObserver observer,
         ReviewPolicy reviewPolicy,
         Clock clock,
@@ -63,6 +65,7 @@ public final class ExtractionService {
         this.persistence = Objects.requireNonNull(persistence);
         this.writer = Objects.requireNonNull(writer);
         this.unitOfWork = Objects.requireNonNull(unitOfWork);
+        this.fingerprintLock = Objects.requireNonNull(fingerprintLock);
         this.observer = Objects.requireNonNull(observer);
         this.reviewPolicy = Objects.requireNonNull(reviewPolicy);
         this.clock = Objects.requireNonNull(clock);
@@ -84,6 +87,16 @@ public final class ExtractionService {
         Instant startedAt = clock.instant();
         SourceArtifact artifact = artifactStore.put(content, command.mediaType(), command.capturedAt());
         String fingerprint = inputFingerprint(artifact);
+        return fingerprintLock.execute(fingerprint,
+            () -> submitLocked(command, artifact, fingerprint, startedAt));
+    }
+
+    private ExtractionResult submitLocked(
+        SubmitExtractionCommand command,
+        SourceArtifact artifact,
+        String fingerprint,
+        Instant startedAt
+    ) {
         Optional<PersistedExtraction> existing = persistence.findByInputFingerprint(fingerprint);
         if (existing.isPresent()) {
             PersistedExtraction value = existing.orElseThrow();
@@ -95,6 +108,21 @@ public final class ExtractionService {
         Evidence evidence = new Evidence(
             evidenceId, artifact.id(), EvidenceType.OFFICIAL_NOTICE,
             command.sourceUrl(), command.sourceTitle(), null, artifact.sha256(), command.capturedAt());
+        try {
+            return processNew(command, artifact, fingerprint, startedAt, evidence);
+        } catch (RuntimeException failure) {
+            persistFailure(command, artifact, fingerprint, startedAt, evidence, failure);
+            throw failure;
+        }
+    }
+
+    private ExtractionResult processNew(
+        SubmitExtractionCommand command,
+        SourceArtifact artifact,
+        String fingerprint,
+        Instant startedAt,
+        Evidence evidence
+    ) {
         ParsedDocument parsed;
         try (InputStream input = artifactStore.open(artifact)) {
             parsed = enrichment.enrich(artifact, parser.parse(artifact, input, evidence));
@@ -127,7 +155,7 @@ public final class ExtractionService {
 
         DataQualityStatus status = issues.isEmpty() ? DataQualityStatus.VERIFIED : DataQualityStatus.REVIEW_REQUIRED;
         ExtractionRun run = new ExtractionRun(
-            runId, evidenceId, command.organizationId(), command.recruitmentEventId(), fingerprint,
+            runId, evidence.id(), command.organizationId(), command.recruitmentEventId(), fingerprint,
             sourceType(command.mediaType()), parsed.parserName(), parsed.parserVersion(),
             extractorDescriptor.strategy(), extractorDescriptor.version(), extractorDescriptor.modelName(),
             extractorDescriptor.promptVersion(), proposal.schemaVersion(), status,
@@ -144,7 +172,7 @@ public final class ExtractionService {
         PersistedExtraction saved;
         if (status == DataQualityStatus.VERIFIED) {
             saved = unitOfWork.execute(() -> {
-                writer.write(proposal, List.of(evidenceId));
+                writer.write(proposal, List.of(evidence.id()));
                 return persistence.save(bundle);
             });
         } else {
@@ -155,10 +183,33 @@ public final class ExtractionService {
     }
 
     public PersistedExtraction find(UUID id) {
+        return persistence.findById(id);
+    }
+
+    private void persistFailure(
+        SubmitExtractionCommand command,
+        SourceArtifact artifact,
+        String fingerprint,
+        Instant startedAt,
+        Evidence evidence,
+        RuntimeException failure
+    ) {
+        ParserDescriptor parserDescriptor = parser.descriptor();
+        ExtractorDescriptor extractorDescriptor = extractor.descriptor();
+        ExtractionRun failed = new ExtractionRun(
+            UUID.randomUUID(), evidence.id(), command.organizationId(), command.recruitmentEventId(), fingerprint,
+            sourceType(command.mediaType()), parserDescriptor.name(), parserDescriptor.version(),
+            extractorDescriptor.strategy(), extractorDescriptor.version(), extractorDescriptor.modelName(),
+            extractorDescriptor.promptVersion(), com.careeros.domain.RecruitmentExtractionProposal.SCHEMA_VERSION,
+            DataQualityStatus.FAILED, 0, null, null, failure.getClass().getSimpleName(),
+            failure.getMessage() == null ? failure.getClass().getName() : failure.getMessage(),
+            startedAt, clock.instant());
         try {
-            return persistence.findById(id);
-        } catch (RuntimeException exception) {
-            throw new ExtractionExceptions.ExtractionNotFoundException("Extraction not found: " + id);
+            PersistedExtraction saved = persistence.saveFailure(
+                new FailedExtractionBundle(artifact, evidence, failed));
+            observer.completed(saved.run(), false, Duration.between(startedAt, clock.instant()));
+        } catch (RuntimeException persistenceFailure) {
+            failure.addSuppressed(persistenceFailure);
         }
     }
 

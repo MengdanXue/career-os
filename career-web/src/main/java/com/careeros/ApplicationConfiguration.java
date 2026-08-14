@@ -27,9 +27,9 @@ class ApplicationConfiguration {
         ArtifactStore artifacts,DocumentParser parser,DocumentEnrichmentPort enrichment,
         StructuredExtractor extractor,ProposalValidator validator,EvidenceVerifier verifier,
         ExtractionPersistence persistence,VerifiedProposalWriter writer,UnitOfWork unitOfWork,
-        ExtractionObserver observer,ReviewPolicy reviewPolicy,Clock clock,
+        FingerprintLock fingerprintLock,ExtractionObserver observer,ReviewPolicy reviewPolicy,Clock clock,
         @Value("${career-os.extraction.max-document-bytes:26214400}") long maxDocumentBytes
-    ) { return new ExtractionService(artifacts,parser,enrichment,extractor,validator,verifier,persistence,writer,unitOfWork,observer,reviewPolicy,clock,maxDocumentBytes); }
+    ) { return new ExtractionService(artifacts,parser,enrichment,extractor,validator,verifier,persistence,writer,unitOfWork,fingerprintLock,observer,reviewPolicy,clock,maxDocumentBytes); }
     @Bean ReviewService reviewService(
         ReviewPersistence persistence,ProposalValidator validator,EvidenceVerifier verifier,
         VerifiedProposalWriter writer,UnitOfWork unitOfWork,Clock clock

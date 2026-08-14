@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.careeros.infrastructure.persistence.JobPostingJpaRepository;
 import com.careeros.infrastructure.persistence.CandidateProfileJpaRepository;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService;
+import com.careeros.infrastructure.extraction.ExtractionRunJpaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.*;
 import java.time.LocalDate;
@@ -96,6 +97,32 @@ class CareerOsApplicationTest {
     void applicationTaskExecutorUsesJava21VirtualThreads(@Autowired ApplicationContext context) throws Exception {
         AsyncTaskExecutor executor = context.getBean("applicationTaskExecutor", AsyncTaskExecutor.class);
         assertThat(executor.submit(() -> Thread.currentThread().isVirtual()).get()).isTrue();
+    }
+
+    @Test
+    void requiredModelFailureIsPersistedForDiagnostics(
+        @Autowired MockMvc mvc,
+        @Autowired ExtractionRunJpaRepository runs
+    ) throws Exception {
+        long failuresBefore = runs.countByStatus(
+            com.careeros.domain.DomainEnums.DataQualityStatus.FAILED);
+        byte[] metadata = """
+            {"sourceUrl":"https://example.test/model-required-failure",
+             "sourceTitle":"模型失败留痕测试","capturedAt":"2026-08-14T15:00:00Z",
+             "requireModel":true}
+            """.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        mvc.perform(multipart("/api/v1/extractions")
+                .file(new MockMultipartFile(
+                    "document", "required.html", "text/html",
+                    "<html><body>unique required model failure</body></html>"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .file(new MockMultipartFile(
+                    "metadata", "metadata.json", "application/json", metadata)))
+            .andExpect(status().isServiceUnavailable());
+
+        assertThat(runs.countByStatus(com.careeros.domain.DomainEnums.DataQualityStatus.FAILED))
+            .isEqualTo(failuresBefore + 1);
     }
 
     @Test

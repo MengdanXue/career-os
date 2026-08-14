@@ -3,9 +3,12 @@ package com.careeros.application;
 import static com.careeros.application.ExtractionPorts.*;
 import static com.careeros.domain.DomainEnums.DataQualityStatus;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.careeros.domain.ReviewPolicy;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
 
 class ExtractionServiceTest {
@@ -69,8 +72,65 @@ class ExtractionServiceTest {
             .isEqualTo(command.sourceTitle());
     }
 
+    @Test
+    void concurrentIdenticalSubmissionsInvokeExtractorOnceAndReuseWinner() throws Exception {
+        Fixtures.CountingExtractor extractor = new Fixtures.CountingExtractor(Fixtures.verifiedProposal(), true);
+        Fixtures.MemoryExtractionPersistence persistence = new Fixtures.MemoryExtractionPersistence();
+        ExtractionService service = service(
+            extractor, persistence, new Fixtures.RecordingWriter(),
+            new Fixtures.RecordingUnitOfWork(), new Fixtures.SynchronizedFingerprintLock());
+        SubmitExtractionCommand command = Fixtures.htmlCommand("<h1>same</h1>");
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = executor.submit(() -> { start.await(); return service.submit(command); });
+            var second = executor.submit(() -> { start.await(); return service.submit(command); });
+            start.countDown();
+            ExtractionResult one = first.get();
+            ExtractionResult two = second.get();
+
+            assertThat(two.run().id()).isEqualTo(one.run().id());
+            assertThat(List.of(one.reused(), two.reused())).containsExactlyInAnyOrder(false, true);
+            assertThat(extractor.calls()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void extractorFailureIsPersistedAsFailedRun() {
+        StructuredExtractor failing = new StructuredExtractor() {
+            @Override public ExtractorDescriptor descriptor() {
+                return new ExtractorDescriptor("failing", "1.0.0", "fixture-model", "p1", true);
+            }
+            @Override public ExtractionAttempt extract(
+                com.careeros.domain.ParsedDocument document, ExtractionContext context
+            ) {
+                throw new ExtractionExceptions.InvalidProposalException("model output is invalid");
+            }
+        };
+        Fixtures.MemoryExtractionPersistence persistence = new Fixtures.MemoryExtractionPersistence();
+        ExtractionService service = service(failing, persistence, new Fixtures.RecordingWriter());
+
+        assertThatThrownBy(() -> service.submit(Fixtures.htmlCommand("<h1>invalid</h1>")))
+            .isInstanceOf(ExtractionExceptions.InvalidProposalException.class);
+        assertThat(persistence.onlyValue().run().status()).isEqualTo(DataQualityStatus.FAILED);
+        assertThat(persistence.onlyValue().run().proposedPayload()).isNull();
+        assertThat(persistence.onlyValue().run().errorCode()).isEqualTo("InvalidProposalException");
+    }
+
+    @Test
+    void findDoesNotMisreportUnexpectedPersistenceFailureAsNotFound() {
+        Fixtures.MemoryExtractionPersistence persistence = new Fixtures.MemoryExtractionPersistence();
+        IllegalStateException outage = new IllegalStateException("database unavailable");
+        persistence.failFindWith(outage);
+        ExtractionService service = service(
+            new Fixtures.CountingExtractor(Fixtures.verifiedProposal(), true),
+            persistence, new Fixtures.RecordingWriter());
+
+        assertThatThrownBy(() -> service.find(java.util.UUID.randomUUID())).isSameAs(outage);
+    }
+
     private static ExtractionService service(
-        Fixtures.CountingExtractor extractor,
+        StructuredExtractor extractor,
         Fixtures.MemoryExtractionPersistence persistence,
         Fixtures.RecordingWriter writer
     ) {
@@ -78,10 +138,20 @@ class ExtractionServiceTest {
     }
 
     private static ExtractionService service(
-        Fixtures.CountingExtractor extractor,
+        StructuredExtractor extractor,
         Fixtures.MemoryExtractionPersistence persistence,
         Fixtures.RecordingWriter writer,
         Fixtures.RecordingUnitOfWork unitOfWork
+    ) {
+        return service(extractor, persistence, writer, unitOfWork, new Fixtures.SynchronizedFingerprintLock());
+    }
+
+    private static ExtractionService service(
+        StructuredExtractor extractor,
+        Fixtures.MemoryExtractionPersistence persistence,
+        Fixtures.RecordingWriter writer,
+        Fixtures.RecordingUnitOfWork unitOfWork,
+        FingerprintLock fingerprintLock
     ) {
         ProposalValidator validator = proposal -> {};
         EvidenceVerifier verifier = (proposal, fragments) -> List.of();
@@ -91,7 +161,7 @@ class ExtractionServiceTest {
         };
         return new ExtractionService(
             new Fixtures.MemoryArtifactStore(), new Fixtures.HtmlParser(), (artifact, parsed) -> parsed,
-            extractor, validator, verifier, persistence, writer, unitOfWork, observer,
+            extractor, validator, verifier, persistence, writer, unitOfWork, fingerprintLock, observer,
             new ReviewPolicy(0.90), Fixtures.CLOCK, 5_000_000);
     }
 }
