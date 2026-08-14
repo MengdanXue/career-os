@@ -11,3 +11,21 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+  ai:
+    model:
+      chat: ${CAREER_OS_AI_CHAT_MODEL:none}
+      audio:
+        speech: none
+        transcription: none
+      embedding: none
+      image: none
+      moderation: none
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+
+career-os:
+  extraction:
+    llm:
+      enabled: ${CAREER_OS_LLM_ENABLED:false}
+      model: ${CAREER_OS_AI_MODEL:gpt-5-mini}
+      prompt-version: 1.0.0
