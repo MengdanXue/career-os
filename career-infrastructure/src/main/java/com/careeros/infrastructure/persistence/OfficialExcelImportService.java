@@ -1,9 +1,10 @@
 package com.careeros.infrastructure.persistence;
 
+import com.careeros.application.JobUpsertService;
+import com.careeros.application.JobUpsertService.JobUpsertBatch;
+import com.careeros.application.JobUpsertService.NormalizedJob;
 import com.careeros.domain.DomainEnums.*;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.*;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -17,14 +18,14 @@ public class OfficialExcelImportService {
     private static final Pattern YEAR = Pattern.compile("(20\\d{2})");
     private final RecruitmentEventJpaRepository events;
     private final OrganizationJpaRepository organizations;
-    private final JobPostingJpaRepository jobs;
+    private final JobUpsertService upserts;
 
-    public OfficialExcelImportService(RecruitmentEventJpaRepository events,OrganizationJpaRepository organizations,JobPostingJpaRepository jobs){this.events=events;this.organizations=organizations;this.jobs=jobs;}
+    public OfficialExcelImportService(RecruitmentEventJpaRepository events,OrganizationJpaRepository organizations,JobUpsertService upserts){this.events=events;this.organizations=organizations;this.upserts=upserts;}
 
     @Transactional
     public ImportResult importWorkbook(InputStream input,ImportCommand command) throws Exception {
         var event=events.findFirstBySourceUrl(command.sourceUrl()).orElseGet(()->createEvent(command));
-        int inserted=0,updated=0,unchanged=0,recognizedSheets=0; var errors=new ArrayList<RowError>(); var seen=new HashSet<String>();
+        int recognizedSheets=0; var errors=new ArrayList<RowError>(); var seen=new HashSet<String>(); var normalizedJobs=new ArrayList<NormalizedJob>();
         try(var workbook=WorkbookFactory.create(input)){
             var formatter=new DataFormatter(Locale.ROOT);
             for(int sheetIndex=0;sheetIndex<workbook.getNumberOfSheets();sheetIndex++){
@@ -52,27 +53,23 @@ public class OfficialExcelImportService {
                         String headcountText=value(row,header.columns(),formatter,"招聘人数","人数","计划人数");
                         String duties=value(row,header.columns(),formatter,"岗位职责","主要职责","工作内容","其他条件");
                         String location=value(row,header.columns(),formatter,"工作地点","地区","所在地"); if(blank(location)) location=command.defaultLocation();
-                        String stableKey=sha256(command.sourceUrl()+"|"+normalize(organizationName)+"|"+normalize(blank(code)?title:code));
-                        String fingerprint=sha256(String.join("|",title,nvl(code),nvl(educationText),nvl(majorText),nvl(ageText),nvl(experienceText),nvl(applicantText),nvl(employmentText),nvl(headcountText),nvl(duties),nvl(location)));
+                        var normalized=new NormalizedJob(
+                            event.id,organization.id,organizationName,emptyToNull(code),title,jobFamily(title,duties),
+                            employmentType(employmentText),location,Math.max(1,integer(headcountText,1)),education(educationText),
+                            splitMajors(majorText),graduationYears(applicantText),ageLimit(ageText),command.ageReferenceDate(),
+                            experienceYears(experienceText),new LinkedHashSet<>(),duties,command.sourceUrl(),List.of());
+                        String stableKey=upserts.stableKey(normalized);
                         if(!seen.add(stableKey)) throw new IllegalArgumentException("同一文件出现重复稳定岗位键");
-                        var existing=jobs.findByStableJobKey(stableKey);
-                        if(existing.isPresent() && fingerprint.equals(existing.get().contentFingerprint)){ existing.get().lastSeenAt=Instant.now(); existing.get().active=true; jobs.save(existing.get()); unchanged++; continue; }
-                        var entity=existing.orElseGet(JpaModels.JobPostingEntity::new);
-                        if(existing.isEmpty()){entity.id=UUID.randomUUID();entity.firstSeenAt=Instant.now();inserted++;} else updated++;
-                        entity.recruitmentEventId=event.id; entity.organizationId=organization.id; entity.externalJobCode=emptyToNull(code); entity.title=title;
-                        entity.jobFamily=jobFamily(title,duties); entity.employmentType=employmentType(employmentText); entity.location=location; entity.headcount=Math.max(1,integer(headcountText,1));
-                        entity.minimumEducation=education(educationText); entity.exactMajors=splitMajors(majorText); entity.acceptedGraduationYears=graduationYears(applicantText);
-                        entity.maximumAge=ageLimit(ageText); entity.ageReferenceDate=command.ageReferenceDate(); entity.minimumExperienceYears=experienceYears(experienceText);
-                        entity.requiredProfessionalTitles=new LinkedHashSet<>(); entity.duties=duties; entity.sourceUrl=command.sourceUrl(); entity.evidenceIds=new ArrayList<>();
-                        entity.stableJobKey=stableKey; entity.contentFingerprint=fingerprint; entity.active=true; entity.lastSeenAt=Instant.now(); jobs.save(entity);
+                        normalizedJobs.add(normalized);
                     }catch(Exception exception){errors.add(new RowError(sheet.getSheetName(),rowIndex+1,exception.getMessage()));}
                 }
             }
         }
         if(recognizedSheets==0) throw new IllegalArgumentException("未找到同时包含招聘单位和岗位名称的表头，已拒绝导入");
-        int deactivated=0;
-        if(errors.isEmpty()) for(var existing:jobs.findByRecruitmentEventId(event.id)) if(existing.stableJobKey!=null && !seen.contains(existing.stableJobKey) && existing.active){existing.active=false;existing.lastSeenAt=Instant.now();jobs.save(existing);deactivated++;}
-        return new ImportResult(event.id,inserted,updated,unchanged,deactivated,List.copyOf(errors));
+        var result=upserts.upsert(new JobUpsertBatch(
+            event.id,command.sourceUrl(),normalizedJobs,true,
+            errors.stream().map(error->error.sheet()+":"+error.row()+":"+error.message()).toList()));
+        return new ImportResult(event.id,result.inserted(),result.updated(),result.unchanged(),result.deactivated(),List.copyOf(errors));
     }
 
     private JpaModels.RecruitmentEventEntity createEvent(ImportCommand c){var e=new JpaModels.RecruitmentEventEntity();e.id=UUID.randomUUID();e.title=c.announcementTitle();e.recruitmentYear=c.recruitmentYear();e.eventType=c.eventType();e.publishedOn=c.publishedOn();e.sourceUrl=c.sourceUrl();e.defaultEmploymentType=EmploymentType.UNKNOWN;e.evidenceIds=new ArrayList<>();return events.save(e);}
@@ -82,8 +79,6 @@ public class OfficialExcelImportService {
     private boolean containsAny(Map<String,Integer> map,String...aliases){return Arrays.stream(aliases).map(OfficialExcelImportService::normalizeHeader).anyMatch(map::containsKey);}
     private String value(Row row,Map<String,Integer> columns,DataFormatter f,String...aliases){for(String alias:aliases){var column=columns.get(normalizeHeader(alias));if(column!=null){var cell=row.getCell(column,Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);if(cell!=null){var value=f.formatCellValue(cell).trim();if(!value.isBlank())return value;}}}return null;}
     private static String normalizeHeader(String value){return value==null?"":value.replaceAll("[\\s\\n\\r：:（）()]","").trim();}
-    private static String normalize(String value){return nvl(value).toLowerCase(Locale.ROOT).replaceAll("[\\s·（）()_\\-]","");}
-    private static String sha256(String text){try{var digest=MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8));return HexFormat.of().formatHex(digest);}catch(Exception e){throw new IllegalStateException(e);}}
     private static Set<String> splitMajors(String text){if(blank(text))return new LinkedHashSet<>();var result=new LinkedHashSet<String>();for(String part:text.split("[、,，;；/\\n]")){var value=part.trim();if(!value.isBlank())result.add(value);}return result;}
     private static Set<Integer> graduationYears(String text){var result=new LinkedHashSet<Integer>();if(text!=null){var m=YEAR.matcher(text);while(m.find())result.add(Integer.parseInt(m.group(1)));}return result;}
     private static Integer integerOrNull(String text){if(blank(text))return null;var m=NUMBER.matcher(text);return m.find()?Integer.valueOf(m.group(1)):null;}
