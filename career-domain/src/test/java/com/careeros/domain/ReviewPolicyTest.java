@@ -80,4 +80,26 @@ class ReviewPolicyTest {
         assertThat(result.issues()).extracting(ReviewIssue::reasonCode)
             .contains(ReviewReasonCode.MISSING_EVIDENCE);
     }
+
+    @Test
+    void unknownHeadcountCannotBeAutomaticallyVerified() {
+        RecruitmentExtractionProposal valid = ExtractionFixtures.proposal();
+        var original = valid.jobs().getFirst();
+        var changedJob = new RecruitmentExtractionProposal.JobProposal(
+            original.title(), original.externalJobCode(), ExtractionFixtures.unknown(),
+            original.employmentType(), original.location(), original.minimumEducation(),
+            original.degree(), original.majorText(), original.maximumAge(),
+            original.acceptedGraduationYears(), original.minimumExperienceYears(),
+            original.jobFamily(), original.duties());
+        var proposal = new RecruitmentExtractionProposal(
+            valid.schemaVersion(), valid.source(), valid.organization(), valid.recruitmentEvent(),
+            List.of(changedJob), valid.warnings(), valid.confidence(), valid.completeSnapshot());
+
+        ReviewPolicy.Evaluation result = policy.evaluate(
+            ExtractionFixtures.parsed(ParserQuality.ACCEPTABLE), proposal, true);
+
+        assertThat(result.autoVerified()).isFalse();
+        assertThat(result.issues()).extracting(ReviewIssue::fieldPath)
+            .contains("jobs[0].headcount");
+    }
 }

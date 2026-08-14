@@ -151,14 +151,14 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
             .map(job -> new NormalizedJob(
                 event.id, organization.id, organization.name, job.externalJobCode(), required(job.title(), "title"),
                 job.jobFamily(), valueOr(job.employmentType(), EmploymentType.UNKNOWN), job.location(),
-                valueOr(job.headcount(), 1), valueOr(job.minimumEducation(), EducationLevel.UNKNOWN),
+                required(job.headcount(), "headcount"), valueOr(job.minimumEducation(), EducationLevel.UNKNOWN),
                 splitMajors(valueOr(job.majorText(), null)), valueOr(job.acceptedGraduationYears(), Set.of()),
                 valueOr(job.maximumAge(), null), valueOr(proposal.recruitmentEvent().applicationEndsOn(), null),
                 valueOr(job.minimumExperienceYears(), null), Set.of(), job.duties(), proposal.source().sourceUrl(),
                 evidenceIds))
             .toList();
         return upsert(new JobUpsertBatch(
-            event.id, proposal.source().sourceUrl(), normalized, proposal.completeSnapshot(), List.of()));
+            event.id, proposal.source().sourceUrl(), normalized, false, List.of()));
     }
 
     private JpaModels.OrganizationEntity createOrganization(RecruitmentExtractionProposal proposal) {
@@ -195,7 +195,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         target.jobFamily = source.jobFamily();
         target.employmentType = source.employmentType();
         target.location = source.location();
-        target.headcount = Math.max(1, source.headcount());
+        target.headcount = source.headcount();
         target.minimumEducation = source.minimumEducation();
         target.exactMajors = new LinkedHashSet<>(source.exactMajors());
         target.acceptedGraduationYears = new LinkedHashSet<>(source.acceptedGraduationYears());

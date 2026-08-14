@@ -119,6 +119,28 @@ class DefaultJobUpsertServiceTest {
         assertThat(stored).isEmpty();
     }
 
+    @Test
+    void verifiedAgentProposalCannotInventMissingHeadcount() {
+        stubExistingOrganizationAndEvent();
+
+        assertThatThrownBy(() -> service.write(
+            proposalWithUnknownHeadcount(), job(2).evidenceIds()))
+            .isInstanceOf(ExtractionExceptions.InvalidProposalException.class)
+            .hasMessageContaining("headcount");
+        assertThat(stored).isEmpty();
+    }
+
+    @Test
+    void agentCompleteSnapshotFlagCannotDeactivateExistingJobs() {
+        stubExistingOrganizationAndEvent();
+        service.upsert(batch(List.of(job(2)), true, List.of()));
+
+        var result = service.write(proposalWithoutJobs(), job(2).evidenceIds());
+
+        assertThat(result.deactivated()).isZero();
+        assertThat(stored.values()).allMatch(entity -> entity.active);
+    }
+
     private static JobUpsertBatch batch(
         List<NormalizedJob> jobs,
         boolean completeSnapshot,
@@ -173,6 +195,39 @@ class DefaultJobUpsertServiceTest {
         return new RecruitmentExtractionProposal(
             proposal.schemaVersion(), proposal.source(), proposal.organization(), proposal.recruitmentEvent(),
             List.of(changed), proposal.warnings(), proposal.confidence(), proposal.completeSnapshot());
+    }
+
+    private RecruitmentExtractionProposal proposalWithUnknownHeadcount() {
+        RecruitmentExtractionProposal proposal = proposal();
+        var original = proposal.jobs().getFirst();
+        var changed = new RecruitmentExtractionProposal.JobProposal(
+            original.title(), original.externalJobCode(), unknown(), original.employmentType(),
+            original.location(), original.minimumEducation(), original.degree(), original.majorText(),
+            original.maximumAge(), original.acceptedGraduationYears(), original.minimumExperienceYears(),
+            original.jobFamily(), original.duties());
+        return new RecruitmentExtractionProposal(
+            proposal.schemaVersion(), proposal.source(), proposal.organization(), proposal.recruitmentEvent(),
+            List.of(changed), proposal.warnings(), proposal.confidence(), true);
+    }
+
+    private RecruitmentExtractionProposal proposalWithoutJobs() {
+        RecruitmentExtractionProposal proposal = proposal();
+        return new RecruitmentExtractionProposal(
+            proposal.schemaVersion(), proposal.source(), proposal.organization(), proposal.recruitmentEvent(),
+            List.of(), proposal.warnings(), proposal.confidence(), true);
+    }
+
+    private void stubExistingOrganizationAndEvent() {
+        RecruitmentExtractionProposal proposal = proposal();
+        var organization = new JpaModels.OrganizationEntity();
+        organization.id = ORGANIZATION_ID;
+        organization.name = proposal.organization().name();
+        organization.organizationType = OrganizationType.PUBLIC_INSTITUTION;
+        var event = new JpaModels.RecruitmentEventEntity();
+        event.id = EVENT_ID;
+        event.sourceUrl = proposal.source().sourceUrl();
+        when(organizationRepo.findFirstByName(organization.name)).thenReturn(Optional.of(organization));
+        when(eventRepo.findFirstBySourceUrl(event.sourceUrl)).thenReturn(Optional.of(event));
     }
 
     private static <T> ExtractedFact<T> explicit(T value, UUID fragmentId) {

@@ -57,7 +57,7 @@ final class ProposalFixtures {
     static EvidenceFragment fragment() {
         return new EvidenceFragment(
             FRAGMENT_ID, EVIDENCE_ID, LocatorType.HTML, Map.of("cssSelector", "#job-a01"),
-            "2026年8月14日发布：信息中心技术岗，事业编制，本科及以上，计算机类",
+            "2026年8月14日发布：示例事业单位，信息中心技术岗，招聘1人，事业编制，本科及以上，计算机类",
             "fragment-hash", NOW);
     }
 

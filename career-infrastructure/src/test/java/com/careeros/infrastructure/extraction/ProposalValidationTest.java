@@ -81,6 +81,24 @@ class ProposalValidationTest {
     }
 
     @Test
+    void headcountMustBeSupportedByItsEvidenceFragment() {
+        EvidenceFragment fragmentWithoutHeadcount = new EvidenceFragment(
+            ProposalFixtures.FRAGMENT_ID,
+            ProposalFixtures.EVIDENCE_ID,
+            LocatorType.HTML,
+            Map.of("cssSelector", "#job-a01"),
+            "信息中心技术岗，事业编制，本科及以上，计算机类",
+            "fragment-without-headcount",
+            ProposalFixtures.NOW);
+
+        assertThat(verifier.verify(
+            ProposalFixtures.validProposal(), List.of(fragmentWithoutHeadcount)))
+            .filteredOn(issue -> issue.fieldPath().equals("jobs[0].headcount"))
+            .extracting(ReviewIssue::reasonCode)
+            .containsExactly(ReviewReasonCode.MISSING_EVIDENCE);
+    }
+
+    @Test
     void interpretedEmploymentTypeCannotPassAsExplicitEvidence() {
         assertThat(verifier.verify(
             ProposalFixtures.interpretedEmploymentProposal(), List.of(ProposalFixtures.fragment())))

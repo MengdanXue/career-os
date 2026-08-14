@@ -12,6 +12,7 @@ import com.careeros.domain.RecruitmentExtractionProposal;
 import com.careeros.domain.ReviewIssue;
 import com.careeros.domain.DomainEnums.EducationLevel;
 import com.careeros.domain.DomainEnums.EmploymentType;
+import com.careeros.domain.DomainEnums.OrganizationType;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -34,6 +35,7 @@ public final class DefaultEvidenceVerifier implements EvidenceVerifier {
         UUID reviewId = UUID.randomUUID();
         List<ReviewIssue> issues = new ArrayList<>();
 
+        verifyFact(issues, reviewId, available, "organization.organizationType", proposal.organization().organizationType());
         verifyFact(issues, reviewId, available, "recruitmentEvent.publishedOn", proposal.recruitmentEvent().publishedOn());
         verifyFact(issues, reviewId, available, "recruitmentEvent.applicationStartsOn", proposal.recruitmentEvent().applicationStartsOn());
         verifyFact(issues, reviewId, available, "recruitmentEvent.applicationEndsOn", proposal.recruitmentEvent().applicationEndsOn());
@@ -41,6 +43,7 @@ public final class DefaultEvidenceVerifier implements EvidenceVerifier {
             var job = proposal.jobs().get(index);
             String path = "jobs[" + index + "]";
             verifyFact(issues, reviewId, available, path + ".title", job.title());
+            verifyFact(issues, reviewId, available, path + ".headcount", job.headcount());
             verifyFact(issues, reviewId, available, path + ".employmentType", job.employmentType());
             verifyFact(issues, reviewId, available, path + ".minimumEducation", job.minimumEducation());
             verifyFact(issues, reviewId, available, path + ".degree", job.degree());
@@ -126,6 +129,17 @@ public final class DefaultEvidenceVerifier implements EvidenceVerifier {
                 case MASTER -> containsAny(normalizedText, "硕士", "研究生");
                 case DOCTORATE -> containsAny(normalizedText, "博士");
                 case UNKNOWN -> false;
+            };
+        }
+        if (value instanceof OrganizationType organizationType) {
+            return switch (organizationType) {
+                case GOVERNMENT -> containsAny(normalizedText, "政府", "人民政府", "行政机关");
+                case PUBLIC_INSTITUTION -> containsAny(normalizedText, "事业单位", "事业编制", "事业编");
+                case STATE_OWNED_ENTERPRISE -> containsAny(normalizedText, "国有企业", "国企", "国有独资", "国有控股");
+                case UNIVERSITY -> containsAny(normalizedText, "大学", "学院", "高等学校");
+                case HOSPITAL -> containsAny(normalizedText, "医院", "医疗中心");
+                case RESEARCH_INSTITUTE -> containsAny(normalizedText, "研究院", "研究所", "实验室");
+                case OTHER, UNKNOWN -> false;
             };
         }
         return normalizedText.contains(normalize(value.toString()));

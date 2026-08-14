@@ -34,7 +34,7 @@ final class ExtractionFixtures {
             EVIDENCE_ID,
             LocatorType.HTML,
             Map.of("cssSelector", "#jobs tr:nth-child(2)"),
-            "信息中心技术岗，事业编制，本科及以上，计算机类，年龄35周岁以下",
+            "杭州示例事业单位，信息中心技术岗，招聘1人，事业编制，本科及以上，计算机类，年龄35周岁以下",
             "fragment-sha256",
             NOW
         );

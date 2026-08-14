@@ -42,7 +42,7 @@ public interface JobUpsertService {
             requireText(title, "title");
             Objects.requireNonNull(jobFamily, "jobFamily");
             Objects.requireNonNull(employmentType, "employmentType");
-            if (headcount < 0) throw new IllegalArgumentException("headcount must not be negative");
+            if (headcount < 1) throw new IllegalArgumentException("headcount must be positive");
             Objects.requireNonNull(minimumEducation, "minimumEducation");
             exactMajors = exactMajors == null ? Set.of() : Set.copyOf(exactMajors);
             acceptedGraduationYears = acceptedGraduationYears == null ? Set.of() : Set.copyOf(acceptedGraduationYears);

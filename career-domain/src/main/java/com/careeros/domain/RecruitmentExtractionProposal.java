@@ -100,8 +100,8 @@ public record RecruitmentExtractionProposal(
             Objects.requireNonNull(acceptedGraduationYears, "acceptedGraduationYears");
             Objects.requireNonNull(minimumExperienceYears, "minimumExperienceYears");
             Objects.requireNonNull(jobFamily, "jobFamily");
-            if (headcount.value() != null && headcount.value() < 0) {
-                throw new IllegalArgumentException("headcount must not be negative");
+            if (headcount.value() != null && headcount.value() < 1) {
+                throw new IllegalArgumentException("headcount must be positive when known");
             }
             if (acceptedGraduationYears.value() != null) {
                 acceptedGraduationYears = new ExtractedFact<>(

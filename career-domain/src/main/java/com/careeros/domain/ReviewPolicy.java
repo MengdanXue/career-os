@@ -44,6 +44,8 @@ public final class ReviewPolicy {
             add(issues, reviewItemId, ReviewReasonCode.ORGANIZATION_TYPE_UNKNOWN,
                 "organization.organizationType", "Organization type is unknown", firstEvidence(proposal.organization().organizationType()));
         }
+        checkRestrictive(issues, reviewItemId, "organization.organizationType",
+            proposal.organization().organizationType(), true);
         if (!evidenceVerified) {
             add(issues, reviewItemId, ReviewReasonCode.MISSING_EVIDENCE, "proposal",
                 "One or more restrictive facts are not supported by source evidence", null);
@@ -56,6 +58,7 @@ public final class ReviewPolicy {
             var job = proposal.jobs().get(i);
             String path = "jobs[" + i + "]";
             checkRestrictive(issues, reviewItemId, path + ".title", job.title(), true);
+            checkRestrictive(issues, reviewItemId, path + ".headcount", job.headcount(), true);
             checkRestrictive(issues, reviewItemId, path + ".employmentType", job.employmentType(), true);
             checkRestrictive(issues, reviewItemId, path + ".minimumEducation", job.minimumEducation(), false);
             checkRestrictive(issues, reviewItemId, path + ".degree", job.degree(), false);
