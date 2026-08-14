@@ -8,7 +8,6 @@ import com.careeros.infrastructure.artifact.FileSystemArtifactStore;
 import com.careeros.infrastructure.extraction.*;
 import java.nio.file.Path;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -24,12 +23,6 @@ class ApplicationConfiguration {
     @Bean DocumentEnrichmentPort documentEnrichment() { return new NoOpDocumentEnrichment(); }
     @Bean EvidenceVerifier evidenceVerifier() { return new DefaultEvidenceVerifier(); }
     @Bean ReviewPolicy reviewPolicy(@Value("${career-os.extraction.auto-accept-confidence:0.90}") double threshold) { return new ReviewPolicy(threshold); }
-    @Bean ExtractionObserver extractionObserver() {
-        return new ExtractionObserver() {
-            public void completed(com.careeros.domain.ExtractionRun run,boolean reused,Duration duration) {}
-            public void modelCall(String model,String result) {}
-        };
-    }
     @Bean ExtractionService extractionService(
         ArtifactStore artifacts,DocumentParser parser,DocumentEnrichmentPort enrichment,
         StructuredExtractor extractor,ProposalValidator validator,EvidenceVerifier verifier,

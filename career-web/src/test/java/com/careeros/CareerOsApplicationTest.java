@@ -21,6 +21,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.context.ApplicationContext;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -80,6 +82,20 @@ class CareerOsApplicationTest {
         mvc.perform(get("/api/v1/reviews/{id}", reviewId))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.item.status").value("PENDING"));
+    }
+
+    @Test
+    void openApiDocumentsExtractionAndReviewResources(@Autowired MockMvc mvc) throws Exception {
+        mvc.perform(get("/v3/api-docs"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.paths['/api/v1/extractions']").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/reviews']").exists());
+    }
+
+    @Test
+    void applicationTaskExecutorUsesJava21VirtualThreads(@Autowired ApplicationContext context) throws Exception {
+        AsyncTaskExecutor executor = context.getBean("applicationTaskExecutor", AsyncTaskExecutor.class);
+        assertThat(executor.submit(() -> Thread.currentThread().isVirtual()).get()).isTrue();
     }
 
     @Test
