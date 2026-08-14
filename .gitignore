@@ -9,5 +9,5 @@ Thumbs.db
 .env.*
 !.env.example
 config/candidate-profile.json
-var/artifacts/
+**/var/artifacts/
 *.log

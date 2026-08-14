@@ -16,6 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -48,6 +49,37 @@ class CareerOsApplicationTest {
     ) {
         assertThat(jobs).isNotNull();
         assertThat(candidates.count()).isEqualTo(1);
+    }
+
+    @Test
+    void extractionApiPersistsAReviewAndReusesIdenticalContent(
+        @Autowired MockMvc mvc,
+        @Autowired ObjectMapper json
+    ) throws Exception {
+        byte[] html = "<html><body><h1>2026年杭州端到端采集测试公告</h1></body></html>"
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] metadata = """
+            {"sourceUrl":"https://example.test/extraction-e2e","sourceTitle":"端到端采集测试公告",
+             "capturedAt":"2026-08-14T15:00:00Z","requireModel":false}
+            """.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        var first = mvc.perform(multipart("/api/v1/extractions")
+                .file(new MockMultipartFile("document", "notice.html", "text/html", html))
+                .file(new MockMultipartFile("metadata", "metadata.json", "application/json", metadata)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.reused").value(false))
+            .andExpect(jsonPath("$.status").value("REVIEW_REQUIRED"))
+            .andReturn().getResponse().getContentAsString();
+        String reviewId = json.readTree(first).path("reviewId").asText();
+
+        mvc.perform(multipart("/api/v1/extractions")
+                .file(new MockMultipartFile("document", "notice.html", "text/html", html))
+                .file(new MockMultipartFile("metadata", "metadata.json", "application/json", metadata)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reused").value(true));
+        mvc.perform(get("/api/v1/reviews/{id}", reviewId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.item.status").value("PENDING"));
     }
 
     @Test

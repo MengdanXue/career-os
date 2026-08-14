@@ -22,9 +22,17 @@ spring:
       moderation: none
     openai:
       api-key: ${OPENAI_API_KEY:}
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 26MB
 
 career-os:
+  artifacts:
+    root: ${CAREER_OS_ARTIFACT_ROOT:${user.dir}/var/artifacts}
   extraction:
+    max-document-bytes: 26214400
+    auto-accept-confidence: 0.90
     llm:
       enabled: ${CAREER_OS_LLM_ENABLED:false}
       model: ${CAREER_OS_AI_MODEL:gpt-5-mini}
