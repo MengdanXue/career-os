@@ -101,6 +101,7 @@ public final class JpaModels {
 
     @Entity @Table(name = "evidence")
     public static class EvidenceEntity extends UuidEntity {
+        @Column(name = "source_artifact_id") UUID sourceArtifactId;
         @Enumerated(EnumType.STRING) @Column(name = "evidence_type", nullable = false) EvidenceType evidenceType;
         @Column(name = "source_url", nullable = false) String sourceUrl;
         @Column(name = "source_title") String sourceTitle;

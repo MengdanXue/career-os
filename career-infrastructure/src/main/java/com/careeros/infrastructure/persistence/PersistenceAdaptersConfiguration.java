@@ -1,9 +1,17 @@
 package com.careeros.infrastructure.persistence;
 
 import com.careeros.application.RepositoryPorts;
+import com.careeros.application.ExtractionPorts.ExtractionPersistence;
+import com.careeros.application.ExtractionPorts.ReviewPersistence;
+import com.careeros.application.ExtractionPorts.ExtractionBundle;
+import com.careeros.application.ExtractionPorts.PersistedExtraction;
+import com.careeros.application.ExtractionPorts.ReviewDetails;
+import com.careeros.application.ExtractionPorts.ReviewPage;
+import com.careeros.application.ExtractionPorts.ReviewResolution;
 import com.careeros.domain.*;
 import com.careeros.domain.DomainEnums.*;
 import com.careeros.domain.EligibilityAssessment.RuleResult;
+import com.careeros.infrastructure.extraction.JpaExtractionPersistence;
 import java.util.*;
 import java.util.function.Function;
 import org.springframework.context.annotation.Bean;
@@ -12,6 +20,20 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 @Configuration
 public class PersistenceAdaptersConfiguration {
+    @Bean ExtractionPersistence extractionPersistence(JpaExtractionPersistence persistence) {
+        return new ExtractionPersistence() {
+            public Optional<PersistedExtraction> findByInputFingerprint(String fingerprint) { return persistence.findByInputFingerprint(fingerprint); }
+            public PersistedExtraction save(ExtractionBundle bundle) { return persistence.save(bundle); }
+            public PersistedExtraction findById(UUID id) { return persistence.findExtractionById(id); }
+        };
+    }
+    @Bean ReviewPersistence reviewPersistence(JpaExtractionPersistence persistence) {
+        return new ReviewPersistence() {
+            public ReviewDetails findById(UUID id) { return persistence.findReviewById(id); }
+            public ReviewPage findPage(ReviewStatus status,int page,int size) { return persistence.findPage(status,page,size); }
+            public ReviewDetails apply(ReviewResolution resolution) { return persistence.apply(resolution); }
+        };
+    }
     @Bean RepositoryPorts.RecruitmentEvents recruitmentEvents(RecruitmentEventJpaRepository r) { return new RecruitmentEventAdapter(r,this::toEventEntity,this::toEvent); }
     @Bean RepositoryPorts.Organizations organizations(OrganizationJpaRepository r) { return new OrganizationAdapter(r,this::toOrganizationEntity,this::toOrganization); }
     @Bean RepositoryPorts.JobPostings jobPostings(JobPostingJpaRepository r) { return new JobAdapter(r,this::toJobEntity,this::toJob); }
@@ -57,8 +79,8 @@ public class PersistenceAdaptersConfiguration {
     private JpaModels.PolicyRuleEntity toPolicyEntity(PolicyRule value) { var e=new JpaModels.PolicyRuleEntity(); e.id=value.id(); e.ruleType=value.ruleType(); e.name=value.name(); e.jurisdiction=value.jurisdiction(); e.validFrom=value.validFrom(); e.validUntil=value.validUntil(); e.parameters=new LinkedHashMap<>(value.parameters()); e.evidenceId=value.evidenceId(); return e; }
     private PolicyRule toPolicy(JpaModels.PolicyRuleEntity e) { return new PolicyRule(e.id,e.ruleType,e.name,e.jurisdiction,e.validFrom,e.validUntil,e.parameters,e.evidenceId); }
 
-    private JpaModels.EvidenceEntity toEvidenceEntity(Evidence value) { var e=new JpaModels.EvidenceEntity(); e.id=value.id(); e.evidenceType=value.type(); e.sourceUrl=value.sourceUrl(); e.sourceTitle=value.sourceTitle(); e.excerpt=value.excerpt(); e.contentHash=value.contentHash(); e.capturedAt=value.capturedAt(); return e; }
-    private Evidence toEvidence(JpaModels.EvidenceEntity e) { return new Evidence(e.id,null,e.evidenceType,e.sourceUrl,e.sourceTitle,e.excerpt,e.contentHash,e.capturedAt); }
+    private JpaModels.EvidenceEntity toEvidenceEntity(Evidence value) { var e=new JpaModels.EvidenceEntity(); e.id=value.id(); e.sourceArtifactId=value.sourceArtifactId(); e.evidenceType=value.type(); e.sourceUrl=value.sourceUrl(); e.sourceTitle=value.sourceTitle(); e.excerpt=value.excerpt(); e.contentHash=value.contentHash(); e.capturedAt=value.capturedAt(); return e; }
+    private Evidence toEvidence(JpaModels.EvidenceEntity e) { return new Evidence(e.id,e.sourceArtifactId,e.evidenceType,e.sourceUrl,e.sourceTitle,e.excerpt,e.contentHash,e.capturedAt); }
 
     private JpaModels.EligibilityAssessmentEntity toAssessmentEntity(EligibilityAssessment value) { var e=new JpaModels.EligibilityAssessmentEntity(); e.id=value.id(); e.candidateProfileId=value.candidateProfileId(); e.jobPostingId=value.jobPostingId(); e.status=value.status(); value.ruleResults().forEach((key,result)->e.ruleResults.put(key.name(),Map.of("status",result.status().name(),"explanation",result.explanation()))); e.evidenceIds=new ArrayList<>(value.evidenceIds()); e.evaluatorVersion=value.evaluatorVersion(); e.assessedAt=value.assessedAt(); return e; }
     private EligibilityAssessment toAssessment(JpaModels.EligibilityAssessmentEntity e) { var results=new EnumMap<RuleType,RuleResult>(RuleType.class); e.ruleResults.forEach((key,value)->results.put(RuleType.valueOf(key),new RuleResult(EligibilityStatus.valueOf(value.get("status")),value.get("explanation")))); return new EligibilityAssessment(e.id,e.candidateProfileId,e.jobPostingId,e.status,results,e.evidenceIds,e.evaluatorVersion,e.assessedAt); }
