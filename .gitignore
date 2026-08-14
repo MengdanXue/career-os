@@ -1,0 +1,13 @@
+**/target/
+.idea/
+*.iml
+.vscode/
+.tooling/
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+config/candidate-profile.json
+var/artifacts/
+*.log

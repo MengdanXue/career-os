@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: career-os
+  datasource:
+    url: ${CAREER_OS_DB_URL:jdbc:postgresql://localhost:5432/career_os}
+    username: ${CAREER_OS_DB_USER:career_os}
+    password: ${CAREER_OS_DB_PASSWORD:career_os}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true

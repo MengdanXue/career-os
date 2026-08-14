@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: career-os-agent
+  ai:
+    model:
+      chat: ${CAREER_OS_CHAT_MODEL:none}
+      embedding: none
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        model: ${CAREER_OS_OPENAI_MODEL:gpt-5-mini}
+        temperature: 0.1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+career-os:
+  samples-root: ${CAREER_OS_SAMPLES_ROOT:${user.dir}/../output/career-os-samples}
+  output-root: ${CAREER_OS_OUTPUT_ROOT:${user.dir}/../output/career-os-agent}
+  profile-path: ${CAREER_OS_PROFILE_PATH:${user.dir}/config/candidate-profile.json}

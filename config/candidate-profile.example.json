@@ -1,0 +1,13 @@
+{
+  "profileVersion": "example-v1",
+  "birthDate": { "year": 1990, "month": 1, "day": null, "status": "UNKNOWN" },
+  "education": { "value": null, "status": "UNKNOWN", "expectedAt": null },
+  "degree": { "value": null, "status": "UNKNOWN", "expectedAt": null },
+  "major": { "value": null, "status": "UNKNOWN", "expectedAt": null },
+  "overseasEducation": false,
+  "experienceYears": { "value": null, "status": "UNKNOWN" },
+  "professionalTitles": [],
+  "politicalStatus": { "value": null, "status": "UNKNOWN" },
+  "graduateStatus": { "value": null, "status": "UNKNOWN" },
+  "socialSecurityStatus": { "value": null, "status": "UNKNOWN" }
+}
