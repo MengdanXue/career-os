@@ -134,7 +134,7 @@ Review Items use `PENDING` and `RESOLVED`. Review actions are:
 
 ## 7. Proposal and Evidence Contract
 
-`RecruitmentExtractionProposal` is versioned and contains source metadata, organization, recruitment event, jobs, and warnings. Each job includes title, position code, headcount, employment type, location, education, degree, major, age, graduate-year rule, experience, application period, and field evidence.
+`RecruitmentExtractionProposal` is versioned and contains source metadata, organization, recruitment event, jobs, warnings, and `completeSnapshot`. Each job includes title, position code, headcount, employment type, location, education, degree, major, age, graduate-year rule, experience, application period, and field evidence. `completeSnapshot` defaults to false and is true only when the parser proves that the document is a complete event-level job snapshot; missing-job deactivation is permitted only for a complete, error-free verified snapshot.
 
 Every restrictive field uses an `ExtractedFact<T>` shape equivalent to:
 
@@ -242,7 +242,7 @@ The schema uses `TEXT` plus checks for evolving workflow states, `TIMESTAMPTZ` f
 ### 12.1 Create extraction
 
 ```http
-POST /api/extractions
+POST /api/v1/extractions
 Content-Type: multipart/form-data
 ```
 
@@ -253,7 +253,7 @@ The first successful submission returns `201 Created` and a `Location` header. A
 ### 12.2 Read extraction
 
 ```http
-GET /api/extractions/{id}
+GET /api/v1/extractions/{id}
 ```
 
 The response includes state, versions, proposal, evidence summary, review ID, errors, and reuse metadata.
@@ -261,8 +261,8 @@ The response includes state, versions, proposal, evidence summary, review ID, er
 ### 12.3 Review Queue
 
 ```http
-GET /api/reviews?status=PENDING&page=0&size=20
-GET /api/reviews/{id}
+GET /api/v1/reviews?status=PENDING&page=0&size=20
+GET /api/v1/reviews/{id}
 ```
 
 The collection endpoint is paginated and returns summaries. The item endpoint returns the proposal, issues, fragments, and action history.
@@ -270,7 +270,7 @@ The collection endpoint is paginated and returns summaries. The item endpoint re
 ### 12.4 Apply review action
 
 ```http
-POST /api/reviews/{id}/actions
+POST /api/v1/reviews/{id}/actions
 ```
 
 The body contains `decision`, `expectedVersion`, optional `correctedPayload`, and optional `note`. A stale version returns `409 Conflict`.
