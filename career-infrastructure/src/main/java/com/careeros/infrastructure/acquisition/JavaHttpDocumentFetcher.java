@@ -86,7 +86,9 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
 
     private HttpRequest buildRequest(URI uri, FetchRequest request) {
         var builder = HttpRequest.newBuilder(uri).GET().timeout(request.requestTimeout())
-            .header("User-Agent", userAgent).header("Accept", "text/html,application/xhtml+xml,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*;q=0.1");
+            .header("User-Agent", userAgent)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Accept", "text/html,application/xhtml+xml,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*;q=0.1");
         if (request.etag() != null && !request.etag().isBlank()) builder.header("If-None-Match", request.etag());
         if (request.lastModified() != null && !request.lastModified().isBlank()) builder.header("If-Modified-Since", request.lastModified());
         return builder.build();

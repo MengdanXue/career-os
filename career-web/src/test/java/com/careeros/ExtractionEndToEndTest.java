@@ -28,7 +28,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@SpringBootTest
+@SpringBootTest(properties = "career-os.acquisition.scheduling-enabled=false")
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class ExtractionEndToEndTest {

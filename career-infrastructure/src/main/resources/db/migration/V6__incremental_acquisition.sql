@@ -128,7 +128,7 @@ INSERT INTO recruitment_source (
     '0 10 8 * * *',
     'Asia/Shanghai',
     1000,
-    '{"articleUrlRegex":"^https://rlsbt\\.zj\\.gov\\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[A-Za-z0-9_]+\\.html$","linkSelector":"a[href]","attachmentSelector":"a[href]","titleIncludeRegex":"招聘|招考|选聘|引进","titleExcludeRegex":"拟聘|公示|成绩|体检|递补","maxListPages":2}'::jsonb,
+    '{"listingApiUri":"https://rlsbt.zj.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2758&tplSetId=kUBgoFENJiaYxr31jYEph&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A8&editType=null&pageId=1229743683","articleUrlRegex":"^https://rlsbt\\.zj\\.gov\\.cn(?:/col/col[0-9]+)?/art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\\.html$","linkSelector":"a[href]","attachmentSelector":"a[href]","titleIncludeRegex":"招聘|招考|选聘|引进","titleExcludeRegex":"拟聘|公示|成绩|体检|递补","maxListPages":2}'::jsonb,
     now()
 ),
 (
@@ -144,6 +144,6 @@ INSERT INTO recruitment_source (
     '0 20 8 * * *',
     'Asia/Shanghai',
     1000,
-    '{"articleUrlRegex":"^https://hrss\\.hangzhou\\.gov\\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[A-Za-z0-9_]+\\.html$","linkSelector":"a[href]","attachmentSelector":"a[href]","titleIncludeRegex":"招聘|招考|选聘|引进","titleExcludeRegex":"拟聘|公示|成绩|体检|递补","maxListPages":2}'::jsonb,
+    '{"listingApiUri":"https://hrss.hangzhou.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=3163&tplSetId=clJESumZainQpjpBI3Qsd&pageType=column&tagId=%E5%88%86%E9%A1%B5%E5%88%97%E8%A1%A8&editType=null&pageId=1229782005","articleUrlRegex":"^https://hrss\\.hangzhou\\.gov\\.cn(?:/col/col[0-9]+)?/art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\\.html$","linkSelector":"a[href]","attachmentSelector":"a[href]","titleIncludeRegex":"招聘|招考|选聘|引进","titleExcludeRegex":"拟聘|公示|成绩|体检|递补","maxListPages":2}'::jsonb,
     now()
 );

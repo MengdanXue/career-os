@@ -6,9 +6,10 @@
 
 - Phase 1：岗位、单位、候选人、资格评估和 Opportunity Tracker；官方 Excel 增量导入支持新增、变更、未变化和下线。
 - Phase 2：HTML/PDF 证据解析、可选 LLM 结构化抽取、JSON Schema 校验、证据定位、Review Queue、幂等复用、OpenAPI 和采集指标。
+- Phase 3A：浙江省、杭州市人社官方源定时增量采集；稳定公告键、SHA-256 内容指纹、条件请求、附件路由、PostgreSQL 分布式锁，以及新增/变更/下线变化流。
 - Java 21：编译与运行均使用 Java 21，Spring 任务执行器启用虚拟线程，适合并发下载、文档解析和数据库等待等 I/O 密集工作。
 
-当前阶段没有引入全网爬虫、定时调度器、自动投递或前端。采集源自动扫描将在后续阶段接到现有的增量入库和审核管道。
+当前阶段没有引入全网爬虫、登录/CAPTCHA、自动投递或前端。Phase 3A 只启用两个官方核心源，采集结果继续进入现有的确定性 Excel 导入或 HTML/PDF 证据审核管道。
 
 ## 模块
 
@@ -45,6 +46,12 @@ mvn clean test
 mvn -DskipTests package
 ```
 
+官方源兼容性检查默认不访问公网，需要时显式运行：
+
+```powershell
+mvn -Pacquisition-live "-Dcareer-os.acquisition.live-smoke-enabled=true" "-Dtest=OfficialSourceLiveSmokeTest" test
+```
+
 启动应用前设置数据库连接；Flyway 会自动迁移到当前 schema：
 
 ```powershell
@@ -61,4 +68,4 @@ java -jar career-web\target\career-web-0.1.0-SNAPSHOT.jar
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - 指标：`http://localhost:8080/actuator/metrics`
 
-接口说明见 [Phase 1 API](docs/PHASE1_API.md) 和 [Phase 2 API](docs/PHASE2_API.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。
+接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md) 和 [Phase 3 增量采集 API](docs/PHASE3_API.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。

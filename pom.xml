@@ -26,7 +26,7 @@
         <wiremock.version>3.13.2</wiremock.version>
         <springdoc.version>2.8.17</springdoc.version>
         <archunit.version>1.4.2</archunit.version>
-        <surefire.excludedGroups>llm-integration</surefire.excludedGroups>
+        <surefire.excludedGroups>llm-integration,acquisition-live</surefire.excludedGroups>
     </properties>
 
     <dependencyManagement>
@@ -76,7 +76,11 @@
     <profiles>
         <profile>
             <id>llm-integration</id>
-            <properties><surefire.excludedGroups></surefire.excludedGroups></properties>
+            <properties><surefire.excludedGroups>acquisition-live</surefire.excludedGroups></properties>
+        </profile>
+        <profile>
+            <id>acquisition-live</id>
+            <properties><surefire.excludedGroups>llm-integration</surefire.excludedGroups></properties>
         </profile>
     </profiles>
 </project>

@@ -3,6 +3,7 @@ package com.careeros.infrastructure.acquisition;
 import com.careeros.application.AcquisitionHttpPorts.DiscoveredLink;
 import com.careeros.application.AcquisitionHttpPorts.SourceDiscoverer;
 import com.careeros.domain.acquisition.RecruitmentSource;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -13,6 +14,8 @@ import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
 
 public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     @Override
     public List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html) {
         Map<String, Object> config = source.configuration();
@@ -22,7 +25,7 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
         String selector = required(config, "linkSelector");
         String allowedHost = source.baseUri().getHost();
         var distinct = new LinkedHashMap<URI, DiscoveredLink>();
-        var document = Jsoup.parse(new String(html, StandardCharsets.UTF_8), pageUri.toString());
+        var document = Jsoup.parse(htmlPayload(html), pageUri.toString());
         for (var element : document.select(selector)) {
             String href = element.attr("href").trim();
             if (href.isEmpty()) continue;
@@ -32,8 +35,8 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
             } catch (IllegalArgumentException exception) {
                 continue;
             }
-            String title = element.text().strip();
-            if (title.isEmpty()) title = element.attr("title").strip();
+            String title = element.attr("title").strip();
+            if (title.isEmpty()) title = element.text().strip();
             if (!"https".equalsIgnoreCase(resolved.getScheme())
                 || !allowedHost.equalsIgnoreCase(resolved.getHost())
                 || !article.matcher(resolved.toString()).matches()
@@ -52,5 +55,17 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
             throw new IllegalArgumentException("Source configuration requires " + key);
         }
         return text;
+    }
+
+    private static String htmlPayload(byte[] content) {
+        String payload = new String(content, StandardCharsets.UTF_8);
+        if (!payload.stripLeading().startsWith("{")) return payload;
+        try {
+            var root = JSON.readTree(payload);
+            String html = root.path("data").path("html").asText();
+            return html.isBlank() ? payload : html;
+        } catch (Exception ignored) {
+            return payload;
+        }
     }
 }

@@ -35,6 +35,22 @@ class StaticHtmlSourceDiscovererTest {
         assertThat(links.getFirst().title()).isEqualTo("省属事业单位公开招聘公告");
     }
 
+    @Test
+    void discoversCurrentJcmsLinksFromUnitApiJson() {
+        byte[] response = """
+            {"success":true,"data":{"html":"<li><a href=\"/col/col1229743683/art/2026/art_99f2702a91aa43edaab3ef5037d8d0ad.html\" title=\"浙江省省属事业单位2026年下半年集中公开招聘人员公告\">招聘公告</a></li>"}}
+            """.getBytes(StandardCharsets.UTF_8);
+
+        var links = new StaticHtmlSourceDiscoverer().discover(source(),
+            URI.create("https://rlsbt.zj.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit"), response);
+
+        assertThat(links).singleElement().satisfies(link -> {
+            assertThat(link.uri()).hasToString(
+                "https://rlsbt.zj.gov.cn/col/col1229743683/art/2026/art_99f2702a91aa43edaab3ef5037d8d0ad.html");
+            assertThat(link.title()).contains("集中公开招聘");
+        });
+    }
+
     private static RecruitmentSource source() {
         Instant now = Instant.parse("2026-08-15T00:00:00Z");
         return new RecruitmentSource(UUID.randomUUID(), "ZJ", "浙江人社",
@@ -42,7 +58,7 @@ class StaticHtmlSourceDiscovererTest {
             URI.create("https://rlsbt.zj.gov.cn/col/col1229743683/index.html"),
             SourceType.OFFICIAL_GOVERNMENT, "浙江", CrawlMode.STATIC_HTML, true,
             "0 10 8 * * *", "Asia/Shanghai", Duration.ofSeconds(1), Map.of(
-                "articleUrlRegex", "^https://rlsbt\\.zj\\.gov\\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[A-Za-z0-9_]+\\.html$",
+                "articleUrlRegex", "^https://rlsbt\\.zj\\.gov\\.cn(?:/col/col[0-9]+)?/art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\\.html$",
                 "linkSelector", "a[href]",
                 "titleIncludeRegex", "招聘|招考|选聘|引进",
                 "titleExcludeRegex", "拟聘|公示|成绩|体检|递补"),

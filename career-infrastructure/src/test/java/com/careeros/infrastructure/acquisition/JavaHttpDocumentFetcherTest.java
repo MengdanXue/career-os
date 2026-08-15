@@ -45,6 +45,15 @@ class JavaHttpDocumentFetcherTest {
         assertThat(result.content()).isEmpty();
     }
 
+    @Test void identifiesRequestsAsXmlHttpRequestsForOfficialJcmsUnitApi() {
+        server.stubFor(get("/unit").withHeader("X-Requested-With", equalTo("XMLHttpRequest"))
+            .willReturn(okJson("{\"success\":true}")));
+
+        var result = fetcher.fetch(request("/unit", null, null, 1024));
+
+        assertThat(result.status()).isEqualTo(200);
+    }
+
     @Test void rejectsRedirectToHostOutsideAllowlist() {
         server.stubFor(get("/notice").willReturn(temporaryRedirect("https://external.example/file.pdf")));
 

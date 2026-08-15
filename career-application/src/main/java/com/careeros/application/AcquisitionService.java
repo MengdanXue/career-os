@@ -108,7 +108,7 @@ public final class AcquisitionService {
         store.saveRun(SourceCrawlRun.running(runId, source.id(), trigger, started));
         Counts counts = new Counts();
         try {
-            FetchedDocument list = fetchTimed(source, request(source, source.entryUri(), null));
+            FetchedDocument list = fetchTimed(source, request(source, listingUri(source), null));
             if (list.status() != 200 || list.content().length == 0) {
                 throw new FetchFailedException("List page did not return content: " + list.status());
             }
@@ -169,7 +169,7 @@ public final class AcquisitionService {
             counts.failed++;
             return new DocumentOutcome(null, response);
         }
-        FetchObservation observation = observation(response);
+        FetchObservation observation = observation(response, link.uri());
         DocumentTransition transition;
         try {
             transition = DocumentTransition.decide(prior.orElse(null), observation, clock.instant());
@@ -237,6 +237,17 @@ public final class AcquisitionService {
             prior == null ? null : prior.lastModified(), Duration.ofSeconds(20), maxDocumentBytes);
     }
 
+    private static URI listingUri(RecruitmentSource source) {
+        Object configured = source.configuration().get("listingApiUri");
+        if (configured == null) return source.entryUri();
+        URI uri = URI.create(configured.toString());
+        if (!"https".equalsIgnoreCase(uri.getScheme())
+            || !source.baseUri().getHost().equalsIgnoreCase(uri.getHost())) {
+            throw new IllegalArgumentException("listingApiUri must be HTTPS on the official source host");
+        }
+        return uri;
+    }
+
     private ProcessDocumentCommand processCommand(
         RecruitmentSource source, DiscoveredLink link, AcquiredDocument parent,
         AcquiredDocument document, byte[] content
@@ -283,11 +294,11 @@ public final class AcquisitionService {
             counts.failed, errorCode, errorMessage);
     }
 
-    private static FetchObservation observation(FetchedDocument response) {
-        if (response.notModified()) return FetchObservation.notModified(response.finalUri(), response.etag(), response.lastModified());
-        if (response.gone()) return FetchObservation.gone(response.finalUri(), response.status());
-        if (response.status() != 200) return FetchObservation.failure(response.finalUri(), response.status());
-        return FetchObservation.ok(response.finalUri(), response.status(), sha256(response.content()),
+    private static FetchObservation observation(FetchedDocument response, URI stableUri) {
+        if (response.notModified()) return FetchObservation.notModified(stableUri, response.etag(), response.lastModified());
+        if (response.gone()) return FetchObservation.gone(stableUri, response.status());
+        if (response.status() != 200) return FetchObservation.failure(stableUri, response.status());
+        return FetchObservation.ok(stableUri, response.status(), sha256(response.content()),
             response.mediaType(), response.etag(), response.lastModified());
     }
 

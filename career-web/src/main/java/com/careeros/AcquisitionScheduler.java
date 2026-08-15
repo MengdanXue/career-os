@@ -7,10 +7,12 @@ import java.time.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(name = "career-os.acquisition.scheduling-enabled", havingValue = "true", matchIfMissing = true)
 final class AcquisitionScheduler {
     private static final Logger LOG = LoggerFactory.getLogger(AcquisitionScheduler.class);
     private final AcquisitionStore store;

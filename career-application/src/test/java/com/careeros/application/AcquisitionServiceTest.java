@@ -30,6 +30,7 @@ class AcquisitionServiceTest {
     private static final Instant NOW = Instant.parse("2026-08-15T00:00:00Z");
     private static final UUID SOURCE_ID = UUID.fromString("01992f09-0000-7000-8000-000000000301");
     private static final URI LIST = URI.create("https://official.example/list.html");
+    private static final URI LIST_API = URI.create("https://official.example/api/list?page=1");
     private static final URI DETAIL = URI.create("https://official.example/art/2026/notice.html");
 
     @Test
@@ -76,6 +77,29 @@ class AcquisitionServiceTest {
         assertThat(fixture.store.documents.values().iterator().next().lastProcessedFingerprint()).isNotNull();
     }
 
+    @Test
+    void redirectTargetDoesNotReplaceTheStableDiscoveredDocumentKey() {
+        Fixture fixture = new Fixture();
+        fixture.fetcher.finalDetailUri = URI.create("https://cdn.official.example/generated/notice.html");
+
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        SourceCrawlRun second = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(fixture.store.documents).containsOnlyKeys(DETAIL);
+        assertThat(fixture.store.changes).extracting(AcquisitionChange::changeType)
+            .containsExactly(ChangeType.ADDED);
+        assertThat(second.unchangedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void usesConfiguredDeterministicListingApiInsteadOfEmptyJcmsShell() {
+        Fixture fixture = new Fixture();
+
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(fixture.fetcher.requested).startsWith(LIST_API);
+    }
+
     private static final class Fixture {
         final InMemoryStore store = new InMemoryStore(source());
         final FakeFetcher fetcher = new FakeFetcher();
@@ -94,15 +118,18 @@ class AcquisitionServiceTest {
         return new RecruitmentSource(SOURCE_ID, "OFFICIAL", "官方事业单位招聘",
             URI.create("https://official.example/"), LIST, SourceType.OFFICIAL_GOVERNMENT,
             "杭州", CrawlMode.STATIC_HTML, true, "0 0 8 * * *", "Asia/Shanghai",
-            Duration.ZERO, Map.of(), null, null, NOW, 0, NOW, NOW);
+            Duration.ZERO, Map.of("listingApiUri", LIST_API.toString()), null, null, NOW, 0, NOW, NOW);
     }
 
     private static final class FakeFetcher implements AcquisitionHttpPorts.DocumentFetcher {
+        URI finalDetailUri = DETAIL;
+        final List<URI> requested = new ArrayList<>();
         byte[] detail = "<html>第一版招聘公告</html>".getBytes(StandardCharsets.UTF_8);
         @Override public FetchedDocument fetch(FetchRequest request) {
-            if (request.uri().equals(LIST)) return new FetchedDocument(LIST, 200, "text/html",
+            requested.add(request.uri());
+            if (request.uri().equals(LIST) || request.uri().equals(LIST_API)) return new FetchedDocument(request.uri(), 200, "text/html",
                 "<html>list</html>".getBytes(StandardCharsets.UTF_8), null, null);
-            return new FetchedDocument(DETAIL, 200, "text/html", detail, null, null);
+            return new FetchedDocument(finalDetailUri, 200, "text/html", detail, null, null);
         }
     }
 

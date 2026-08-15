@@ -50,6 +50,7 @@ career-os:
       model: ${CAREER_OS_AI_MODEL:gpt-5-mini}
       prompt-version: 1.0.0
   acquisition:
+    scheduling-enabled: ${CAREER_OS_ACQUISITION_SCHEDULING_ENABLED:true}
     dispatch-delay-ms: ${CAREER_OS_ACQUISITION_DISPATCH_DELAY_MS:60000}
     dispatch-batch-size: ${CAREER_OS_ACQUISITION_DISPATCH_BATCH_SIZE:20}
     max-document-bytes: 26214400

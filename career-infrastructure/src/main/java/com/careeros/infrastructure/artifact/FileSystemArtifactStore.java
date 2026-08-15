@@ -4,6 +4,7 @@ import com.careeros.application.ExtractionPorts.ArtifactStore;
 import com.careeros.domain.SourceArtifact;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -50,7 +51,7 @@ public final class FileSystemArtifactStore implements ArtifactStore {
                 }
             }
             UUID id = UUID.nameUUIDFromBytes(sha256.getBytes(StandardCharsets.US_ASCII));
-            return new SourceArtifact(id, sha256, mediaType, content.length, target.toString(), capturedAt);
+            return new SourceArtifact(id, sha256, mediaType, content.length, target.toUri().toASCIIString(), capturedAt);
         } catch (IOException exception) {
             throw new IllegalStateException("Could not store source artifact " + sha256, exception);
         }
@@ -59,9 +60,19 @@ public final class FileSystemArtifactStore implements ArtifactStore {
     @Override
     public InputStream open(SourceArtifact artifact) throws IOException {
         Objects.requireNonNull(artifact, "artifact");
-        Path path = Path.of(artifact.storageUri()).toAbsolutePath().normalize();
+        Path path = storagePath(artifact.storageUri()).toAbsolutePath().normalize();
         requireInsideRoot(path);
         return Files.newInputStream(path, StandardOpenOption.READ);
+    }
+
+    private static Path storagePath(String storageUri) {
+        try {
+            URI uri = URI.create(storageUri);
+            if ("file".equalsIgnoreCase(uri.getScheme())) return Path.of(uri);
+        } catch (IllegalArgumentException ignored) {
+            // Phase 1 installations stored native paths; keep them readable during upgrade.
+        }
+        return Path.of(storageUri);
     }
 
     private void requireInsideRoot(Path path) {

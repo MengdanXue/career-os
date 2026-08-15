@@ -36,7 +36,7 @@ class DeterministicParserTest {
 
         assertThat(second.sha256()).isEqualTo(first.sha256());
         assertThat(second.storageUri()).isEqualTo(first.storageUri());
-        assertThat(Path.of(first.storageUri())).exists();
+        assertThat(Path.of(java.net.URI.create(first.storageUri()))).exists();
         assertThat(store.open(first).readAllBytes()).isEqualTo(content);
         assertThat(Files.walk(temporaryDirectory).filter(Files::isRegularFile)).hasSize(1);
     }
