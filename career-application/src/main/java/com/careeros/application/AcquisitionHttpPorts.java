@@ -19,6 +19,10 @@ public final class AcquisitionHttpPorts {
         FetchedDocument fetch(FetchRequest request);
     }
 
+    public interface AttachmentDiscoverer {
+        List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html);
+    }
+
     public record DiscoveredLink(URI uri, String title) {
         public DiscoveredLink {
             Objects.requireNonNull(uri, "uri");

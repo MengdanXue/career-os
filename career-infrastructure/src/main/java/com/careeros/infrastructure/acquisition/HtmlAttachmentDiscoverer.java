@@ -1,0 +1,65 @@
+package com.careeros.infrastructure.acquisition;
+
+import com.careeros.application.AcquisitionHttpPorts.AttachmentDiscoverer;
+import com.careeros.application.AcquisitionHttpPorts.DiscoveredLink;
+import com.careeros.domain.acquisition.RecruitmentSource;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import org.jsoup.Jsoup;
+
+public final class HtmlAttachmentDiscoverer implements AttachmentDiscoverer {
+    @Override
+    public List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html) {
+        Set<String> hosts = allowedHosts(source);
+        String selector = source.configuration().getOrDefault("attachmentSelector", "a[href]").toString();
+        var distinct = new LinkedHashMap<URI, DiscoveredLink>();
+        var document = Jsoup.parse(new String(html, StandardCharsets.UTF_8), pageUri.toString());
+        for (var anchor : document.select(selector)) {
+            String href = anchor.attr("href").trim();
+            if (href.isEmpty()) continue;
+            URI uri;
+            try { uri = CanonicalUri.normalize(pageUri.resolve(href)); }
+            catch (IllegalArgumentException ignored) { continue; }
+            if (!"https".equalsIgnoreCase(uri.getScheme())
+                || !hosts.contains(uri.getHost().toLowerCase(Locale.ROOT))
+                || !supportedCandidate(uri)) continue;
+            String title = anchor.text().strip();
+            if (title.isEmpty()) title = filename(uri);
+            distinct.putIfAbsent(uri, new DiscoveredLink(uri, title));
+        }
+        var result = new ArrayList<>(distinct.values());
+        result.sort(java.util.Comparator.comparing(link -> link.uri().toString()));
+        return List.copyOf(result);
+    }
+
+    private static Set<String> allowedHosts(RecruitmentSource source) {
+        Set<String> result = new LinkedHashSet<>();
+        result.add(source.baseUri().getHost().toLowerCase(Locale.ROOT));
+        result.add(source.entryUri().getHost().toLowerCase(Locale.ROOT));
+        Object configured = source.configuration().get("allowedHosts");
+        if (configured instanceof Collection<?> values) {
+            values.stream().map(Object::toString).map(value -> value.toLowerCase(Locale.ROOT)).forEach(result::add);
+        }
+        return Set.copyOf(result);
+    }
+
+    private static boolean supportedCandidate(URI uri) {
+        String value = uri.toString().toLowerCase(Locale.ROOT);
+        return value.matches(".*\\.(pdf|xls|xlsx)(?:[?#].*)?$")
+            || value.contains("/module/download/") || value.contains("/downfile.");
+    }
+
+    private static String filename(URI uri) {
+        String path = uri.getPath();
+        int slash = path == null ? -1 : path.lastIndexOf('/');
+        String value = slash >= 0 ? path.substring(slash + 1) : path;
+        return value == null || value.isBlank() ? "官方招聘附件" : value;
+    }
+}

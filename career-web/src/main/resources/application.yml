@@ -49,3 +49,12 @@ career-os:
       enabled: ${CAREER_OS_LLM_ENABLED:false}
       model: ${CAREER_OS_AI_MODEL:gpt-5-mini}
       prompt-version: 1.0.0
+  acquisition:
+    dispatch-delay-ms: ${CAREER_OS_ACQUISITION_DISPATCH_DELAY_MS:60000}
+    dispatch-batch-size: ${CAREER_OS_ACQUISITION_DISPATCH_BATCH_SIZE:20}
+    max-document-bytes: 26214400
+    http-contact: ${CAREER_OS_HTTP_CONTACT:}
+    lock-pool-size: ${CAREER_OS_ACQUISITION_LOCK_POOL_SIZE:2}
+    lock-connection-timeout-ms: ${CAREER_OS_ACQUISITION_LOCK_CONNECTION_TIMEOUT_MS:5000}
+    lock-poll-interval-ms: ${CAREER_OS_ACQUISITION_LOCK_POLL_INTERVAL_MS:50}
+    live-smoke-enabled: ${CAREER_OS_ACQUISITION_LIVE_SMOKE_ENABLED:false}

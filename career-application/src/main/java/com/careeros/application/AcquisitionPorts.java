@@ -13,6 +13,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.time.Duration;
+import java.util.function.Supplier;
 
 public final class AcquisitionPorts {
     private AcquisitionPorts() {}
@@ -31,6 +33,15 @@ public final class AcquisitionPorts {
         AcquisitionChange appendChange(AcquisitionChange change);
         PersistedDocumentChange saveDocumentAndChange(AcquiredDocument document, AcquisitionChange change);
         ChangePage findChanges(ChangeCursor cursor, UUID sourceId, Set<ChangeType> types, int size);
+    }
+
+    public interface SourceRunLock {
+        Optional<SourceCrawlRun> tryExecute(
+            String sourceCode, Duration wait, Supplier<SourceCrawlRun> work);
+    }
+
+    public interface NextRunCalculator {
+        Instant next(RecruitmentSource source, Instant after);
     }
 
     public record ChangeCursor(Instant occurredAt, UUID id) {
