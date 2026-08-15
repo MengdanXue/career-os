@@ -70,9 +70,10 @@ class ApplicationConfiguration {
         AcquisitionStore store, SourceRunLock sourceRunLock, SourceDiscoverer sourceDiscoverer,
         DocumentFetcher acquisitionDocumentFetcher, AttachmentDiscoverer attachmentDiscoverer,
         AcquiredDocumentProcessor processor, ArtifactStore artifacts, NextRunCalculator nextRunCalculator,
+        AcquisitionObserver acquisitionObserver,
         Clock clock, @Value("${career-os.acquisition.max-document-bytes:26214400}") long maxDocumentBytes
     ) {
         return new AcquisitionService(store, sourceRunLock, sourceDiscoverer, acquisitionDocumentFetcher,
-            attachmentDiscoverer, processor, artifacts, nextRunCalculator, clock, maxDocumentBytes);
+            attachmentDiscoverer, processor, artifacts, nextRunCalculator, acquisitionObserver, clock, maxDocumentBytes);
     }
 }

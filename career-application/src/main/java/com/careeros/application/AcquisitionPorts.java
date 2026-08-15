@@ -44,6 +44,15 @@ public final class AcquisitionPorts {
         Instant next(RecruitmentSource source, Instant after);
     }
 
+    public interface AcquisitionObserver {
+        AcquisitionObserver NOOP = new AcquisitionObserver() {};
+        default void runCompleted(String sourceCode, SourceCrawlRun run) {}
+        default void document(String sourceCode, String result) {}
+        default void fetch(String sourceCode, Duration duration) {}
+        default void processingFailure(String sourceCode, String mediaType) {}
+        default void lockSkipped(String sourceCode) {}
+    }
+
     public record ChangeCursor(Instant occurredAt, UUID id) {
         public ChangeCursor {
             Objects.requireNonNull(occurredAt, "occurredAt");

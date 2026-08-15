@@ -33,6 +33,7 @@ public final class AcquisitionService {
     private final AcquiredDocumentProcessor processor;
     private final ArtifactStore artifacts;
     private final NextRunCalculator nextRuns;
+    private final AcquisitionObserver observer;
     private final Clock clock;
     private final long maxDocumentBytes;
 
@@ -48,10 +49,28 @@ public final class AcquisitionService {
         Clock clock,
         long maxDocumentBytes
     ) {
+        this(store, lock, discoverer, fetcher, attachments, processor, artifacts, nextRuns,
+            AcquisitionObserver.NOOP, clock, maxDocumentBytes);
+    }
+
+    public AcquisitionService(
+        AcquisitionStore store,
+        SourceRunLock lock,
+        SourceDiscoverer discoverer,
+        DocumentFetcher fetcher,
+        AttachmentDiscoverer attachments,
+        AcquiredDocumentProcessor processor,
+        ArtifactStore artifacts,
+        NextRunCalculator nextRuns,
+        AcquisitionObserver observer,
+        Clock clock,
+        long maxDocumentBytes
+    ) {
         this.store=Objects.requireNonNull(store); this.lock=Objects.requireNonNull(lock);
         this.discoverer=Objects.requireNonNull(discoverer); this.fetcher=Objects.requireNonNull(fetcher);
         this.attachments=Objects.requireNonNull(attachments); this.processor=Objects.requireNonNull(processor);
         this.artifacts=Objects.requireNonNull(artifacts); this.nextRuns=Objects.requireNonNull(nextRuns);
+        this.observer=Objects.requireNonNull(observer);
         this.clock=Objects.requireNonNull(clock);
         if (maxDocumentBytes < 1) throw new IllegalArgumentException("maxDocumentBytes must be positive");
         this.maxDocumentBytes=maxDocumentBytes;
@@ -70,10 +89,17 @@ public final class AcquisitionService {
         } catch (RuntimeException failure) {
             return failedBeforeDiscovery(source, runId, trigger, started, failure);
         }
-        if (executed.isPresent()) return executed.orElseThrow();
+        if (executed.isPresent()) {
+            SourceCrawlRun result = executed.orElseThrow();
+            observer.runCompleted(source.code(), result);
+            return result;
+        }
         SourceCrawlRun skipped = terminal(runId, sourceId, trigger, RunStatus.SKIPPED_LOCKED,
             started, new Counts(), "SOURCE_LOCKED", "Another instance is acquiring this source");
-        return store.saveRun(skipped);
+        SourceCrawlRun saved = store.saveRun(skipped);
+        observer.lockSkipped(source.code());
+        observer.runCompleted(source.code(), saved);
+        return saved;
     }
 
     private SourceCrawlRun executeLocked(
@@ -82,7 +108,7 @@ public final class AcquisitionService {
         store.saveRun(SourceCrawlRun.running(runId, source.id(), trigger, started));
         Counts counts = new Counts();
         try {
-            FetchedDocument list = fetcher.fetch(request(source, source.entryUri(), null));
+            FetchedDocument list = fetchTimed(source, request(source, source.entryUri(), null));
             if (list.status() != 200 || list.content().length == 0) {
                 throw new FetchFailedException("List page did not return content: " + list.status());
             }
@@ -133,9 +159,10 @@ public final class AcquisitionService {
         Optional<AcquiredDocument> prior = store.findDocument(source.id(), link.uri());
         FetchedDocument response;
         try {
-            response = fetcher.fetch(request(source, link.uri(), prior.orElse(null)));
+            response = fetchTimed(source, request(source, link.uri(), prior.orElse(null)));
         } catch (RuntimeException failure) {
             counts.failed++;
+            observer.document(source.code(), "FETCH_FAILED");
             return new DocumentOutcome(prior.orElse(null), null);
         }
         if (prior.isEmpty() && response.gone()) {
@@ -162,10 +189,14 @@ public final class AcquisitionService {
                 byte[] content = response.content().length > 0 ? response.content() : readStored(document);
                 processing = processor.process(processCommand(source, link, parent, document, content));
                 if (processing.successful()) document = document.processed(document.contentFingerprint());
-                else counts.failed++;
+                else {
+                    counts.failed++;
+                    observer.processingFailure(source.code(), document.mediaType());
+                }
             } catch (RuntimeException failure) {
                 counts.failed++;
                 processing = ProcessingResult.failed(failure.getClass().getSimpleName());
+                observer.processingFailure(source.code(), document.mediaType());
             }
         }
         ChangeType changeType = changeType(transition.type());
@@ -186,7 +217,14 @@ public final class AcquisitionService {
             }
         }
         counts.fetched++;
+        observer.document(source.code(), transition.type().name());
         return new DocumentOutcome(document, response);
+    }
+
+    private FetchedDocument fetchTimed(RecruitmentSource source, FetchRequest request) {
+        Instant started = clock.instant();
+        try { return fetcher.fetch(request); }
+        finally { observer.fetch(source.code(), Duration.between(started, clock.instant())); }
     }
 
     private FetchRequest request(RecruitmentSource source, URI uri, AcquiredDocument prior) {
@@ -231,7 +269,9 @@ public final class AcquisitionService {
         SourceCrawlRun run = terminal(runId, source.id(), trigger, RunStatus.FAILED, started, counts,
             failure.getClass().getSimpleName(), safeMessage(failure));
         updateSourceHealth(source, trigger, RunStatus.FAILED);
-        return store.saveRun(run);
+        SourceCrawlRun saved = store.saveRun(run);
+        observer.runCompleted(source.code(), saved);
+        return saved;
     }
 
     private SourceCrawlRun terminal(

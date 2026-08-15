@@ -2,6 +2,7 @@ package com.careeros;
 
 import com.careeros.application.ExtractionExceptions;
 import java.net.URI;
+import java.util.NoSuchElementException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -46,6 +47,10 @@ class ApiExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     ResponseEntity<ProblemDetail> conflict(DataIntegrityViolationException exception) {
         return problem(HttpStatus.CONFLICT, "DATA_CONFLICT", "Data conflict", "The operation violates a database constraint");
+    }
+    @ExceptionHandler(NoSuchElementException.class)
+    ResponseEntity<ProblemDetail> missingAcquisition(NoSuchElementException exception) {
+        return problem(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Resource not found", exception.getMessage());
     }
 
     private static ResponseEntity<ProblemDetail> problem(
