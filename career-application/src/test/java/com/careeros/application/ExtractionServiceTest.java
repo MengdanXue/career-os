@@ -7,8 +7,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.careeros.domain.ReviewPolicy;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
 class ExtractionServiceTest {
@@ -118,6 +121,54 @@ class ExtractionServiceTest {
     }
 
     @Test
+    void failedRunIsPersistedOnlyAfterFingerprintLockIsReleased() {
+        StructuredExtractor failing = new StructuredExtractor() {
+            @Override public ExtractorDescriptor descriptor() {
+                return new ExtractorDescriptor("failing", "1.0.0", "fixture-model", "p1", true);
+            }
+            @Override public ExtractionAttempt extract(
+                com.careeros.domain.ParsedDocument document, ExtractionContext context
+            ) {
+                throw new ExtractionExceptions.InvalidProposalException("model output is invalid");
+            }
+        };
+        AtomicBoolean insideLock = new AtomicBoolean();
+        FingerprintLock lock = new FingerprintLock() {
+            @Override public <T> T execute(String fingerprint, java.util.function.Supplier<T> operation) {
+                insideLock.set(true);
+                try {
+                    return operation.get();
+                } finally {
+                    insideLock.set(false);
+                }
+            }
+        };
+        Fixtures.MemoryExtractionPersistence delegate = new Fixtures.MemoryExtractionPersistence();
+        ExtractionPersistence persistence = new ExtractionPersistence() {
+            @Override public Optional<PersistedExtraction> findByInputFingerprint(String fingerprint) {
+                return delegate.findByInputFingerprint(fingerprint);
+            }
+            @Override public PersistedExtraction save(ExtractionBundle bundle) {
+                return delegate.save(bundle);
+            }
+            @Override public PersistedExtraction saveFailure(FailedExtractionBundle bundle) {
+                assertThat(insideLock).isFalse();
+                return delegate.saveFailure(bundle);
+            }
+            @Override public PersistedExtraction findById(UUID id) {
+                return delegate.findById(id);
+            }
+        };
+        ExtractionService service = service(
+            failing, persistence, new Fixtures.RecordingWriter(),
+            new Fixtures.RecordingUnitOfWork(), lock);
+
+        assertThatThrownBy(() -> service.submit(Fixtures.htmlCommand("<h1>invalid</h1>")))
+            .isInstanceOf(ExtractionExceptions.InvalidProposalException.class);
+        assertThat(delegate.onlyValue().run().status()).isEqualTo(DataQualityStatus.FAILED);
+    }
+
+    @Test
     void findDoesNotMisreportUnexpectedPersistenceFailureAsNotFound() {
         Fixtures.MemoryExtractionPersistence persistence = new Fixtures.MemoryExtractionPersistence();
         IllegalStateException outage = new IllegalStateException("database unavailable");
@@ -131,7 +182,7 @@ class ExtractionServiceTest {
 
     private static ExtractionService service(
         StructuredExtractor extractor,
-        Fixtures.MemoryExtractionPersistence persistence,
+        ExtractionPersistence persistence,
         Fixtures.RecordingWriter writer
     ) {
         return service(extractor, persistence, writer, new Fixtures.RecordingUnitOfWork());
@@ -139,7 +190,7 @@ class ExtractionServiceTest {
 
     private static ExtractionService service(
         StructuredExtractor extractor,
-        Fixtures.MemoryExtractionPersistence persistence,
+        ExtractionPersistence persistence,
         Fixtures.RecordingWriter writer,
         Fixtures.RecordingUnitOfWork unitOfWork
     ) {
@@ -148,7 +199,7 @@ class ExtractionServiceTest {
 
     private static ExtractionService service(
         StructuredExtractor extractor,
-        Fixtures.MemoryExtractionPersistence persistence,
+        ExtractionPersistence persistence,
         Fixtures.RecordingWriter writer,
         Fixtures.RecordingUnitOfWork unitOfWork,
         FingerprintLock fingerprintLock

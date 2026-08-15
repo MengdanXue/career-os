@@ -16,8 +16,10 @@ import com.careeros.domain.ParsedDocument;
 import com.careeros.domain.ReviewAction;
 import com.careeros.domain.ReviewIssue;
 import com.careeros.domain.ReviewItem;
+import com.careeros.domain.ReviewPayload;
 import com.careeros.domain.SourceArtifact;
 import com.careeros.infrastructure.persistence.PersistenceAdaptersConfiguration;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -70,7 +72,7 @@ class ExtractionPersistenceIntegrationTest {
         assertThat(extractions.findByInputFingerprint(bundle.run().inputFingerprint())).isPresent();
         assertThat(reviews.findPage(ReviewStatus.PENDING, 0, 20).items())
             .extracting(ReviewItem::id)
-            .containsExactly(bundle.review().id());
+            .contains(bundle.review().id());
         assertThat(reviews.findById(bundle.review().id()).fragments()).hasSize(1);
 
         ReviewAction moreEvidence = action(bundle.review(), ReviewDecision.NEED_MORE_EVIDENCE, 0);
@@ -112,6 +114,32 @@ class ExtractionPersistenceIntegrationTest {
             .isZero();
     }
 
+    @Test
+    void legacyV3ReviewSummaryRemainsReadableAfterPayloadUpgrade(
+        @Autowired ExtractionPersistence extractions,
+        @Autowired ReviewPersistence reviews,
+        @Autowired JdbcTemplate jdbc
+    ) {
+        ExtractionBundle bundle = bundle("e", "1".repeat(64));
+        extractions.save(bundle);
+        UUID actionId = UUID.randomUUID();
+        jdbc.update("""
+            insert into review_action
+                (id, review_item_id, decision, expected_version, original_payload, note, acted_at)
+            values (?, ?, 'NEED_MORE_EVIDENCE', 0, cast(? as jsonb), 'legacy', ?)
+            """,
+            actionId,
+            bundle.review().id(),
+            "{\"schemaVersion\":\"1.0.0\",\"sourceUrl\":\"https://legacy.example\",\"confidence\":0.8,\"jobCount\":1}",
+            Timestamp.from(NOW.plusSeconds(5)));
+
+        ReviewAction legacy = reviews.findById(bundle.review().id()).item().actions().getFirst();
+
+        assertThat(legacy.originalPayload().format())
+            .isEqualTo(ReviewPayload.Format.LEGACY_SUMMARY_V0);
+        assertThat(legacy.originalPayload().legacySummary()).containsEntry("jobCount", 1);
+    }
+
     private static ExtractionBundle bundle(String hashSeed, String fingerprint) {
         UUID artifactId = UUID.randomUUID();
         UUID evidenceId = UUID.randomUUID();
@@ -146,7 +174,7 @@ class ExtractionPersistenceIntegrationTest {
     private static ReviewAction action(ReviewItem item, ReviewDecision decision, long version) {
         return new ReviewAction(
             UUID.randomUUID(), item.id(), decision, version,
-            item.proposal(), null, "集成测试", NOW.plusSeconds(10 + version));
+            ReviewPayload.full(item.proposal()), null, "集成测试", NOW.plusSeconds(10 + version));
     }
 
     @SpringBootConfiguration

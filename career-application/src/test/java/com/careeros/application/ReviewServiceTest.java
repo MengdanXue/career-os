@@ -32,9 +32,11 @@ class ReviewServiceTest {
         assertThat(result.item().status()).isEqualTo(ReviewStatus.RESOLVED);
         assertThat(harness.writer.calls).isEqualTo(1);
         assertThat(result.item().actions().getFirst().originalPayload())
+            .extracting(com.careeros.domain.ReviewPayload::proposal)
             .extracting(com.careeros.domain.RecruitmentExtractionProposal::jobs)
             .isEqualTo(Fixtures.verifiedProposal().jobs());
         assertThat(result.item().actions().getFirst().correctedPayload())
+            .extracting(com.careeros.domain.ReviewPayload::proposal)
             .extracting(com.careeros.domain.RecruitmentExtractionProposal::jobs)
             .isEqualTo(Fixtures.verifiedProposal().jobs());
     }

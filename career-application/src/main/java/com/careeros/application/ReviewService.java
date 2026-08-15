@@ -6,6 +6,7 @@ import static com.careeros.domain.DomainEnums.ReviewDecision;
 import com.careeros.domain.RecruitmentExtractionProposal;
 import com.careeros.domain.ReviewAction;
 import com.careeros.domain.ReviewIssue;
+import com.careeros.domain.ReviewPayload;
 import com.careeros.domain.DomainEnums.ReviewStatus;
 import java.time.Clock;
 import java.util.List;
@@ -93,7 +94,8 @@ public final class ReviewService {
     ) {
         ReviewAction action = new ReviewAction(
             UUID.randomUUID(), command.reviewId(), command.decision(), command.expectedVersion(),
-            details.item().proposal(), command.correctedPayload(),
+            ReviewPayload.full(details.item().proposal()),
+            command.correctedPayload() == null ? null : ReviewPayload.full(command.correctedPayload()),
             command.note(), clock.instant());
         return new ReviewResolution(details.item(), action, proposal);
     }

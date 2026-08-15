@@ -33,14 +33,16 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
     private final RecruitmentEventJpaRepository events;
     private final OrganizationJpaRepository organizations;
     private final Clock clock;
+    private final PostgresEventSourceLock eventSourceLock;
 
     @Autowired
     public DefaultJobUpsertService(
         JobPostingJpaRepository jobs,
         RecruitmentEventJpaRepository events,
-        OrganizationJpaRepository organizations
+        OrganizationJpaRepository organizations,
+        PostgresEventSourceLock eventSourceLock
     ) {
-        this(jobs, events, organizations, Clock.systemUTC());
+        this(jobs, events, organizations, Clock.systemUTC(), eventSourceLock);
     }
 
     DefaultJobUpsertService(
@@ -49,10 +51,21 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         OrganizationJpaRepository organizations,
         Clock clock
     ) {
+        this(jobs, events, organizations, clock, null);
+    }
+
+    private DefaultJobUpsertService(
+        JobPostingJpaRepository jobs,
+        RecruitmentEventJpaRepository events,
+        OrganizationJpaRepository organizations,
+        Clock clock,
+        PostgresEventSourceLock eventSourceLock
+    ) {
         this.jobs = Objects.requireNonNull(jobs);
         this.events = Objects.requireNonNull(events);
         this.organizations = Objects.requireNonNull(organizations);
         this.clock = Objects.requireNonNull(clock);
+        this.eventSourceLock = eventSourceLock;
     }
 
     @Override
@@ -146,6 +159,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                 "Verified proposal source evidence is not part of the extraction");
         }
         rejectInterpretedFacts(proposal);
+        if (eventSourceLock != null) eventSourceLock.lock(proposal.source().sourceUrl());
         JpaModels.OrganizationEntity organization = organizations.findFirstByName(proposal.organization().name())
             .orElseGet(() -> createOrganization(proposal));
         JpaModels.RecruitmentEventEntity event = events.findFirstBySourceUrl(proposal.source().sourceUrl())

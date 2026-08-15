@@ -10,8 +10,8 @@ public record ReviewAction(
     UUID reviewItemId,
     ReviewDecision decision,
     long expectedVersion,
-    RecruitmentExtractionProposal originalPayload,
-    RecruitmentExtractionProposal correctedPayload,
+    ReviewPayload originalPayload,
+    ReviewPayload correctedPayload,
     String note,
     Instant actedAt
 ) {

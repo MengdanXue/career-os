@@ -42,6 +42,9 @@ career-os:
   extraction:
     max-document-bytes: 26214400
     auto-accept-confidence: 0.90
+    lock-pool-size: ${CAREER_OS_EXTRACTION_LOCK_POOL_SIZE:8}
+    lock-connection-timeout-ms: ${CAREER_OS_EXTRACTION_LOCK_CONNECTION_TIMEOUT_MS:5000}
+    lock-wait-timeout-ms: ${CAREER_OS_EXTRACTION_LOCK_WAIT_TIMEOUT_MS:30000}
     llm:
       enabled: ${CAREER_OS_LLM_ENABLED:false}
       model: ${CAREER_OS_AI_MODEL:gpt-5-mini}

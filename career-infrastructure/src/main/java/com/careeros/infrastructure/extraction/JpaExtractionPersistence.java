@@ -7,11 +7,13 @@ import com.careeros.application.ExtractionExceptions;
 import com.careeros.application.RepositoryPorts;
 import com.careeros.domain.*;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class JpaExtractionPersistence {
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final SourceArtifactJpaRepository artifacts;
     private final RepositoryPorts.EvidenceRecords evidenceRecords;
     private final EvidenceFragmentJpaRepository fragments;
@@ -285,8 +288,9 @@ public class JpaExtractionPersistence {
         entity.reviewItemId = action.reviewItemId();
         entity.decision = action.decision();
         entity.expectedVersion = action.expectedVersion();
-        entity.originalPayload = toJson(action.originalPayload());
-        entity.correctedPayload = action.correctedPayload() == null ? null : toJson(action.correctedPayload());
+        entity.originalPayload = toJson(reviewPayloadValue(action.originalPayload()));
+        entity.correctedPayload = action.correctedPayload() == null
+            ? null : toJson(reviewPayloadValue(action.correctedPayload()));
         entity.note = action.note();
         entity.actedAt = action.actedAt();
         return entity;
@@ -295,7 +299,7 @@ public class JpaExtractionPersistence {
     private ReviewAction toAction(ExtractionJpaModels.ReviewActionEntity entity) {
         return new ReviewAction(
             entity.id, entity.reviewItemId, entity.decision, entity.expectedVersion,
-            toProposal(entity.originalPayload), toNullableProposal(entity.correctedPayload),
+            toReviewPayload(entity.originalPayload), toNullableReviewPayload(entity.correctedPayload),
             entity.note, entity.actedAt);
     }
 
@@ -313,6 +317,26 @@ public class JpaExtractionPersistence {
 
     private RecruitmentExtractionProposal toNullableProposal(JsonNode value) {
         return value == null || value.isNull() ? null : toProposal(value);
+    }
+
+    private ReviewPayload toNullableReviewPayload(JsonNode value) {
+        return value == null || value.isNull() ? null : toReviewPayload(value);
+    }
+
+    private ReviewPayload toReviewPayload(JsonNode value) {
+        if (value != null && value.isObject()
+            && value.has("organization") && value.has("recruitmentEvent") && value.has("jobs")) {
+            return ReviewPayload.full(toProposal(value));
+        }
+        if (value == null || !value.isObject()) {
+            throw new IllegalStateException("Stored review action payload is not an object");
+        }
+        return ReviewPayload.legacy(json.convertValue(value, MAP_TYPE));
+    }
+
+    private static Object reviewPayloadValue(ReviewPayload payload) {
+        return payload.format() == ReviewPayload.Format.FULL_V1
+            ? payload.proposal() : payload.legacySummary();
     }
 
     private static ExtractionExceptions.ReviewConflictException conflict(String message) {

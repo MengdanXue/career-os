@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 public final class ExtractionPorts {
@@ -61,6 +62,19 @@ public final class ExtractionPorts {
 
     public interface FingerprintLock {
         <T> T execute(String fingerprint, Supplier<T> operation);
+
+        default <T> T execute(
+            String fingerprint,
+            Supplier<T> operation,
+            Consumer<RuntimeException> afterRollback
+        ) {
+            try {
+                return execute(fingerprint, operation);
+            } catch (RuntimeException failure) {
+                afterRollback.accept(failure);
+                throw failure;
+            }
+        }
     }
 
     public interface ReviewPersistence {

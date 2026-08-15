@@ -87,8 +87,17 @@ public final class ExtractionService {
         Instant startedAt = clock.instant();
         SourceArtifact artifact = artifactStore.put(content, command.mediaType(), command.capturedAt());
         String fingerprint = inputFingerprint(artifact);
-        return fingerprintLock.execute(fingerprint,
-            () -> submitLocked(command, artifact, fingerprint, startedAt));
+        try {
+            return fingerprintLock.execute(fingerprint,
+                () -> submitLocked(command, artifact, fingerprint, startedAt),
+                failure -> persistProcessingFailure(
+                    command, artifact, fingerprint, startedAt, failure));
+        } catch (ProcessingFailure failure) {
+            for (Throwable suppressed : failure.getSuppressed()) {
+                failure.original().addSuppressed(suppressed);
+            }
+            throw failure.original();
+        }
     }
 
     private ExtractionResult submitLocked(
@@ -111,8 +120,7 @@ public final class ExtractionService {
         try {
             return processNew(command, artifact, fingerprint, startedAt, evidence);
         } catch (RuntimeException failure) {
-            persistFailure(command, artifact, fingerprint, startedAt, evidence, failure);
-            throw failure;
+            throw new ProcessingFailure(evidence, failure);
         }
     }
 
@@ -213,6 +221,24 @@ public final class ExtractionService {
         }
     }
 
+    private void persistProcessingFailure(
+        SubmitExtractionCommand command,
+        SourceArtifact artifact,
+        String fingerprint,
+        Instant startedAt,
+        RuntimeException failure
+    ) {
+        if (!(failure instanceof ProcessingFailure processingFailure)) return;
+        try {
+            if (persistence.findByInputFingerprint(fingerprint).isPresent()) return;
+            persistFailure(
+                command, artifact, fingerprint, startedAt,
+                processingFailure.evidence(), processingFailure.original());
+        } catch (RuntimeException persistenceFailure) {
+            processingFailure.original().addSuppressed(persistenceFailure);
+        }
+    }
+
     private String inputFingerprint(SourceArtifact artifact) {
         ParserDescriptor parserDescriptor = parser.descriptor();
         ExtractorDescriptor extractorDescriptor = extractor.descriptor();
@@ -231,7 +257,7 @@ public final class ExtractionService {
             evidence.id(), evidence.sourceUrl(), evidence.sourceTitle());
         return new com.careeros.domain.RecruitmentExtractionProposal(
             proposal.schemaVersion(), source, proposal.organization(), proposal.recruitmentEvent(),
-            proposal.jobs(), proposal.warnings(), proposal.confidence(), proposal.completeSnapshot());
+            proposal.jobs(), proposal.warnings(), proposal.confidence(), false);
     }
 
     private static ExtractionSourceType sourceType(String mediaType) {
@@ -248,6 +274,25 @@ public final class ExtractionService {
                 .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private static final class ProcessingFailure extends RuntimeException {
+        private final Evidence evidence;
+        private final RuntimeException original;
+
+        private ProcessingFailure(Evidence evidence, RuntimeException original) {
+            super(original);
+            this.evidence = Objects.requireNonNull(evidence);
+            this.original = Objects.requireNonNull(original);
+        }
+
+        private Evidence evidence() {
+            return evidence;
+        }
+
+        private RuntimeException original() {
+            return original;
         }
     }
 }

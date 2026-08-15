@@ -1,14 +1,28 @@
 package com.careeros;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
+import com.careeros.application.ExtractionPorts.DocumentParser;
+import com.careeros.application.ExtractionPorts.ExtractionBundle;
+import com.careeros.application.ExtractionPorts.ExtractionPersistence;
 import com.careeros.infrastructure.persistence.JobPostingJpaRepository;
 import com.careeros.infrastructure.persistence.CandidateProfileJpaRepository;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService;
 import com.careeros.infrastructure.extraction.ExtractionRunJpaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zaxxer.hikari.HikariDataSource;
 import java.io.*;
 import java.time.LocalDate;
 import java.nio.file.*;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Assumptions;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
@@ -22,6 +36,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -32,6 +47,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class CareerOsApplicationTest {
+    @MockitoSpyBean
+    ExtractionPersistence extractionPersistence;
+
+    @MockitoSpyBean
+    DocumentParser documentParser;
+
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
         .withDatabaseName("career_os")
@@ -43,6 +64,7 @@ class CareerOsApplicationTest {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.datasource.hikari.connection-timeout", () -> 1000);
     }
 
     @Test
@@ -102,7 +124,8 @@ class CareerOsApplicationTest {
     @Test
     void requiredModelFailureIsPersistedForDiagnostics(
         @Autowired MockMvc mvc,
-        @Autowired ExtractionRunJpaRepository runs
+        @Autowired ExtractionRunJpaRepository runs,
+        @Autowired HikariDataSource dataSource
     ) throws Exception {
         long failuresBefore = runs.countByStatus(
             com.careeros.domain.DomainEnums.DataQualityStatus.FAILED);
@@ -112,17 +135,95 @@ class CareerOsApplicationTest {
              "requireModel":true}
             """.getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
-        mvc.perform(multipart("/api/v1/extractions")
-                .file(new MockMultipartFile(
-                    "document", "required.html", "text/html",
-                    "<html><body>unique required model failure</body></html>"
-                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)))
-                .file(new MockMultipartFile(
-                    "metadata", "metadata.json", "application/json", metadata)))
-            .andExpect(status().isServiceUnavailable());
+        withSingleConnection(dataSource, () ->
+            mvc.perform(multipart("/api/v1/extractions")
+                    .file(new MockMultipartFile(
+                        "document", "required.html", "text/html",
+                        "<html><body>unique required model failure</body></html>"
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                    .file(new MockMultipartFile(
+                        "metadata", "metadata.json", "application/json", metadata)))
+                .andExpect(status().isServiceUnavailable()));
 
         assertThat(runs.countByStatus(com.careeros.domain.DomainEnums.DataQualityStatus.FAILED))
             .isEqualTo(failuresBefore + 1);
+    }
+
+    @Test
+    void failureAfterBundleFlushRollsBackBeforePersistingDiagnostic(
+        @Autowired MockMvc mvc,
+        @Autowired ExtractionRunJpaRepository runs,
+        @Autowired HikariDataSource dataSource
+    ) throws Exception {
+        long failuresBefore = runs.countByStatus(
+            com.careeros.domain.DomainEnums.DataQualityStatus.FAILED);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new IllegalStateException("forced failure after extraction bundle flush");
+        }).when(extractionPersistence).save(any(ExtractionBundle.class));
+        byte[] metadata = """
+            {"sourceUrl":"https://example.test/post-flush-failure",
+             "sourceTitle":"事务回滚测试","capturedAt":"2026-08-14T15:00:00Z",
+             "requireModel":false}
+            """.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        try {
+            withSingleConnection(dataSource, () ->
+                org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    mvc.perform(multipart("/api/v1/extractions")
+                            .file(new MockMultipartFile(
+                                "document", "post-flush.html", "text/html",
+                                "<html><body>unique post flush failure</body></html>"
+                                    .getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                            .file(new MockMultipartFile(
+                                "metadata", "metadata.json", "application/json", metadata))))
+                    .hasRootCauseMessage("forced failure after extraction bundle flush"));
+        } finally {
+            reset(extractionPersistence);
+        }
+
+        assertThat(runs.countByStatus(com.careeros.domain.DomainEnums.DataQualityStatus.FAILED))
+            .isEqualTo(failuresBefore + 1);
+    }
+
+    @Test
+    void concurrentIdenticalFailuresUseOneParseAndOneFailedRunWithSingleConnection(
+        @Autowired MockMvc mvc,
+        @Autowired ExtractionRunJpaRepository runs,
+        @Autowired HikariDataSource dataSource
+    ) throws Exception {
+        long failuresBefore = runs.countByStatus(
+            com.careeros.domain.DomainEnums.DataQualityStatus.FAILED);
+        clearInvocations(documentParser);
+        byte[] metadata = """
+            {"sourceUrl":"https://example.test/concurrent-model-failure",
+             "sourceTitle":"并发失败去重测试","capturedAt":"2026-08-14T15:00:00Z",
+             "requireModel":true}
+            """.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] html = "<html><body>unique concurrent required model failure</body></html>"
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        withSingleConnection(dataSource, () -> {
+            CountDownLatch start = new CountDownLatch(1);
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                var first = executor.submit(() -> {
+                    start.await();
+                    return submitFailure(mvc, html, metadata);
+                });
+                var second = executor.submit(() -> {
+                    start.await();
+                    return submitFailure(mvc, html, metadata);
+                });
+                start.countDown();
+                assertThat(List.of(first.get(), second.get()))
+                    .containsExactlyInAnyOrder(200, 503);
+            }
+        });
+
+        verify(documentParser, times(1)).parse(any(), any(), any());
+        assertThat(runs.countByStatus(com.careeros.domain.DomainEnums.DataQualityStatus.FAILED))
+            .isEqualTo(failuresBefore + 1);
+        clearInvocations(documentParser);
     }
 
     @Test
@@ -200,4 +301,29 @@ class CareerOsApplicationTest {
         }
     }
     private Path findWorkspaceFile(String relative){Path current=Path.of("").toAbsolutePath();for(int i=0;i<5&&current!=null;i++,current=current.getParent()){Path candidate=current.resolve(relative);if(Files.exists(candidate))return candidate;}return Path.of(relative);}
+
+    private static void withSingleConnection(HikariDataSource dataSource, ThrowingAction action)
+        throws Exception {
+        int originalMaximum = dataSource.getMaximumPoolSize();
+        dataSource.setMaximumPoolSize(1);
+        dataSource.getHikariPoolMXBean().softEvictConnections();
+        try {
+            action.run();
+        } finally {
+            dataSource.setMaximumPoolSize(originalMaximum);
+        }
+    }
+
+    private static int submitFailure(MockMvc mvc, byte[] html, byte[] metadata) throws Exception {
+        return mvc.perform(multipart("/api/v1/extractions")
+                .file(new MockMultipartFile("document", "failure.html", "text/html", html))
+                .file(new MockMultipartFile(
+                    "metadata", "metadata.json", "application/json", metadata)))
+            .andReturn().getResponse().getStatus();
+    }
+
+    @FunctionalInterface
+    private interface ThrowingAction {
+        void run() throws Exception;
+    }
 }
