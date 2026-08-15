@@ -990,7 +990,7 @@ mvn -q -pl career-infrastructure -am -Dtest=MigrationIntegrationTest,ExtractionP
 
 Expected: PostgreSQL 16 creates all 14 tables, constraints/indexes pass, and review action history survives resolution.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add career-infrastructure career-domain
@@ -1394,11 +1394,11 @@ git commit -m "docs: complete phase 2 extraction agent verification"
 - Consumes: the verified local branch and clean worktree.
 - Produces: reviewed commits pushed to a private GitHub repository.
 
-- [ ] **Step 1: Invoke the required review skill**
+- [x] **Step 1: Invoke the required review skill**
 
 Use `requesting-code-review` against the approved design and this plan. Fix Critical/Important findings through `systematic-debugging` and TDD, rerun affected tests, and commit each fix.
 
-- [ ] **Step 2: Invoke completion verification**
+- [x] **Step 2: Invoke completion verification**
 
 Use `verification-before-completion` and rerun:
 
@@ -1410,7 +1410,7 @@ git status --short
 
 Expected: tests pass and only intentionally untracked local data remains ignored.
 
-- [ ] **Step 3: Verify GitHub authentication**
+- [x] **Step 3: Verify GitHub authentication**
 
 ```powershell
 gh auth status
@@ -1418,7 +1418,7 @@ gh auth status
 
 Expected: authenticated GitHub account. If authentication is absent, stop and ask the user to authenticate; do not create a different remote service.
 
-- [ ] **Step 4: Create the private repository and push**
+- [x] **Step 4: Create the private repository and push**
 
 ```powershell
 gh repo create career-os --private --source . --remote origin
@@ -1429,6 +1429,6 @@ Expected: `gh repo view --json nameWithOwner,visibility` reports `PRIVATE`, and 
 
 If `career-os` already exists in the authenticated account, stop and ask the user for the repository name; do not invent a suffix or overwrite an existing remote.
 
-- [ ] **Step 5: Report handoff**
+- [x] **Step 5: Report handoff**
 
 Report repository URL, branch, commit, test totals, real fixtures used, LLM default mode, remaining Phase 3 work, and the fact that no crawler/scheduler/frontend was introduced.
