@@ -6,6 +6,11 @@ import { AppProviders } from '../../app/AppProviders'
 import { OpportunitiesPage } from './OpportunitiesPage'
 
 const candidateId = '01992f09-0000-7000-8000-000000000001'
+const admissionSummary = {
+  total: 2291, raw: 2291, parsed: 0, normalized: 0,
+  reviewRequired: 0, verified: 0, rejected: 0, failed: 0,
+  included: 0, excluded: 0, needsReview: 2291, opportunityReady: 0,
+}
 
 function decision(overrides: Record<string, unknown> = {}) {
   return {
@@ -24,6 +29,14 @@ function page(items: unknown[]) {
   return new Response(JSON.stringify({ items, page: 0, size: 20, total: items.length, disclaimer: '机会决策指数，不是录取概率' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 
+function summary(value = admissionSummary) {
+  return new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
+}
+
+function route(input: RequestInfo | URL, decisions: Response) {
+  return String(input).includes('/api/v1/job-library/summary') ? summary() : decisions
+}
+
 describe('OpportunitiesPage', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/opportunities')
@@ -35,7 +48,7 @@ describe('OpportunitiesPage', () => {
   it('keeps T1, T2, and T3 in separate queues', async () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      return url.includes('tier=T2') ? page([decision({ tier: 'T2', jobTitle: '高校数据平台岗' })]) : page([decision()])
+      return route(input, url.includes('tier=T2') ? page([decision({ tier: 'T2', jobTitle: '高校数据平台岗' })]) : page([decision()]))
     })
     vi.stubGlobal('fetch', fetch)
 
@@ -48,7 +61,7 @@ describe('OpportunitiesPage', () => {
   })
 
   it('shows hard blockers before softer fit scores', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page([decision({ eligibilityStatus: 'INELIGIBLE', tier: 'EXCLUDED', warnings: ['学历不符合公告硬性条件'] })])))
+    vi.stubGlobal('fetch', vi.fn(async input => route(input, page([decision({ eligibilityStatus: 'INELIGIBLE', tier: 'EXCLUDED', warnings: ['学历不符合公告硬性条件'] })]))))
     render(<AppProviders><OpportunitiesPage initialTier="EXCLUDED" /></AppProviders>)
 
     await userEvent.click(await screen.findByRole('button', { name: /查看 信息中心 Java 岗/ }))
@@ -62,7 +75,7 @@ describe('OpportunitiesPage', () => {
     const unknown = decision({
       fit: { score: 62, coveragePercent: 30, dimensions: [{ type: 'RESEARCH_FIT', achievedPoints: 0, maximumPoints: 20, factStatus: 'UNKNOWN', reasonCode: 'MISSING_EVIDENCE', explanation: '公告没有提供研究方向要求', evidenceIds: [] }] },
     })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page([unknown])))
+    vi.stubGlobal('fetch', vi.fn(async input => route(input, page([unknown]))))
     render(<AppProviders><OpportunitiesPage /></AppProviders>)
 
     await userEvent.click(await screen.findByRole('button', { name: /查看 信息中心 Java 岗/ }))
@@ -73,11 +86,21 @@ describe('OpportunitiesPage', () => {
   it('opens a dossier from an agent deep link', async () => {
     const linked = decision()
     window.history.replaceState({}, '', `/opportunities/${linked.jobId}?tier=T1`)
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page([linked])))
+    vi.stubGlobal('fetch', vi.fn(async input => route(input, page([linked]))))
 
     render(<AppProviders><Routes><Route path="/opportunities/:jobId" element={<OpportunitiesPage />} /></Routes></AppProviders>)
 
     expect(await screen.findByText('岗位适配')).toBeInTheDocument()
     expect(screen.getByRole('complementary', { name: '信息中心 Java 岗 岗位档案' })).toBeInTheDocument()
+  })
+
+  it('explains an empty trusted pool instead of implying collection found nothing', async () => {
+    vi.stubGlobal('fetch', vi.fn(async input => route(input, page([]))))
+
+    render(<AppProviders><OpportunitiesPage /></AppProviders>)
+
+    expect(await screen.findByText('目前没有通过证据准入的可信岗位')).toBeInTheDocument()
+    expect(screen.getByText('原始岗位不会自动进入 T1/T2/T3')).toBeInTheDocument()
+    expect(screen.queryByText('这一层暂时没有岗位')).not.toBeInTheDocument()
   })
 })

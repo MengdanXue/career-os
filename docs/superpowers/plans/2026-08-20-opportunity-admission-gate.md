@@ -362,7 +362,7 @@ git commit -m "feat(admission): expose job library readiness summary"
 - Produces: `JobLibrarySummary` TypeScript type with the exact response fields.
 - Produces: update-page inventory and opportunity empty-state copy based on server-authoritative counts.
 
-- [ ] **Step 1: Write failing UI tests**
+- [x] **Step 1: Write failing UI tests**
 
 Add a summary response fixture:
 
@@ -376,7 +376,7 @@ const admissionSummary = {
 
 Assert the Updates page shows `2291 条原始记录`, `0 个可信机会`, and `2291 条等待分类或证据复核`. Assert an empty T1 queue says `目前没有通过证据准入的可信岗位` and `原始岗位不会自动进入 T1/T2/T3` rather than the old generic empty copy.
 
-- [ ] **Step 2: Run Vitest and verify RED**
+- [x] **Step 2: Run Vitest and verify RED**
 
 ```powershell
 Set-Location career-ui
@@ -385,7 +385,7 @@ npm test -- --run src/features/updates/UpdatesPage.test.tsx src/features/opportu
 
 Expected: missing summary request/component and missing truthful copy.
 
-- [ ] **Step 3: Implement typed summary UI**
+- [x] **Step 3: Implement typed summary UI**
 
 Add `queryKeys.jobLibrarySummary`, `getJobLibrarySummary()`, and parallel TanStack queries on Updates and Opportunities pages. `AdmissionSummary` renders four semantic values: total raw library, review-needed, verified, and opportunity-ready. It must label these as data states, not progress percentages.
 
@@ -398,7 +398,7 @@ Change `OpportunityQueue` to accept `admissionSummary?: JobLibrarySummary`. When
 
 When opportunity-ready jobs exist but the selected tier is empty, retain the tier-specific empty message.
 
-- [ ] **Step 4: Run frontend tests and typecheck GREEN**
+- [x] **Step 4: Run frontend tests and typecheck GREEN**
 
 ```powershell
 npm run verify
@@ -406,7 +406,7 @@ npm run verify
 
 Expected: all frontend tests and TypeScript compilation pass.
 
-- [ ] **Step 5: Commit truthful UI**
+- [x] **Step 5: Commit truthful UI**
 
 ```powershell
 Set-Location ..

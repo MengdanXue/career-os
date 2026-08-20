@@ -5,6 +5,11 @@ import { AppProviders } from '../../app/AppProviders'
 import { UpdatesPage } from './UpdatesPage'
 
 const source = { id: '11111111-1111-1111-1111-111111111111', code: 'hangzhou-hrss', name: '杭州市人社局', entryUri: 'https://example.gov.cn', sourceType: 'OFFICIAL_GOVERNMENT', region: '浙江杭州', crawlMode: 'STATIC_HTML', enabled: true, cronExpression: '0 0 8 * * *', timeZone: 'Asia/Shanghai', lastSuccessAt: null, lastFailureAt: null, nextDueAt: null, consecutiveFailureCount: 0 }
+const admissionSummary = {
+  total: 2291, raw: 2291, parsed: 0, normalized: 0,
+  reviewRequired: 0, verified: 0, rejected: 0, failed: 0,
+  included: 0, excluded: 0, needsReview: 2291, opportunityReady: 0,
+}
 const fact = (value: unknown) => ({ value, factStatus: value == null ? 'UNKNOWN' : 'EXPLICIT', confidence: value == null ? 0 : .9, evidenceFragmentIds: [], interpretation: null })
 const proposal = {
   schemaVersion: '1.0.0', source: { evidenceId: '22222222-2222-2222-2222-222222222222', sourceUrl: 'https://example.gov.cn/notice', sourceTitle: '2026 年招聘公告' },
@@ -18,6 +23,7 @@ const review = { id: '33333333-3333-3333-3333-333333333333', extractionRunId: '4
 function json(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': status >= 400 ? 'application/problem+json' : 'application/json' } }) }
 function defaults(input: RequestInfo | URL) {
   const url = String(input)
+  if (url.includes('/api/v1/job-library/summary')) return json(admissionSummary)
   if (url.includes('/api/acquisition/sources')) return json([source])
   if (url.includes('/api/v1/reviews')) return json({ content: [review], page: 0, size: 20, totalElements: 1 })
   throw new Error(`Unexpected request ${url}`)
@@ -25,6 +31,16 @@ function defaults(input: RequestInfo | URL) {
 
 describe('UpdatesPage', () => {
   afterEach(() => vi.unstubAllGlobals())
+
+  it('distinguishes raw records from verified opportunities', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => defaults(input)))
+
+    render(<AppProviders><UpdatesPage /></AppProviders>)
+
+    expect(await screen.findByText('2291 条原始记录')).toBeInTheDocument()
+    expect(screen.getByText('2291 条等待分类或证据复核')).toBeInTheDocument()
+    expect(screen.getByText('0 个可信机会')).toBeInTheDocument()
+  })
 
   it('does not present a partially successful source run as full success', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => init?.method === 'POST' && String(input).includes('/runs')

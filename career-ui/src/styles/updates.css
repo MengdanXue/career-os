@@ -1,3 +1,20 @@
+.admission-summary { margin-top: 34px; border: 1px solid var(--line); border-top: 4px solid var(--caution); background: var(--paper); box-shadow: var(--shadow); }
+.admission-summary > header { display: flex; justify-content: space-between; gap: 24px; align-items: end; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.admission-summary h2 { margin: 6px 0 0; font: 500 28px Georgia, "Songti SC", serif; }
+.admission-summary > header > p { max-width: 240px; margin: 0; color: var(--blocker); font-weight: 700; text-align: right; }
+.admission-pipeline { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); margin: 0; padding: 0; list-style: none; }
+.admission-pipeline::before { position: absolute; top: 31px; right: 12.5%; left: 12.5%; height: 2px; background: var(--line); content: ""; }
+.admission-pipeline li { position: relative; min-width: 0; padding: 20px 20px 22px; border-right: 1px solid var(--line); }
+.admission-pipeline li:last-child { border-right: 0; background: #edf4ef; }
+.admission-marker { position: relative; z-index: 1; display: block; width: 20px; height: 20px; margin: 0 0 18px; border: 4px solid var(--paper); outline: 1px solid var(--line); background: repeating-linear-gradient(135deg, #a9afa9 0 3px, #e2dfd5 3px 6px); }
+[data-stage="review"] .admission-marker { background: var(--caution); }
+[data-stage="verified"] .admission-marker { background: var(--evidence); }
+[data-stage="ready"] .admission-marker { background: var(--eligible); }
+.admission-pipeline small, .admission-pipeline strong, .admission-pipeline p { display: block; }
+.admission-pipeline small { color: var(--muted); font: 700 11px ui-monospace, monospace; letter-spacing: .04em; }
+.admission-pipeline strong { min-height: 48px; margin-top: 8px; font: 600 19px/1.25 Georgia, "Songti SC", serif; }
+.admission-pipeline p { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.admission-rule { margin: 0; padding: 13px 22px; border-top: 1px solid var(--line); color: #53615e; font-size: 12px; }
 .update-section { margin-top: 34px; border-top: 4px solid var(--tide); background: rgba(250,247,239,.6); box-shadow: var(--shadow); }
 .update-section > header { display: flex; justify-content: space-between; gap: 20px; align-items: end; padding: 18px 22px; border-bottom: 1px solid var(--line); }
 .update-section h2 { margin: 6px 0 0; font: 500 27px Georgia, "Songti SC", serif; }
@@ -44,5 +61,5 @@
 .review-actions button { padding: 9px 11px; border: 1px solid var(--tide); background: transparent; color: var(--tide); font-weight: 700; cursor: pointer; }
 .review-actions button:first-child { background: var(--tide); color: #fffaf0; }
 .review-actions button.reject { border-color: var(--blocker); color: var(--blocker); }
-@media (max-width: 900px) { .import-grid, .review-layout { grid-template-columns: 1fr; } .review-queue { border-right: 0; } }
-@media (max-width: 580px) { .source-row { grid-template-columns: 1fr; } .source-row > button { justify-self: start; } .review-dossier { padding: 18px; } .review-dossier dl { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .admission-pipeline { grid-template-columns: 1fr 1fr; } .admission-pipeline::before { display: none; } .admission-pipeline li:nth-child(2) { border-right: 0; } .admission-pipeline li:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .import-grid, .review-layout { grid-template-columns: 1fr; } .review-queue { border-right: 0; } }
+@media (max-width: 580px) { .admission-summary > header { display: block; } .admission-summary > header > p { margin-top: 10px; text-align: left; } .admission-pipeline { grid-template-columns: 1fr; } .admission-pipeline li, .admission-pipeline li:nth-child(2) { border-right: 0; border-bottom: 1px solid var(--line); } .admission-pipeline li:last-child { border-bottom: 0; } .admission-pipeline strong { min-height: 0; } .source-row { grid-template-columns: 1fr; } .source-row > button { justify-self: start; } .review-dossier { padding: 18px; } .review-dossier dl { grid-template-columns: 1fr; } }

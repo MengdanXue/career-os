@@ -1,4 +1,5 @@
 import { requestJson } from '../../api/http'
+import type { JobLibrarySummary } from '../../api/contracts'
 
 export type AcquisitionSource = {
   id: string; code: string; name: string; entryUri: string; sourceType: string; region: string; crawlMode: string;
@@ -28,6 +29,7 @@ export type ReviewItem = { id: string; extractionRunId: string; status: string; 
 export type ReviewPage = { content: ReviewItem[]; page: number; size: number; totalElements: number }
 
 export const listSources = () => requestJson<AcquisitionSource[]>('/api/acquisition/sources')
+export const getJobLibrarySummary = () => requestJson<JobLibrarySummary>('/api/v1/job-library/summary')
 export const findRun = (id: string) => requestJson<AcquisitionRun>(`/api/acquisition/runs/${id}`)
 
 export async function triggerSource(sourceId: string) {

@@ -15,3 +15,18 @@ export type PageResponse<T> = {
   size: number
   total: number
 }
+
+export type JobLibrarySummary = {
+  total: number
+  raw: number
+  parsed: number
+  normalized: number
+  reviewRequired: number
+  verified: number
+  rejected: number
+  failed: number
+  included: number
+  excluded: number
+  needsReview: number
+  opportunityReady: number
+}
