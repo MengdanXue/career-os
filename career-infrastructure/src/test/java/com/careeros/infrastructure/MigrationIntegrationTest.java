@@ -27,7 +27,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(8);
+        assertThat(result.migrationsExecuted).isEqualTo(9);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='master-spec-v1'");
@@ -71,6 +71,95 @@ class MigrationIntegrationTest {
             try (var rows = candidateInputs.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(4); }
             try (var rows = decisionInputKey.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = dimensionFkIndex.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+        }
+    }
+
+    @Test
+    void v9BackfillsLegacyJobsAndResetsAdmissionWhenContentChanges() throws Exception {
+        String schema = "admission_upgrade";
+        UUID eventId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema)
+            .defaultSchema(schema)
+            .target(MigrationVersion.fromVersion("8"))
+            .load()
+            .migrate();
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var searchPath = connection.prepareStatement("set search_path to " + schema);
+             var insertEvent = connection.prepareStatement("""
+                 insert into recruitment_event
+                     (id, title, recruitment_year, event_type, source_url)
+                 values (?, 'legacy-event', 2026, 'PUBLIC_INSTITUTION', 'https://example.gov.cn/event')
+                 """);
+             var insertOrganization = connection.prepareStatement("""
+                 insert into organization (id, name, organization_type)
+                 values (?, 'legacy-organization', 'PUBLIC_INSTITUTION')
+                 """);
+             var insertJob = connection.prepareStatement("""
+                 insert into job_posting
+                     (id, recruitment_event_id, organization_id, title, job_family,
+                      minimum_education, source_url, content_fingerprint)
+                 values (?, ?, ?, 'legacy-job', 'SOFTWARE', 'BACHELOR',
+                         'https://example.gov.cn/job', ?)
+                 """)) {
+            searchPath.execute();
+            insertEvent.setObject(1, eventId);
+            insertEvent.executeUpdate();
+            insertOrganization.setObject(1, organizationId);
+            insertOrganization.executeUpdate();
+            insertJob.setObject(1, jobId);
+            insertJob.setObject(2, eventId);
+            insertJob.setObject(3, organizationId);
+            insertJob.setString(4, "a".repeat(64));
+            insertJob.executeUpdate();
+        }
+
+        Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema)
+            .defaultSchema(schema)
+            .load()
+            .migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var query = connection.prepareStatement("""
+                 select data_quality_status, target_scope_status, reason_codes, human_verified
+                 from admission_upgrade.job_admission where job_posting_id = ?
+                 """);
+             var verify = connection.prepareStatement("""
+                 update admission_upgrade.job_admission
+                 set data_quality_status='VERIFIED', target_scope_status='INCLUDED',
+                     reason_codes='["TARGET_TECHNICAL_ROLE"]'::jsonb, human_verified=true
+                 where job_posting_id = ?
+                 """);
+             var change = connection.prepareStatement("""
+                 update admission_upgrade.job_posting set content_fingerprint = ? where id = ?
+                 """)) {
+            query.setObject(1, jobId);
+            try (var rows = query.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("data_quality_status")).isEqualTo("RAW");
+                assertThat(rows.getString("target_scope_status")).isEqualTo("NEEDS_REVIEW");
+                assertThat(rows.getString("reason_codes")).contains("LEGACY_UNVERIFIED");
+                assertThat(rows.getBoolean("human_verified")).isFalse();
+            }
+            verify.setObject(1, jobId);
+            verify.executeUpdate();
+            change.setString(1, "b".repeat(64));
+            change.setObject(2, jobId);
+            change.executeUpdate();
+            try (var rows = query.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("data_quality_status")).isEqualTo("RAW");
+                assertThat(rows.getString("target_scope_status")).isEqualTo("NEEDS_REVIEW");
+                assertThat(rows.getString("reason_codes")).contains("CONTENT_CHANGED");
+                assertThat(rows.getBoolean("human_verified")).isFalse();
+            }
         }
     }
 

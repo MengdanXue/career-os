@@ -149,7 +149,7 @@ git commit -m "feat(admission): define verified opportunity gate"
 - Produces: `JpaJobAdmissionStore implements JobAdmissions`.
 - Produces: one `job_admission` row per `job_posting` and a database invariant that insert/content change returns the job to review.
 
-- [ ] **Step 1: Write failing migration and store tests**
+- [x] **Step 1: Write failing migration and store tests**
 
 Add a V8-to-V9 upgrade test that creates one legacy `job_posting`, migrates to V9, and asserts:
 
@@ -162,7 +162,7 @@ assertThat(row.getBoolean("human_verified")).isFalse();
 
 Add a persistence test which saves `VERIFIED + INCLUDED`, reloads it, and verifies `summarize().opportunityReady() == 1`.
 
-- [ ] **Step 2: Run the infrastructure tests and verify RED**
+- [x] **Step 2: Run the infrastructure tests and verify RED**
 
 ```powershell
 mvn -pl career-infrastructure -am '-Dtest=MigrationIntegrationTest,JpaJobAdmissionStoreTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
@@ -170,7 +170,7 @@ mvn -pl career-infrastructure -am '-Dtest=MigrationIntegrationTest,JpaJobAdmissi
 
 Expected: migration count and admission persistence assertions fail because V9 and its repository do not exist.
 
-- [ ] **Step 3: Implement V9 and JPA mapping**
+- [x] **Step 3: Implement V9 and JPA mapping**
 
 Create `job_admission` with:
 
@@ -192,7 +192,7 @@ Add an `AFTER INSERT` trigger that creates `RAW / NEEDS_REVIEW / NOT_CLASSIFIED`
 
 Map `reason_codes` with `@JdbcTypeCode(SqlTypes.JSON)` and implement repository count queries. `JpaJobAdmissionStore.summarize()` must return enum-keyed maps and calculate readiness with a repository query for `VERIFIED + INCLUDED` rather than loading all rows.
 
-- [ ] **Step 4: Run migration and persistence tests GREEN**
+- [x] **Step 4: Run migration and persistence tests GREEN**
 
 ```powershell
 mvn -pl career-infrastructure -am '-Dtest=MigrationIntegrationTest,JpaJobAdmissionStoreTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
@@ -200,7 +200,7 @@ mvn -pl career-infrastructure -am '-Dtest=MigrationIntegrationTest,JpaJobAdmissi
 
 Expected: fresh migration, V8 upgrade, trigger, round-trip, and aggregate tests pass.
 
-- [ ] **Step 5: Commit persistence**
+- [x] **Step 5: Commit persistence**
 
 ```powershell
 git add career-infrastructure/src/main/resources/db/migration/V9__job_opportunity_admission.sql career-infrastructure/src/main/java/com/careeros/infrastructure/persistence/JpaModels.java career-infrastructure/src/main/java/com/careeros/infrastructure/persistence/JobAdmissionJpaRepository.java career-infrastructure/src/main/java/com/careeros/infrastructure/persistence/JpaJobAdmissionStore.java career-infrastructure/src/test/java/com/careeros/infrastructure/MigrationIntegrationTest.java career-infrastructure/src/test/java/com/careeros/infrastructure/persistence/JpaJobAdmissionStoreTest.java

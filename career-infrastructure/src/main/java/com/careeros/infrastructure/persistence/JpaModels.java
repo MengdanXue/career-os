@@ -70,6 +70,18 @@ public final class JpaModels {
         protected JobPostingEntity() {}
     }
 
+    @Entity @Table(name = "job_admission")
+    public static class JobAdmissionEntity {
+        @Id @Column(name = "job_posting_id", nullable = false, updatable = false) UUID jobPostingId;
+        @Enumerated(EnumType.STRING) @Column(name = "data_quality_status", nullable = false) DataQualityStatus dataQualityStatus;
+        @Enumerated(EnumType.STRING) @Column(name = "target_scope_status", nullable = false) TargetScopeStatus targetScopeStatus;
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "reason_codes", columnDefinition = "jsonb", nullable = false) Set<JobAdmissionReason> reasonCodes = new LinkedHashSet<>();
+        @Column(name = "evaluator_version", nullable = false) String evaluatorVersion;
+        @Column(name = "assessed_at", nullable = false) Instant assessedAt;
+        @Column(name = "human_verified", nullable = false) boolean humanVerified;
+        protected JobAdmissionEntity() {}
+    }
+
     @Entity @Table(name = "candidate_profile")
     public static class CandidateProfileEntity extends UuidEntity {
         @Column(name = "display_name", nullable = false) String displayName;
