@@ -4,7 +4,10 @@ import static com.careeros.application.DecisionPorts.*;
 import static com.careeros.domain.DomainEnums.*;
 
 import com.careeros.domain.*;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -15,6 +18,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     private final JobContexts jobContexts;
     private final OrganizationStabilityFacts stabilityFacts;
     private final DecisionSnapshots snapshots;
+    private final DecisionInputLock inputLock;
     private final EligibilityEvaluator eligibilityEvaluator;
     private final FitEvaluator fitEvaluator;
     private final StabilityEvaluator stabilityEvaluator;
@@ -25,6 +29,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         JobContexts jobContexts,
         OrganizationStabilityFacts stabilityFacts,
         DecisionSnapshots snapshots,
+        DecisionInputLock inputLock,
         EligibilityEvaluator eligibilityEvaluator,
         FitEvaluator fitEvaluator,
         StabilityEvaluator stabilityEvaluator
@@ -34,6 +39,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         this.jobContexts = Objects.requireNonNull(jobContexts);
         this.stabilityFacts = Objects.requireNonNull(stabilityFacts);
         this.snapshots = Objects.requireNonNull(snapshots);
+        this.inputLock = Objects.requireNonNull(inputLock);
         this.eligibilityEvaluator = Objects.requireNonNull(eligibilityEvaluator);
         this.fitEvaluator = Objects.requireNonNull(fitEvaluator);
         this.stabilityEvaluator = Objects.requireNonNull(stabilityEvaluator);
@@ -43,7 +49,8 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         var candidate = candidate(candidateId);
         var context = context(jobId);
         var input = input(candidate, context);
-        return snapshots.findByInput(input).orElseGet(() -> evaluate(input, candidate, context, now));
+        return inputLock.execute(inputFingerprint(input),
+            () -> snapshots.findByInput(input).orElseGet(() -> evaluate(input, candidate, context, now)));
     }
 
     public DecisionBundle current(UUID candidateId, UUID jobId) {
@@ -66,6 +73,17 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
 
     private static DecisionInputKey input(CandidateProfile candidate, JobContext context) {
         return new DecisionInputKey(candidate.id(), context.job().id(), candidate.profileVersion(), context.contentFingerprint(), VERSION);
+    }
+
+    private static String inputFingerprint(DecisionInputKey input) {
+        String value = input.candidateProfileId() + "\n" + input.jobPostingId() + "\n"
+            + input.profileVersion() + "\n" + input.jobContentFingerprint() + "\n" + input.evaluatorVersion();
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private DecisionBundle evaluate(DecisionInputKey input, CandidateProfile candidate, JobContext context, Instant now) {

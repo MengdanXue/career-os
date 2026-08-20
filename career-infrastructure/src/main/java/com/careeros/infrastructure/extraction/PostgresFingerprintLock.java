@@ -1,6 +1,7 @@
 package com.careeros.infrastructure.extraction;
 
 import com.careeros.application.ExtractionPorts.FingerprintLock;
+import com.careeros.application.DecisionPorts.DecisionInputLock;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import jakarta.annotation.PreDestroy;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Component
-public class PostgresFingerprintLock implements FingerprintLock, AutoCloseable {
+public class PostgresFingerprintLock implements FingerprintLock, DecisionInputLock, AutoCloseable {
     private final HikariDataSource lockDataSource;
     private final TransactionTemplate transactions;
     private final long advisoryLockTimeoutMillis;

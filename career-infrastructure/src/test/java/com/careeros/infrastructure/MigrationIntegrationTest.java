@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.DriverManager;
+import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
@@ -26,7 +27,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(7);
+        assertThat(result.migrationsExecuted).isEqualTo(8);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='master-spec-v1'");
@@ -35,6 +36,7 @@ class MigrationIntegrationTest {
              var eventConstraint = connection.prepareStatement("select count(*) from pg_constraint where conname='uk_recruitment_event_source_url'");
              var acquisitionTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_source','source_crawl_run','acquired_document','acquisition_change')");
              var sourceSeeds = connection.prepareStatement("select count(*) from recruitment_source where enabled and code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION')");
+             var officialAttachmentHosts = connection.prepareStatement("select count(*) from recruitment_source where code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION') and configuration -> 'allowedHosts' @> '[\"zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn\"]'::jsonb");
              var decisionTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('fit_assessment','stability_assessment','decision_assessment','assessment_dimension','organization_stability_fact')");
              var candidateInputs = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='candidate_profile' and column_name in ('skills','research_keywords','target_job_families','preferred_organization_types')");
              var decisionInputKey = connection.prepareStatement("select count(*) from pg_constraint where conname='uk_decision_assessment_input'");
@@ -58,6 +60,10 @@ class MigrationIntegrationTest {
                 assertThat(rows.getInt(1)).isEqualTo(4);
             }
             try (var rows = sourceSeeds.executeQuery()) {
+                rows.next();
+                assertThat(rows.getInt(1)).isEqualTo(2);
+            }
+            try (var rows = officialAttachmentHosts.executeQuery()) {
                 rows.next();
                 assertThat(rows.getInt(1)).isEqualTo(2);
             }
@@ -100,5 +106,65 @@ class MigrationIntegrationTest {
             .load();
         assertThatThrownBy(upgrade::migrate)
             .hasStackTraceContaining("duplicate source_url values exist");
+    }
+
+    @Test
+    void v8PreservesExistingAllowedHostsAndDeduplicatesOfficialStorageHost() throws Exception {
+        String schema = "allowed_hosts_upgrade";
+        Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema)
+            .defaultSchema(schema)
+            .target(MigrationVersion.fromVersion("7"))
+            .load()
+            .migrate();
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var searchPath = connection.prepareStatement("set search_path to " + schema);
+             var update = connection.prepareStatement("""
+                 update recruitment_source
+                 set configuration = jsonb_set(
+                     configuration,
+                     '{allowedHosts}',
+                     '["existing.example", "zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn", "zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn"]'::jsonb,
+                     true
+                 )
+                 where code in ('ZJ_HRSS_INSTITUTION', 'HZ_HRSS_INSTITUTION')
+                 """)) {
+            searchPath.execute();
+            update.executeUpdate();
+        }
+
+        Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema)
+            .defaultSchema(schema)
+            .load()
+            .migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var query = connection.prepareStatement("""
+                 select code, host, count(*)
+                 from allowed_hosts_upgrade.recruitment_source
+                 cross join lateral jsonb_array_elements_text(configuration -> 'allowedHosts') hosts(host)
+                 where code in ('ZJ_HRSS_INSTITUTION', 'HZ_HRSS_INSTITUTION')
+                 group by code, host
+                 order by code, host
+                 """);
+             var rows = query.executeQuery()) {
+            for (String code : List.of("HZ_HRSS_INSTITUTION", "ZJ_HRSS_INSTITUTION")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("code")).isEqualTo(code);
+                assertThat(rows.getString("host")).isEqualTo("existing.example");
+                assertThat(rows.getInt("count")).isEqualTo(1);
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("code")).isEqualTo(code);
+                assertThat(rows.getString("host"))
+                    .isEqualTo("zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn");
+                assertThat(rows.getInt("count")).isEqualTo(1);
+            }
+            assertThat(rows.next()).isFalse();
+        }
     }
 }

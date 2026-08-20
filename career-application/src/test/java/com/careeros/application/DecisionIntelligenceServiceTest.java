@@ -9,6 +9,8 @@ import com.careeros.domain.*;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
 class DecisionIntelligenceServiceTest {
@@ -52,6 +54,27 @@ class DecisionIntelligenceServiceTest {
         assertThat(fixture.snapshots.saved).isZero();
     }
 
+    @Test
+    void concurrentIdenticalAssessmentsShareOneSnapshot() throws Exception {
+        var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
+        fixture.snapshots.slowFind = true;
+
+        try (var executor = Executors.newFixedThreadPool(8)) {
+            var tasks = java.util.stream.IntStream.range(0, 8)
+                .mapToObj(ignored -> (java.util.concurrent.Callable<DecisionBundle>)
+                    () -> fixture.service.assess(fixture.candidateId, fixture.jobId, NOW))
+                .toList();
+            var results = executor.invokeAll(tasks).stream().map(future -> {
+                try { return future.get(); }
+                catch (Exception exception) { throw new RuntimeException(exception); }
+            }).toList();
+
+            assertThat(results).extracting(result -> result.decision().id()).containsOnly(results.getFirst().decision().id());
+        }
+        assertThat(fixture.snapshots.saved).isEqualTo(1);
+        assertThat(fixture.inputLock.keys).allMatch(key -> key.matches("[0-9a-f]{64}"));
+    }
+
     private static Fixture fixture(CandidateProfile initialCandidate) {
         var candidates = new MemoryCandidates();
         candidates.save(initialCandidate);
@@ -64,8 +87,9 @@ class DecisionIntelligenceServiceTest {
         var contexts = new MemoryContexts(new JobContext(job, organization, event, FINGERPRINT, true));
         var snapshots = new MemorySnapshots();
         var assessments = new MemoryEligibility();
-        var service = new DecisionIntelligenceService(candidates, assessments, contexts, organizationId1 -> List.of(), snapshots, new EligibilityEvaluator(), new FitEvaluator(), new StabilityEvaluator());
-        return new Fixture(initialCandidate.id(), jobId, candidates, snapshots, service);
+        var inputLock = new SynchronizedDecisionInputLock();
+        var service = new DecisionIntelligenceService(candidates, assessments, contexts, organizationId1 -> List.of(), snapshots, inputLock, new EligibilityEvaluator(), new FitEvaluator(), new StabilityEvaluator());
+        return new Fixture(initialCandidate.id(), jobId, candidates, snapshots, inputLock, service);
     }
 
     private static CandidateProfile candidate(String version, Set<String> majors) {
@@ -78,7 +102,7 @@ class DecisionIntelligenceServiceTest {
             Set.of("Java", "PostgreSQL"), Set.of("数据治理"), Set.of(JobFamily.SOFTWARE), Set.of(OrganizationType.PUBLIC_INSTITUTION));
     }
 
-    private record Fixture(UUID candidateId, UUID jobId, MemoryCandidates candidates, MemorySnapshots snapshots, DecisionIntelligenceService service) {}
+    private record Fixture(UUID candidateId, UUID jobId, MemoryCandidates candidates, MemorySnapshots snapshots, SynchronizedDecisionInputLock inputLock, DecisionIntelligenceService service) {}
 
     private abstract static class MemoryRepository<T> implements RepositoryPorts.Repository<T> {
         final Map<UUID,T> values = new LinkedHashMap<>();
@@ -99,8 +123,19 @@ class DecisionIntelligenceServiceTest {
     private static final class MemorySnapshots implements DecisionSnapshots {
         private final Map<DecisionInputKey,DecisionBundle> values = new LinkedHashMap<>();
         int saved;
-        public Optional<DecisionBundle> findByInput(DecisionInputKey input) { return Optional.ofNullable(values.get(input)); }
+        boolean slowFind;
+        public Optional<DecisionBundle> findByInput(DecisionInputKey input) {
+            if (slowFind) try { Thread.sleep(20); } catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
+            return Optional.ofNullable(values.get(input));
+        }
         public DecisionBundle save(DecisionInputKey input, DecisionBundle bundle) { saved++; values.put(input, bundle); return bundle; }
         public List<DecisionBundle> findCurrentByCandidate(UUID candidateId) { return values.values().stream().filter(v -> v.decision().candidateProfileId().equals(candidateId)).toList(); }
+    }
+    private static final class SynchronizedDecisionInputLock implements DecisionInputLock {
+        private final Set<String> keys = new LinkedHashSet<>();
+        @Override public synchronized <T> T execute(String inputFingerprint, Supplier<T> operation) {
+            keys.add(inputFingerprint);
+            return operation.get();
+        }
     }
 }

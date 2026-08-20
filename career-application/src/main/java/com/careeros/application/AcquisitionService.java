@@ -117,16 +117,7 @@ public final class AcquisitionService {
             for (DiscoveredLink detail : details) {
                 DocumentOutcome outcome = acquire(source, runId, detail, null, DocumentKind.ANNOUNCEMENT, counts);
                 if (outcome.document == null) continue;
-                List<DiscoveredLink> attachmentLinks;
-                if (outcome.response != null && outcome.response.content().length > 0
-                    && "text/html".equals(outcome.response.mediaType())) {
-                    attachmentLinks = attachments.discover(source, detail.uri(), outcome.response.content());
-                } else {
-                    attachmentLinks = store.findDocuments(source.id()).stream()
-                        .filter(document -> outcome.document.id().equals(document.parentDocumentId()))
-                        .map(document -> new DiscoveredLink(document.canonicalUri(), detail.title()))
-                        .toList();
-                }
+                List<DiscoveredLink> attachmentLinks = discoverAttachments(source, detail, outcome);
                 counts.discovered += attachmentLinks.size();
                 for (DiscoveredLink attachment : attachmentLinks) {
                     acquire(source, runId, attachment, outcome.document, DocumentKind.ATTACHMENT, counts);
@@ -225,6 +216,26 @@ public final class AcquisitionService {
         Instant started = clock.instant();
         try { return fetcher.fetch(request); }
         finally { observer.fetch(source.code(), Duration.between(started, clock.instant())); }
+    }
+
+    private List<DiscoveredLink> discoverAttachments(
+        RecruitmentSource source, DiscoveredLink detail, DocumentOutcome outcome
+    ) {
+        if (outcome.response != null && outcome.response.content().length > 0
+            && isHtml(outcome.response.mediaType())) {
+            return attachments.discover(source, detail.uri(), outcome.response.content());
+        }
+        if (isHtml(outcome.document.mediaType())) {
+            return attachments.discover(source, detail.uri(), readStored(outcome.document));
+        }
+        return store.findDocuments(source.id()).stream()
+            .filter(document -> outcome.document.id().equals(document.parentDocumentId()))
+            .map(document -> new DiscoveredLink(document.canonicalUri(), detail.title()))
+            .toList();
+    }
+
+    private static boolean isHtml(String mediaType) {
+        return "text/html".equals(mediaType) || "application/xhtml+xml".equals(mediaType);
     }
 
     private FetchRequest request(RecruitmentSource source, URI uri, AcquiredDocument prior) {

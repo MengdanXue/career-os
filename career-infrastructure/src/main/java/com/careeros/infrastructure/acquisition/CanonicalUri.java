@@ -1,7 +1,6 @@
 package com.careeros.infrastructure.acquisition;
 
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Locale;
@@ -22,11 +21,13 @@ public final class CanonicalUri {
         String path = input.getRawPath();
         if (path == null || path.isEmpty()) path = "/";
         String query = normalizeQuery(input.getRawQuery());
-        try {
-            return new URI(scheme, input.getRawUserInfo(), host, port, path, query, null).normalize();
-        } catch (URISyntaxException exception) {
-            throw new IllegalArgumentException("Could not canonicalize URI", exception);
-        }
+        StringBuilder normalized = new StringBuilder(scheme).append("://");
+        if (input.getRawUserInfo() != null) normalized.append(input.getRawUserInfo()).append('@');
+        normalized.append(host.contains(":") ? '[' + host + ']' : host);
+        if (port >= 0) normalized.append(':').append(port);
+        normalized.append(path);
+        if (query != null) normalized.append('?').append(query);
+        return URI.create(normalized.toString()).normalize();
     }
 
     private static String normalizeQuery(String rawQuery) {

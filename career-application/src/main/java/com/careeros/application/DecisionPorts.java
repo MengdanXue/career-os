@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 public final class DecisionPorts {
     private DecisionPorts() {}
@@ -47,5 +48,10 @@ public final class DecisionPorts {
     @FunctionalInterface
     public interface DecisionAssessor {
         DecisionBundle assess(UUID candidateId, UUID jobId, java.time.Instant now);
+    }
+
+    @FunctionalInterface
+    public interface DecisionInputLock {
+        <T> T execute(String inputFingerprint, Supplier<T> operation);
     }
 }

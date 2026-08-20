@@ -24,6 +24,7 @@ class HtmlAttachmentDiscovererTest {
               <a href="https://external.example/jobs.xlsx">外部转载</a>
               <a href="/files/readme.docx">说明</a>
               <a href="/files/jobs.xlsx">招聘计划表</a>
+              <a href="/api-gateway/jpaas-web-server/front/document/download?fileUrl=token%2Fvalue%3D&amp;fileName=%E8%AE%A1%E5%88%92%E8%A1%A8.xlsx">政务网招聘计划表</a>
             </body></html>
             """.getBytes(StandardCharsets.UTF_8);
 
@@ -31,6 +32,7 @@ class HtmlAttachmentDiscovererTest {
             URI.create("https://rlsbt.zj.gov.cn/art/2026/3/17/notice.html"), html);
 
         assertThat(links).extracting(link -> link.uri().toString()).containsExactly(
+            "https://rlsbt.zj.gov.cn/api-gateway/jpaas-web-server/front/document/download?fileName=%E8%AE%A1%E5%88%92%E8%A1%A8.xlsx&fileUrl=token%2Fvalue%3D",
             "https://rlsbt.zj.gov.cn/files/jobs.xlsx",
             "https://zjjcmspublic.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn/files/guide.pdf");
     }

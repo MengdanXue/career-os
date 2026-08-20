@@ -53,7 +53,23 @@ public final class HtmlAttachmentDiscoverer implements AttachmentDiscoverer {
     private static boolean supportedCandidate(URI uri) {
         String value = uri.toString().toLowerCase(Locale.ROOT);
         return value.matches(".*\\.(pdf|xls|xlsx)(?:[?#].*)?$")
-            || value.contains("/module/download/") || value.contains("/downfile.");
+            || value.contains("/module/download/") || value.contains("/downfile.")
+            || downloadFilenameIsSupported(uri);
+    }
+
+    private static boolean downloadFilenameIsSupported(URI uri) {
+        String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(Locale.ROOT);
+        if (!path.endsWith("/document/download")) return false;
+        String query = uri.getRawQuery();
+        if (query == null) return false;
+        for (String part : query.split("&")) {
+            String[] pair = part.split("=", 2);
+            if (pair.length == 2 && pair[0].equalsIgnoreCase("fileName")) {
+                String filename = pair[1].toLowerCase(Locale.ROOT);
+                return filename.endsWith(".pdf") || filename.endsWith(".xls") || filename.endsWith(".xlsx");
+            }
+        }
+        return false;
     }
 
     private static String filename(URI uri) {

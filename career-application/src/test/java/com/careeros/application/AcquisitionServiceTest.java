@@ -32,6 +32,7 @@ class AcquisitionServiceTest {
     private static final URI LIST = URI.create("https://official.example/list.html");
     private static final URI LIST_API = URI.create("https://official.example/api/list?page=1");
     private static final URI DETAIL = URI.create("https://official.example/art/2026/notice.html");
+    private static final URI ATTACHMENT = URI.create("https://official.example/document/download?fileName=jobs.xlsx&fileUrl=token%2Fvalue%3D");
 
     @Test
     void identicalSecondRunDoesNotCreateAnotherChangeOrProcessingCall() {
@@ -100,16 +101,46 @@ class AcquisitionServiceTest {
         assertThat(fixture.fetcher.requested).startsWith(LIST_API);
     }
 
+    @Test
+    void discoversNewAttachmentRulesFromStoredHtmlAfterNotModifiedResponse() {
+        Fixture fixture = new Fixture();
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.attachments.links = List.of(new DiscoveredLink(ATTACHMENT, "招聘计划表"));
+        fixture.fetcher.detailNotModified = true;
+
+        SourceCrawlRun rerun = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(rerun.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(fixture.fetcher.requested).contains(ATTACHMENT);
+        assertThat(fixture.store.documents).containsKeys(DETAIL, ATTACHMENT);
+    }
+
+    @Test
+    void discoversNewAttachmentRulesFromStoredXhtmlAfterNotModifiedResponse() {
+        Fixture fixture = new Fixture();
+        fixture.fetcher.detailMediaType = "application/xhtml+xml";
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.attachments.links = List.of(new DiscoveredLink(ATTACHMENT, "招聘计划表"));
+        fixture.fetcher.detailNotModified = true;
+
+        SourceCrawlRun rerun = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(rerun.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(fixture.fetcher.requested).contains(ATTACHMENT);
+        assertThat(fixture.store.documents).containsKeys(DETAIL, ATTACHMENT);
+    }
+
     private static final class Fixture {
         final InMemoryStore store = new InMemoryStore(source());
         final FakeFetcher fetcher = new FakeFetcher();
+        final FakeAttachmentDiscoverer attachments = new FakeAttachmentDiscoverer();
         final FakeProcessor processor = new FakeProcessor();
         final MemoryArtifacts artifacts = new MemoryArtifacts();
         final AcquisitionService service = new AcquisitionService(store,
             (code, wait, work) -> Optional.of(work.get()),
             (source, page, html) -> List.of(new DiscoveredLink(DETAIL, "2026年公开招聘公告")),
             fetcher,
-            (source, page, html) -> List.of(), processor, artifacts,
+            attachments, processor, artifacts,
             (source, after) -> after.plus(Duration.ofDays(1)), Clock.fixed(NOW, ZoneOffset.UTC),
             26_214_400);
     }
@@ -125,12 +156,22 @@ class AcquisitionServiceTest {
         URI finalDetailUri = DETAIL;
         final List<URI> requested = new ArrayList<>();
         byte[] detail = "<html>第一版招聘公告</html>".getBytes(StandardCharsets.UTF_8);
+        String detailMediaType = "text/html";
+        boolean detailNotModified;
         @Override public FetchedDocument fetch(FetchRequest request) {
             requested.add(request.uri());
             if (request.uri().equals(LIST) || request.uri().equals(LIST_API)) return new FetchedDocument(request.uri(), 200, "text/html",
                 "<html>list</html>".getBytes(StandardCharsets.UTF_8), null, null);
-            return new FetchedDocument(finalDetailUri, 200, "text/html", detail, null, null);
+            if (request.uri().equals(DETAIL) && detailNotModified) return new FetchedDocument(DETAIL, 304, null, new byte[0], null, null);
+            if (request.uri().equals(ATTACHMENT)) return new FetchedDocument(ATTACHMENT, 200,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "workbook".getBytes(StandardCharsets.UTF_8), null, null);
+            return new FetchedDocument(finalDetailUri, 200, detailMediaType, detail, null, null);
         }
+    }
+
+    private static final class FakeAttachmentDiscoverer implements AcquisitionHttpPorts.AttachmentDiscoverer {
+        List<DiscoveredLink> links = List.of();
+        @Override public List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html) { return links; }
     }
 
     private static final class FakeProcessor implements AcquiredDocumentProcessor {
