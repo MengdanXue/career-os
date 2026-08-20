@@ -4,6 +4,7 @@ import { App } from './App'
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/components.css'
+import './styles/profile.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

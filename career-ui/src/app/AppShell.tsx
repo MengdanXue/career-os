@@ -13,7 +13,7 @@ export function AppShell() {
       <header className="product-header">
         <NavLink className="product-mark" to="/" aria-label="Career OS 首页">
           <span className="product-monogram" aria-hidden="true">C</span>
-          <span><strong>Career OS</strong><small>稳定技术岗位决策台</small></span>
+          <span><strong role="heading" aria-level={1}>Career OS</strong><small>稳定技术岗位决策台</small></span>
         </NavLink>
         <p className="source-status"><span aria-hidden="true" /> 官方岗位数据 · 本地运行</p>
       </header>

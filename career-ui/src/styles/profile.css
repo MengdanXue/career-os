@@ -1,0 +1,26 @@
+.page-frame { width: min(1120px, calc(100% - 40px)); margin: 0 auto; padding: clamp(42px, 7vw, 82px) 0 120px; }
+.page-frame h1 { max-width: 760px; margin: 0; font: 500 clamp(38px, 6vw, 68px)/1 Georgia, "Songti SC", serif; letter-spacing: -.035em; }
+.page-intro { max-width: 720px; margin: 22px 0 40px; color: var(--muted); font-size: 17px; line-height: 1.75; }
+.profile-form { max-width: 900px; padding: 30px; border-top: 4px solid var(--tide); background: var(--paper); box-shadow: var(--shadow); }
+.profile-form fieldset { margin: 0 0 30px; padding: 0 0 28px; border: 0; border-bottom: 1px solid var(--line); }
+.profile-form legend { margin-bottom: 18px; color: var(--caution); font: 700 12px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
+.profile-form label { display: grid; gap: 7px; margin-bottom: 18px; color: #34413e; font-weight: 650; }
+.profile-form input, .profile-form select { width: 100%; padding: 11px 12px; border: 1px solid #aaa79d; border-radius: 0; background: #fffefa; color: var(--archive); font: inherit; }
+.profile-form input:focus, .profile-form select:focus { outline: 3px solid rgba(42, 128, 107, .2); border-color: var(--evidence); }
+.profile-form small { color: var(--muted); font-weight: 400; line-height: 1.5; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
+.check-row { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.check-row label { display: flex; align-items: center; gap: 7px; margin: 0; font-weight: 500; }
+.check-row input { width: auto; }
+.form-error { margin: 0 0 18px; padding: 12px 14px; border-left: 4px solid var(--blocker); background: #f8e9e6; color: #7f342c; }
+.primary-action, .secondary-action { min-height: 44px; padding: 10px 18px; border: 1px solid var(--tide); font: 700 14px inherit; cursor: pointer; }
+.primary-action { background: var(--tide); color: #fffaf0; }
+.secondary-action { background: transparent; color: var(--tide); }
+.profile-confirmed { max-width: 850px; padding: 34px; border-top: 4px solid var(--eligible); background: var(--paper); box-shadow: var(--shadow); }
+.profile-confirmed > p:not(.eyebrow) { color: var(--muted); font-size: 18px; }
+.profile-confirmed dl { display: grid; grid-template-columns: repeat(3, 1fr); margin: 30px 0; border-block: 1px solid var(--line); }
+.profile-confirmed dl div { padding: 18px; border-right: 1px solid var(--line); }
+.profile-confirmed dl div:last-child { border-right: 0; }
+.profile-confirmed dt { color: var(--muted); font-size: 12px; }
+.profile-confirmed dd { margin: 7px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 680px) { .form-grid, .profile-confirmed dl { grid-template-columns: 1fr; } .profile-form { padding: 22px 18px; } .profile-confirmed dl div { border-right: 0; border-bottom: 1px solid var(--line); } }
