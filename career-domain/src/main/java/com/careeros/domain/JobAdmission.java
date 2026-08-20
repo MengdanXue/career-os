@@ -8,6 +8,7 @@ import static com.careeros.domain.DomainEnums.TargetScopeStatus.NEEDS_REVIEW;
 import com.careeros.domain.DomainEnums.DataQualityStatus;
 import com.careeros.domain.DomainEnums.JobAdmissionReason;
 import com.careeros.domain.DomainEnums.TargetScopeStatus;
+import com.careeros.domain.DomainEnums.EmploymentType;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Set;
@@ -39,5 +40,11 @@ public record JobAdmission(
 
     public boolean admitted() {
         return dataQualityStatus == VERIFIED && targetScopeStatus == INCLUDED;
+    }
+
+    public boolean admits(JobPosting job) {
+        Objects.requireNonNull(job, "job");
+        return admitted() && job.id().equals(jobPostingId)
+            && job.employmentType() != EmploymentType.UNKNOWN;
     }
 }

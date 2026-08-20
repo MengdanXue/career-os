@@ -31,9 +31,26 @@ class JobAdmissionTest {
         assertThat(value.admitted()).isFalse();
     }
 
+    @Test
+    void decisionReadinessAlsoRequiresVerifiedEmploymentIdentity() {
+        JobAdmission admission = admission(DataQualityStatus.VERIFIED, TargetScopeStatus.INCLUDED);
+        JobPosting known = job(EmploymentType.ESTABLISHMENT);
+        JobPosting unknown = job(EmploymentType.UNKNOWN);
+
+        assertThat(admission.admits(known)).isTrue();
+        assertThat(admission.admits(unknown)).isFalse();
+    }
+
     private static JobAdmission admission(DataQualityStatus quality, TargetScopeStatus scope) {
         return new JobAdmission(
             JOB_ID, quality, scope, Set.of(JobAdmissionReason.TARGET_TECHNICAL_ROLE),
             "admission-v1", NOW, true);
+    }
+
+    private static JobPosting job(EmploymentType employmentType) {
+        return new JobPosting(JOB_ID, UUID.randomUUID(), UUID.randomUUID(), "A01", "信息岗",
+            JobFamily.INFORMATION_SYSTEMS, employmentType, "杭州", 1, EducationLevel.BACHELOR,
+            Set.of(), Set.of(), null, null, null, Set.of(), null,
+            "https://example.gov.cn/job", java.util.List.of());
     }
 }

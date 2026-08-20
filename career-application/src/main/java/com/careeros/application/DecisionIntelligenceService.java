@@ -51,20 +51,23 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
 
     public DecisionBundle assess(UUID candidateId, UUID jobId, Instant now) {
         var candidate = candidate(candidateId);
-        var context = context(jobId);
-        requireAdmitted(jobId);
-        var input = input(candidate, context);
-        return inputLock.execute(inputFingerprint(input),
-            () -> snapshots.findByInput(input).orElseGet(() -> evaluate(input, candidate, context, now)));
+        return inputLock.execute(lockFingerprint(candidateId, jobId), () -> {
+            var context = lockedContext(jobId);
+            requireDecisionReady(jobId, context);
+            var input = input(candidate, context);
+            return snapshots.findByInput(input).orElseGet(() -> evaluate(input, candidate, context, now));
+        });
     }
 
     public DecisionBundle current(UUID candidateId, UUID jobId) {
         var candidate = candidate(candidateId);
-        var context = context(jobId);
-        requireAdmitted(jobId);
-        return snapshots.findByInput(input(candidate, context))
-            .orElseThrow(() -> new DecisionExceptions.DecisionNotFoundException(
-                "Decision not found for the current candidate and job versions"));
+        return inputLock.execute(lockFingerprint(candidateId, jobId), () -> {
+            var context = lockedContext(jobId);
+            requireDecisionReady(jobId, context);
+            return snapshots.findByInput(input(candidate, context))
+                .orElseThrow(() -> new DecisionExceptions.DecisionNotFoundException(
+                    "Decision not found for the current candidate and job versions"));
+        });
     }
 
     private CandidateProfile candidate(UUID candidateId) {
@@ -72,14 +75,20 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
             .orElseThrow(() -> new DecisionExceptions.CandidateNotFoundException("Candidate not found: " + candidateId));
     }
 
-    private JobContext context(UUID jobId) {
-        return jobContexts.findByJobId(jobId)
+    private JobContext lockedContext(UUID jobId) {
+        return jobContexts.findByJobIdForUpdate(jobId)
             .orElseThrow(() -> new DecisionExceptions.JobNotFoundException("Job not found: " + jobId));
     }
 
-    private void requireAdmitted(UUID jobId) {
-        if (admissions.findByJobId(jobId).map(value -> value.admitted()).orElse(false)) {
+    private void requireDecisionReady(UUID jobId, JobContext context) {
+        var admission = admissions.findByJobIdForUpdate(jobId);
+        if (admission.map(value -> value.admits(context.job())).orElse(false)) {
             return;
+        }
+        if (context.job().employmentType() == EmploymentType.UNKNOWN
+            && admission.map(JobAdmission::admitted).orElse(false)) {
+            throw new DecisionExceptions.JobNotAdmittedException(
+                "Job employment identity has not been verified: " + jobId);
         }
         throw new DecisionExceptions.JobNotAdmittedException(
             "Job has not passed evidence admission: " + jobId);
@@ -89,9 +98,8 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         return new DecisionInputKey(candidate.id(), context.job().id(), candidate.profileVersion(), context.contentFingerprint(), VERSION);
     }
 
-    private static String inputFingerprint(DecisionInputKey input) {
-        String value = input.candidateProfileId() + "\n" + input.jobPostingId() + "\n"
-            + input.profileVersion() + "\n" + input.jobContentFingerprint() + "\n" + input.evaluatorVersion();
+    private static String lockFingerprint(UUID candidateId, UUID jobId) {
+        String value = candidateId + "\n" + jobId;
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                 .digest(value.getBytes(StandardCharsets.UTF_8)));

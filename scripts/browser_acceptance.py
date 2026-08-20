@@ -39,12 +39,19 @@ def main() -> None:
         page.get_by_role("link", name="机会池", exact=True).click()
         page.wait_for_load_state("networkidle")
         page.get_by_role("heading", name="机会池", exact=True).wait_for()
-        checkpoints.append("机会池可从主导航打开")
+        page.get_by_text("目前没有通过证据准入的可信岗位", exact=True).wait_for()
+        page.get_by_text("原始岗位不会自动进入 T1/T2/T3", exact=True).wait_for()
+        page.screenshot(path=OUTPUT_DIR / "opportunities-admission-desktop.png", full_page=True)
+        checkpoints.append("机会池只展示可信岗位，历史原始记录未被归入 T3")
 
         page.get_by_role("link", name="更新岗位库", exact=True).click()
         page.wait_for_load_state("networkidle")
         page.get_by_role("heading", name="更新岗位库", exact=True).wait_for()
-        checkpoints.append("官方源、导入和复核工作台可打开")
+        page.get_by_role("heading", name="岗位怎样进入机会池", exact=True).wait_for()
+        page.get_by_text("2291 条原始记录", exact=True).wait_for()
+        page.get_by_text("2291 条等待分类或证据复核", exact=True).wait_for()
+        page.get_by_text("0 个可信机会", exact=True).wait_for()
+        checkpoints.append("更新岗位库明确展示原始、待复核与可信机会数量")
 
         page.get_by_role("button", name="打开 Career OS 决策助手").click()
         page.get_by_role("button", name="本周最值得准备什么？").click()
@@ -73,6 +80,7 @@ def main() -> None:
 
     report = {"baseUrl": BASE_URL, "checkpoints": checkpoints, "screenshots": [
         str(OUTPUT_DIR / "profile-desktop.png"),
+        str(OUTPUT_DIR / "opportunities-admission-desktop.png"),
         str(OUTPUT_DIR / "updates-agent-desktop.png"),
         str(OUTPUT_DIR / "today-mobile.png"),
     ]}

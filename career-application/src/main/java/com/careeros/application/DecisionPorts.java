@@ -31,6 +31,7 @@ public final class DecisionPorts {
 
     public interface JobContexts {
         Optional<JobContext> findByJobId(UUID id);
+        default Optional<JobContext> findByJobIdForUpdate(UUID id) { return findByJobId(id); }
         List<JobContext> findActive();
     }
 

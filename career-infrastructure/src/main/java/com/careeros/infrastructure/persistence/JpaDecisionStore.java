@@ -33,6 +33,7 @@ public class JpaDecisionStore implements JobContexts, OrganizationStabilityFacts
     }
 
     @Override public Optional<JobContext> findByJobId(UUID id) { return jobs.findById(id).map(this::context); }
+    @Override public Optional<JobContext> findByJobIdForUpdate(UUID id) { return jobs.findByIdForDecision(id).map(this::context); }
     @Override public List<JobContext> findActive() { return jobs.findByActiveTrue().stream().map(this::context).toList(); }
 
     @Override public List<OrganizationStabilityFact> findByOrganizationId(UUID organizationId) {

@@ -52,10 +52,14 @@ class CareerMvpController {
     @PutMapping("/candidates/{id}") CandidateProfile updateCandidate(@PathVariable("id") UUID id,@RequestBody CandidateRequest request) { required(candidates.findById(id),"CandidateProfile",id); return candidates.save(request.toDomain(id)); }
     @DeleteMapping("/candidates/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteCandidate(@PathVariable("id") UUID id) { required(candidates.findById(id),"CandidateProfile",id); candidates.deleteById(id); }
 
-    @PostMapping("/eligibility-assessments") CareerDecisionService.DecisionResult assess(@RequestBody AssessmentRequest request) { return decisions.assess(request.candidateId(),request.jobId(),Instant.now()); }
-    @GetMapping("/opportunities") List<Opportunity> opportunities() { return opportunities.findAll(); }
+    @PostMapping("/eligibility-assessments") void assess(@RequestBody AssessmentRequest request) {
+        throw new ResponseStatusException(HttpStatus.GONE,
+            "Legacy assessment endpoint is disabled; use /candidates/{candidateId}/job-decisions/{jobId}");
+    }
+    @GetMapping("/opportunities") List<Opportunity> opportunities() { return decisions.visibleOpportunities(); }
     @PatchMapping("/opportunities/{id}/status") Opportunity updateOpportunityStatus(@PathVariable("id") UUID id,@RequestBody OpportunityStatusRequest request) {
         var current=required(opportunities.findById(id),"Opportunity",id);
+        decisions.requireDecisionReady(current.jobPostingId());
         return opportunities.save(new Opportunity(current.id(),current.candidateProfileId(),current.jobPostingId(),current.eligibilityAssessmentId(),request.status(),current.matchScore(),request.decisionNote()==null?current.decisionNote():request.decisionNote(),current.createdAt(),Instant.now()));
     }
 

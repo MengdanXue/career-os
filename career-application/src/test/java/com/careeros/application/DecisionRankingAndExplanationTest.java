@@ -51,6 +51,21 @@ class DecisionRankingAndExplanationTest {
     }
 
     @Test
+    void rankingDoesNotTreatUnknownEmploymentIdentityAsT3() {
+        var unknown = bundle(OpportunityTier.T3, EligibilityStatus.ELIGIBLE, 99, "用工身份未知", LocalDate.of(2026, 9, 1), EmploymentType.UNKNOWN);
+        var contexts = new Contexts(List.of(unknown.jobContext()));
+        var assessed = new ArrayList<UUID>();
+
+        var page = new DecisionRankingService(contexts, admissionsFor(contexts.values), (candidateId, jobId, now) -> {
+            assessed.add(jobId);
+            return unknown;
+        }).rank(CANDIDATE_ID, new DecisionRankingService.RankingQuery(null, null, null, 0, 10, false), NOW);
+
+        assertThat(page.items()).isEmpty();
+        assertThat(assessed).isEmpty();
+    }
+
+    @Test
     void deterministicExplanationIncludesUnknownWarningAndNeverCallsItProbability() {
         var value = bundle(OpportunityTier.T1, EligibilityStatus.ELIGIBLE, 70, "信息中心", LocalDate.of(2026, 9, 1));
 
@@ -75,9 +90,13 @@ class DecisionRankingAndExplanationTest {
     }
 
     private static DecisionBundle bundle(OpportunityTier tier, EligibilityStatus eligibilityStatus, int fitScore, String title, LocalDate deadline) {
+        return bundle(tier, eligibilityStatus, fitScore, title, deadline, EmploymentType.ESTABLISHMENT);
+    }
+
+    private static DecisionBundle bundle(OpportunityTier tier, EligibilityStatus eligibilityStatus, int fitScore, String title, LocalDate deadline, EmploymentType employmentType) {
         UUID jobId = UUID.randomUUID(); UUID eventId = UUID.randomUUID(); UUID organizationId = UUID.randomUUID();
         UUID eligibilityId = UUID.randomUUID(); UUID fitId = UUID.randomUUID(); UUID stabilityId = UUID.randomUUID();
-        var job = new JobPosting(jobId, eventId, organizationId, "A", title, JobFamily.INFORMATION_SYSTEMS, EmploymentType.ESTABLISHMENT,
+        var job = new JobPosting(jobId, eventId, organizationId, "A", title, JobFamily.INFORMATION_SYSTEMS, employmentType,
             "杭州", 1, EducationLevel.BACHELOR, Set.of(), Set.of(), null, null, null, Set.of(), "Java", "https://example.gov.cn", List.of(UUID.randomUUID()));
         var organization = new Organization(organizationId, "单位", OrganizationType.PUBLIC_INSTITUTION, null, "浙江", "杭州", null, null, null);
         var event = new RecruitmentEvent(eventId, "招聘", 2026, EventType.PUBLIC_INSTITUTION, NOW.atZone(java.time.ZoneOffset.UTC).toLocalDate(), null, deadline, "https://example.gov.cn", EmploymentType.ESTABLISHMENT, List.of());

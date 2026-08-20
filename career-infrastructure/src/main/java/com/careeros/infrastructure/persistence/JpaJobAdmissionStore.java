@@ -4,6 +4,7 @@ import static com.careeros.application.JobAdmissionPorts.AdmissionSummary;
 import static com.careeros.application.JobAdmissionPorts.JobAdmissions;
 import static com.careeros.domain.DomainEnums.DataQualityStatus.VERIFIED;
 import static com.careeros.domain.DomainEnums.TargetScopeStatus.INCLUDED;
+import static com.careeros.domain.DomainEnums.EmploymentType.UNKNOWN;
 
 import com.careeros.domain.DomainEnums.DataQualityStatus;
 import com.careeros.domain.DomainEnums.TargetScopeStatus;
@@ -30,6 +31,11 @@ public class JpaJobAdmissionStore implements JobAdmissions {
     }
 
     @Override
+    public Optional<JobAdmission> findByJobIdForUpdate(UUID jobId) {
+        return repository.findByIdForDecision(jobId).map(JpaJobAdmissionStore::toDomain);
+    }
+
+    @Override
     @Transactional
     public JobAdmission save(JobAdmission value) {
         return toDomain(repository.save(toEntity(value)));
@@ -47,7 +53,7 @@ public class JpaJobAdmissionStore implements JobAdmissions {
             repository.count(),
             byQuality,
             byTargetScope,
-            repository.countByDataQualityStatusAndTargetScopeStatus(VERIFIED, INCLUDED)
+            repository.countDecisionReady(VERIFIED, INCLUDED, UNKNOWN)
         );
     }
 

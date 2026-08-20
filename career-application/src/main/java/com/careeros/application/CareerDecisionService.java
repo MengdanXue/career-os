@@ -1,41 +1,37 @@
 package com.careeros.application;
 
 import com.careeros.domain.*;
-import com.careeros.domain.DomainEnums.*;
-import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import com.careeros.application.JobAdmissionPorts.JobAdmissions;
 
 public final class CareerDecisionService {
-    private final RepositoryPorts.CandidateProfiles candidates;
     private final RepositoryPorts.JobPostings jobs;
-    private final RepositoryPorts.EligibilityAssessments assessments;
     private final RepositoryPorts.Opportunities opportunities;
-    private final EligibilityEvaluator evaluator;
+    private final JobAdmissions admissions;
 
-    public CareerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator) {
-        this.candidates=candidates; this.jobs=jobs; this.assessments=assessments; this.opportunities=opportunities; this.evaluator=evaluator;
+    public CareerDecisionService(RepositoryPorts.JobPostings jobs, RepositoryPorts.Opportunities opportunities, JobAdmissions admissions) {
+        this.jobs=jobs; this.opportunities=opportunities; this.admissions=admissions;
     }
 
-    public DecisionResult assess(UUID candidateId, UUID jobId, Instant now) {
-        var candidate=candidates.findById(candidateId).orElseThrow(() -> new IllegalArgumentException("Candidate not found: "+candidateId));
+    public List<Opportunity> visibleOpportunities() {
+        return opportunities.findAll().stream().filter(value -> jobs.findById(value.jobPostingId())
+            .map(this::isDecisionReady).orElse(false)).toList();
+    }
+
+    public void requireDecisionReady(UUID jobId) {
         var job=jobs.findById(jobId).orElseThrow(() -> new IllegalArgumentException("Job not found: "+jobId));
-        var evaluated=evaluator.evaluate(candidate,job,now);
-        var existingAssessment=assessments.findAll().stream().filter(value->value.candidateProfileId().equals(candidateId)&&value.jobPostingId().equals(jobId)&&value.evaluatorVersion().equals(EligibilityEvaluator.VERSION)).findFirst();
-        var assessment=assessments.save(existingAssessment.map(value->new EligibilityAssessment(value.id(),candidateId,jobId,evaluated.status(),evaluated.ruleResults(),evaluated.evidenceIds(),evaluated.evaluatorVersion(),now)).orElse(evaluated));
-        int score=score(candidate,job,assessment.status());
-        var existingOpportunity=opportunities.findAll().stream().filter(value->value.candidateProfileId().equals(candidateId)&&value.jobPostingId().equals(jobId)).findFirst();
-        var opportunity=opportunities.save(existingOpportunity.map(value->new Opportunity(value.id(),candidate.id(),job.id(),assessment.id(),value.status(),score,explainScore(assessment.status(),score),value.createdAt(),now)).orElseGet(()->new Opportunity(UUID.randomUUID(),candidate.id(),job.id(),assessment.id(),OpportunityStatus.NEW,score,explainScore(assessment.status(),score),now,now)));
-        return new DecisionResult(assessment,opportunity);
+        requireDecisionReady(job);
     }
 
-    int score(CandidateProfile candidate, JobPosting job, EligibilityStatus status) {
-        if (status==EligibilityStatus.INELIGIBLE) return 0;
-        int score=status==EligibilityStatus.UNCERTAIN ? 45 : status==EligibilityStatus.LIKELY_ELIGIBLE ? 65 : 70;
-        if (job.jobFamily()!=JobFamily.OTHER) score+=10;
-        if (candidate.acceptedEmploymentTypes().contains(job.employmentType())) score+=10;
-        if (candidate.preferredLocations().stream().anyMatch(p -> job.location()!=null && job.location().contains(p))) score+=10;
-        return Math.min(score,100);
+    private void requireDecisionReady(JobPosting job) {
+        if (isDecisionReady(job)) return;
+        throw new DecisionExceptions.JobNotAdmittedException(
+            "Job has not passed evidence and employment identity admission: " + job.id());
     }
-    private String explainScore(EligibilityStatus status,int score) { return "hardEligibility="+status+", basicMatchScore="+score; }
-    public record DecisionResult(EligibilityAssessment assessment, Opportunity opportunity) {}
+
+    private boolean isDecisionReady(JobPosting job) {
+        return admissions.findByJobId(job.id()).map(value -> value.admits(job)).orElse(false);
+    }
+
 }

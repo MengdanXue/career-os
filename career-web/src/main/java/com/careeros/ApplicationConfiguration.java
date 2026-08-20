@@ -56,7 +56,7 @@ class ApplicationConfiguration {
             com.careeros.domain.DomainEnums.ReviewStatus.PENDING, 0, 1).totalElements();
         return new WorkbenchSummaryService(decisions, acquisition, reviews, clock);
     }
-    @Bean CareerDecisionService careerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator) { return new CareerDecisionService(candidates,jobs,assessments,opportunities,evaluator); }
+    @Bean CareerDecisionService careerDecisionService(RepositoryPorts.JobPostings jobs,RepositoryPorts.Opportunities opportunities,JobAdmissionPorts.JobAdmissions admissions) { return new CareerDecisionService(jobs,opportunities,admissions); }
     @Bean ArtifactStore artifactStore(@Value("${career-os.artifacts.root:${user.dir}/var/artifacts}") String root) { return new FileSystemArtifactStore(Path.of(root)); }
     @Bean DocumentParser documentParser() { return new MediaTypeDocumentParser(List.of(new JsoupDocumentParser(),new PdfBoxDocumentParser())); }
     @Bean DocumentEnrichmentPort documentEnrichment() { return new NoOpDocumentEnrichment(); }

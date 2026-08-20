@@ -27,7 +27,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(9);
+        assertThat(result.migrationsExecuted).isEqualTo(11);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='master-spec-v1'");
@@ -102,8 +102,8 @@ class MigrationIntegrationTest {
              var insertJob = connection.prepareStatement("""
                  insert into job_posting
                      (id, recruitment_event_id, organization_id, title, job_family,
-                      minimum_education, source_url, content_fingerprint)
-                 values (?, ?, ?, 'legacy-job', 'SOFTWARE', 'BACHELOR',
+                      employment_type, minimum_education, source_url, content_fingerprint)
+                 values (?, ?, ?, 'legacy-job', 'SOFTWARE', 'ESTABLISHMENT', 'BACHELOR',
                          'https://example.gov.cn/job', ?)
                  """)) {
             searchPath.execute();
@@ -139,6 +139,9 @@ class MigrationIntegrationTest {
                  """);
              var change = connection.prepareStatement("""
                  update admission_upgrade.job_posting set content_fingerprint = ? where id = ?
+                 """);
+             var removeEmploymentIdentity = connection.prepareStatement("""
+                 update admission_upgrade.job_posting set employment_type = 'UNKNOWN' where id = ?
                  """)) {
             query.setObject(1, jobId);
             try (var rows = query.executeQuery()) {
@@ -158,6 +161,16 @@ class MigrationIntegrationTest {
                 assertThat(rows.getString("data_quality_status")).isEqualTo("RAW");
                 assertThat(rows.getString("target_scope_status")).isEqualTo("NEEDS_REVIEW");
                 assertThat(rows.getString("reason_codes")).contains("CONTENT_CHANGED");
+                assertThat(rows.getBoolean("human_verified")).isFalse();
+            }
+            verify.executeUpdate();
+            removeEmploymentIdentity.setObject(1, jobId);
+            removeEmploymentIdentity.executeUpdate();
+            try (var rows = query.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("data_quality_status")).isEqualTo("REVIEW_REQUIRED");
+                assertThat(rows.getString("target_scope_status")).isEqualTo("NEEDS_REVIEW");
+                assertThat(rows.getString("reason_codes")).contains("EMPLOYMENT_IDENTITY_UNKNOWN");
                 assertThat(rows.getBoolean("human_verified")).isFalse();
             }
         }

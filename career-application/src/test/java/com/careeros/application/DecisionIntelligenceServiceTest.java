@@ -69,6 +69,29 @@ class DecisionIntelligenceServiceTest {
     }
 
     @Test
+    void admissionIsRecheckedInsideTheTransactionalLock() {
+        var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
+        fixture.inputLock.beforeOperation = () -> fixture.admissions.save(JobAdmission.raw(
+            fixture.jobId, NOW, JobAdmissionReason.CONTENT_CHANGED));
+
+        assertThatThrownBy(() -> fixture.service.assess(fixture.candidateId, fixture.jobId, NOW))
+            .isInstanceOf(DecisionExceptions.JobNotAdmittedException.class);
+
+        assertThat(fixture.snapshots.saved).isZero();
+    }
+
+    @Test
+    void verifiedIncludedJobWithUnknownEmploymentTypeIsNotDecisionReady() {
+        var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")), EmploymentType.UNKNOWN);
+
+        assertThatThrownBy(() -> fixture.service.assess(fixture.candidateId, fixture.jobId, NOW))
+            .isInstanceOf(DecisionExceptions.JobNotAdmittedException.class)
+            .hasMessageContaining("employment identity");
+
+        assertThat(fixture.snapshots.saved).isZero();
+    }
+
+    @Test
     void concurrentIdenticalAssessmentsShareOneSnapshot() throws Exception {
         var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
         fixture.snapshots.slowFind = true;
@@ -90,6 +113,10 @@ class DecisionIntelligenceServiceTest {
     }
 
     private static Fixture fixture(CandidateProfile initialCandidate) {
+        return fixture(initialCandidate, EmploymentType.ESTABLISHMENT);
+    }
+
+    private static Fixture fixture(CandidateProfile initialCandidate, EmploymentType employmentType) {
         var candidates = new MemoryCandidates();
         candidates.save(initialCandidate);
         UUID eventId = UUID.randomUUID();
@@ -97,7 +124,7 @@ class DecisionIntelligenceServiceTest {
         UUID jobId = UUID.randomUUID();
         var organization = new Organization(organizationId, "杭州市信息中心", OrganizationType.PUBLIC_INSTITUTION, "市级", "浙江", "杭州", null, null, "https://example.gov.cn");
         var event = new RecruitmentEvent(eventId, "公开招聘", 2026, EventType.PUBLIC_INSTITUTION, LocalDate.of(2026, 8, 1), null, LocalDate.of(2026, 9, 1), "https://example.gov.cn", EmploymentType.ESTABLISHMENT, List.of(UUID.randomUUID()));
-        var job = new JobPosting(jobId, eventId, organizationId, "A01", "Java工程师", JobFamily.SOFTWARE, EmploymentType.ESTABLISHMENT, "杭州", 1, EducationLevel.BACHELOR, Set.of("计算机科学与技术"), Set.of(), null, null, 3, Set.of(), "Java PostgreSQL 数据治理", "https://example.gov.cn", List.of(UUID.randomUUID()));
+        var job = new JobPosting(jobId, eventId, organizationId, "A01", "Java工程师", JobFamily.SOFTWARE, employmentType, "杭州", 1, EducationLevel.BACHELOR, Set.of("计算机科学与技术"), Set.of(), null, null, 3, Set.of(), "Java PostgreSQL 数据治理", "https://example.gov.cn", List.of(UUID.randomUUID()));
         var contexts = new MemoryContexts(new JobContext(job, organization, event, FINGERPRINT, true));
         var snapshots = new MemorySnapshots();
         var assessments = new MemoryEligibility();
@@ -157,8 +184,11 @@ class DecisionIntelligenceServiceTest {
     }
     private static final class SynchronizedDecisionInputLock implements DecisionInputLock {
         private final Set<String> keys = new LinkedHashSet<>();
+        private Runnable beforeOperation = () -> {};
         @Override public synchronized <T> T execute(String inputFingerprint, Supplier<T> operation) {
             keys.add(inputFingerprint);
+            beforeOperation.run();
+            beforeOperation = () -> {};
             return operation.get();
         }
     }

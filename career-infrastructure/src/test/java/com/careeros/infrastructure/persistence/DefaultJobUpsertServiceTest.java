@@ -76,6 +76,38 @@ class DefaultJobUpsertServiceTest {
     }
 
     @Test
+    void evidenceAndOrganizationChangesInvalidateTheContentFingerprint() {
+        NormalizedJob original = job(2);
+        NormalizedJob evidenceChanged = copyWithAssociations(
+            original, original.organizationId(), List.of(UUID.randomUUID()));
+        NormalizedJob organizationChanged = copyWithAssociations(
+            original, UUID.randomUUID(), original.evidenceIds());
+
+        assertThat(service.contentFingerprint(evidenceChanged))
+            .isNotEqualTo(service.contentFingerprint(original));
+        assertThat(service.contentFingerprint(organizationChanged))
+            .isNotEqualTo(service.contentFingerprint(original));
+    }
+
+    @Test
+    void collectionBoundariesAndUrlPathCaseCannotCollideInTheContentFingerprint() {
+        NormalizedJob original = job(2);
+        NormalizedJob separateMajors = copyWithContent(
+            original, Set.of("计算机科学与技术", "软件工程"), original.sourceUrl());
+        NormalizedJob commaJoinedMajor = copyWithContent(
+            original, Set.of("计算机科学与技术,软件工程"), original.sourceUrl());
+        NormalizedJob upperCaseUrlPath = copyWithContent(
+            original, original.exactMajors(), "https://example.gov.cn/Notices/Job?Token=AbC");
+        NormalizedJob lowerCaseUrlPath = copyWithContent(
+            original, original.exactMajors(), "https://example.gov.cn/notices/job?Token=abc");
+
+        assertThat(service.contentFingerprint(separateMajors))
+            .isNotEqualTo(service.contentFingerprint(commaJoinedMajor));
+        assertThat(service.contentFingerprint(upperCaseUrlPath))
+            .isNotEqualTo(service.contentFingerprint(lowerCaseUrlPath));
+    }
+
+    @Test
     void repeatIsUnchangedChangedContentUpdatesAndOnlyCleanCompleteSnapshotDeactivates() {
         var first = service.upsert(batch(List.of(job(2)), true, List.of()));
         assertThat(first.inserted()).isEqualTo(1);
@@ -190,6 +222,29 @@ class DefaultJobUpsertServiceTest {
             new LinkedHashSet<>(Set.of(2026)), 35, LocalDate.of(2026, 8, 20), 2,
             new LinkedHashSet<>(), "系统建设与运维", "https://example.gov.cn/notices/2026-1",
             List.of(UUID.fromString("30000000-0000-0000-0000-000000000003")));
+    }
+
+    private static NormalizedJob copyWithAssociations(
+        NormalizedJob job, UUID organizationId, List<UUID> evidenceIds
+    ) {
+        return new NormalizedJob(
+            job.recruitmentEventId(), organizationId, job.organizationName(), job.externalJobCode(),
+            job.title(), job.jobFamily(), job.employmentType(), job.location(), job.headcount(),
+            job.minimumEducation(), job.exactMajors(), job.acceptedGraduationYears(),
+            job.maximumAge(), job.ageReferenceDate(), job.minimumExperienceYears(),
+            job.requiredProfessionalTitles(), job.duties(), job.sourceUrl(), evidenceIds);
+    }
+
+    private static NormalizedJob copyWithContent(
+        NormalizedJob job, Set<String> exactMajors, String sourceUrl
+    ) {
+        return new NormalizedJob(
+            job.recruitmentEventId(), job.organizationId(), job.organizationName(),
+            job.externalJobCode(), job.title(), job.jobFamily(), job.employmentType(),
+            job.location(), job.headcount(), job.minimumEducation(), exactMajors,
+            job.acceptedGraduationYears(), job.maximumAge(), job.ageReferenceDate(),
+            job.minimumExperienceYears(), job.requiredProfessionalTitles(), job.duties(),
+            sourceUrl, job.evidenceIds());
     }
 
     private static RecruitmentExtractionProposal proposal() {

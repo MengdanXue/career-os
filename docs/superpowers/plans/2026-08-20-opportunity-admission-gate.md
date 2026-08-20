@@ -428,11 +428,11 @@ git commit -m "fix(ui): distinguish raw jobs from trusted opportunities"
 - Consumes: V9 migration, gate, summary API, and UI from Tasks 1–5.
 - Produces: an upgrade-safe local runtime where the current database reports `2291 raw`, `2291 needs review`, and `0 opportunity ready` until later verification work promotes jobs.
 
-- [ ] **Step 1: Add an end-to-end gate assertion**
+- [x] **Step 1: Add an end-to-end gate assertion**
 
 In the Spring Boot integration test, insert one raw and one manually saved verified/included admission. Assert ranking returns only the verified job and summary counts both records correctly. Assert a direct POST assessment for the raw job returns `409 JOB_NOT_ADMITTED`.
 
-- [ ] **Step 2: Run the full test suite before documentation**
+- [x] **Step 2: Run the full test suite before documentation**
 
 ```powershell
 mvn test
@@ -440,7 +440,7 @@ mvn test
 
 Expected: every Java, migration, API, frontend type, and frontend component test passes.
 
-- [ ] **Step 3: Correct product-status documentation**
+- [x] **Step 3: Correct product-status documentation**
 
 Change README and Phase 4B wording from “current mainline completed” to:
 
@@ -451,7 +451,7 @@ Raw acquired records are not trusted opportunities until admission verification 
 
 Update `current-gap-analysis.md` with V9 admission-gate status and keep candidate facts, field evidence, employment identity, Golden Jobs, and Eligibility Agent listed as still pending. Do not claim the overall business MVP is complete.
 
-- [ ] **Step 4: Migrate and verify the preserved local database**
+- [x] **Step 4: Migrate and verify the preserved local database**
 
 Run:
 
@@ -474,7 +474,7 @@ health = UP
 
 Open `/updates` and `/opportunities` with Playwright. Verify the raw/verified distinction is visible, T3 no longer shows 2082 uncertain jobs, there are no console errors, and save screenshots under ignored `output/playwright/`.
 
-- [ ] **Step 5: Final review, commit, and private push**
+- [x] **Step 5: Final review, commit, and private push**
 
 ```powershell
 git diff --check

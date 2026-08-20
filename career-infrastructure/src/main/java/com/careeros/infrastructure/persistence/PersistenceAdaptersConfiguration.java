@@ -1,6 +1,7 @@
 package com.careeros.infrastructure.persistence;
 
 import com.careeros.application.RepositoryPorts;
+import com.careeros.application.JobContentFingerprint;
 import com.careeros.application.ExtractionPorts.ExtractionPersistence;
 import com.careeros.application.ExtractionPorts.ReviewPersistence;
 import com.careeros.application.ExtractionPorts.ExtractionBundle;
@@ -58,7 +59,7 @@ public class PersistenceAdaptersConfiguration {
     private static final class JobAdapter extends GenericAdapter<JobPosting,JpaModels.JobPostingEntity> implements RepositoryPorts.JobPostings {
         private final JobPostingJpaRepository repository; private final Function<JobPosting,JpaModels.JobPostingEntity> toEntity; private final Function<JpaModels.JobPostingEntity,JobPosting> toDomain;
         JobAdapter(JobPostingJpaRepository r,Function<JobPosting,JpaModels.JobPostingEntity>a,Function<JpaModels.JobPostingEntity,JobPosting>b){super(r,a,b);repository=r;toEntity=a;toDomain=b;}
-        @Override public JobPosting save(JobPosting value){var entity=toEntity.apply(value);repository.findById(value.id()).ifPresent(existing->{entity.stableJobKey=existing.stableJobKey;entity.contentFingerprint=existing.contentFingerprint;entity.active=existing.active;entity.firstSeenAt=existing.firstSeenAt;entity.lastSeenAt=existing.lastSeenAt;});return toDomain.apply(repository.save(entity));}
+        @Override public JobPosting save(JobPosting value){var entity=toEntity.apply(value);entity.contentFingerprint=JobContentFingerprint.of(value);repository.findById(value.id()).ifPresent(existing->{entity.stableJobKey=existing.stableJobKey;entity.active=existing.active;entity.firstSeenAt=existing.firstSeenAt;entity.lastSeenAt=existing.lastSeenAt;});return toDomain.apply(repository.save(entity));}
     }
     private static final class CandidateAdapter extends GenericAdapter<CandidateProfile,JpaModels.CandidateProfileEntity> implements RepositoryPorts.CandidateProfiles { CandidateAdapter(CandidateProfileJpaRepository r,Function<CandidateProfile,JpaModels.CandidateProfileEntity>a,Function<JpaModels.CandidateProfileEntity,CandidateProfile>b){super(r,a,b);} }
     private static final class PolicyAdapter extends GenericAdapter<PolicyRule,JpaModels.PolicyRuleEntity> implements RepositoryPorts.PolicyRules { PolicyAdapter(PolicyRuleJpaRepository r,Function<PolicyRule,JpaModels.PolicyRuleEntity>a,Function<JpaModels.PolicyRuleEntity,PolicyRule>b){super(r,a,b);} }

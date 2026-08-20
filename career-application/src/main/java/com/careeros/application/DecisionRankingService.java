@@ -27,7 +27,7 @@ public final class DecisionRankingService {
         if (query.size() < 1 || query.size() > 100) throw new IllegalArgumentException("size must be between 1 and 100");
         Stream<DecisionBundle> stream = jobContexts.findActive().stream()
             .filter(context -> admissions.findByJobId(context.job().id())
-                .map(admission -> admission.admitted())
+                .map(admission -> admission.admits(context.job()))
                 .orElse(false))
             .filter(context -> query.location() == null || contains(context.job().location(), query.location()))
             .filter(context -> query.jobFamily() == null || context.job().jobFamily() == query.jobFamily())

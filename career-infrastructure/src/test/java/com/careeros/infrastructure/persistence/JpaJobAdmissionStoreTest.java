@@ -6,9 +6,11 @@ import static com.careeros.domain.DomainEnums.JobAdmissionReason.TARGET_TECHNICA
 import static com.careeros.domain.DomainEnums.TargetScopeStatus.INCLUDED;
 import static com.careeros.domain.DomainEnums.TargetScopeStatus.NEEDS_REVIEW;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.careeros.application.JobAdmissionPorts.JobAdmissions;
 import com.careeros.domain.JobAdmission;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.Set;
 import java.util.UUID;
@@ -52,7 +54,7 @@ class JpaJobAdmissionStoreTest {
         @Autowired JobAdmissions admissions,
         @Autowired JdbcTemplate jdbc
     ) {
-        UUID jobId = insertJob(jdbc);
+        UUID jobId = insertJob(jdbc, "ESTABLISHMENT");
 
         JobAdmission raw = admissions.findByJobId(jobId).orElseThrow();
         assertThat(raw.dataQualityStatus()).isEqualTo(RAW);
@@ -71,14 +73,30 @@ class JpaJobAdmissionStoreTest {
         assertThat(admissions.summarize().opportunityReady()).isEqualTo(1);
     }
 
-    private static UUID insertJob(JdbcTemplate jdbc) {
+    @Test
+    void databaseRefusesVerifiedIncludedAdmissionWhenEmploymentIdentityIsUnknown(
+        @Autowired JobAdmissions admissions,
+        @Autowired JdbcTemplate jdbc,
+        @Autowired EntityManager entityManager
+    ) {
+        UUID jobId = insertJob(jdbc, "UNKNOWN");
+
+        assertThatThrownBy(() -> {
+            admissions.save(new JobAdmission(
+                jobId, VERIFIED, INCLUDED, Set.of(TARGET_TECHNICAL_ROLE),
+                "admission-v2", Instant.parse("2026-08-20T12:00:00Z"), true));
+            entityManager.flush();
+        }).hasStackTraceContaining("Cannot admit job " + jobId + " without verified employment identity");
+    }
+
+    private static UUID insertJob(JdbcTemplate jdbc, String employmentType) {
         UUID eventId = UUID.randomUUID();
         UUID organizationId = UUID.randomUUID();
         UUID jobId = UUID.randomUUID();
         jdbc.update("""
             insert into recruitment_event (id, title, recruitment_year, event_type, source_url)
-            values (?, 'event', 2026, 'PUBLIC_INSTITUTION', 'https://example.gov.cn/event')
-            """, eventId);
+            values (?, 'event', 2026, 'PUBLIC_INSTITUTION', ?)
+            """, eventId, "https://example.gov.cn/event/" + eventId);
         jdbc.update("""
             insert into organization (id, name, organization_type)
             values (?, 'organization', 'PUBLIC_INSTITUTION')
@@ -86,9 +104,9 @@ class JpaJobAdmissionStoreTest {
         jdbc.update("""
             insert into job_posting
                 (id, recruitment_event_id, organization_id, title, job_family,
-                 minimum_education, source_url, content_fingerprint)
-            values (?, ?, ?, 'job', 'SOFTWARE', 'BACHELOR', 'https://example.gov.cn/job', ?)
-            """, jobId, eventId, organizationId, "a".repeat(64));
+                 employment_type, minimum_education, source_url, content_fingerprint)
+            values (?, ?, ?, 'job', 'SOFTWARE', ?, 'BACHELOR', 'https://example.gov.cn/job', ?)
+            """, jobId, eventId, organizationId, employmentType, "a".repeat(64));
         return jobId;
     }
 

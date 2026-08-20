@@ -142,12 +142,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
     @Override
     public String contentFingerprint(NormalizedJob job) {
         Objects.requireNonNull(job, "job");
-        return sha256(String.join("|",
-            normalizeIdentity(job.externalJobCode()), normalizeContent(job.title()), job.jobFamily().name(),
-            job.employmentType().name(), normalizeContent(job.location()), Integer.toString(job.headcount()),
-            job.minimumEducation().name(), canonical(job.exactMajors()), canonical(job.acceptedGraduationYears()),
-            value(job.maximumAge()), value(job.ageReferenceDate()), value(job.minimumExperienceYears()),
-            canonical(job.requiredProfessionalTitles()), normalizeContent(job.duties())));
+        return com.careeros.application.JobContentFingerprint.of(job);
     }
 
     @Override

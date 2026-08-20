@@ -13,6 +13,8 @@ public final class JobAdmissionPorts {
     public interface JobAdmissions {
         Optional<JobAdmission> findByJobId(UUID jobId);
 
+        default Optional<JobAdmission> findByJobIdForUpdate(UUID jobId) { return findByJobId(jobId); }
+
         JobAdmission save(JobAdmission value);
 
         AdmissionSummary summarize();

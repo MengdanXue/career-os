@@ -12,6 +12,11 @@ import static org.mockito.Mockito.verify;
 import com.careeros.application.ExtractionPorts.DocumentParser;
 import com.careeros.application.ExtractionPorts.ExtractionBundle;
 import com.careeros.application.ExtractionPorts.ExtractionPersistence;
+import com.careeros.application.JobAdmissionPorts.JobAdmissions;
+import com.careeros.domain.JobAdmission;
+import com.careeros.domain.DomainEnums.DataQualityStatus;
+import com.careeros.domain.DomainEnums.JobAdmissionReason;
+import com.careeros.domain.DomainEnums.TargetScopeStatus;
 import com.careeros.infrastructure.persistence.JobPostingJpaRepository;
 import com.careeros.infrastructure.persistence.CandidateProfileJpaRepository;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService;
@@ -19,9 +24,11 @@ import com.careeros.infrastructure.extraction.ExtractionRunJpaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import java.io.*;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.nio.file.*;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -122,29 +129,68 @@ class CareerOsApplicationTest {
     }
 
     @Test
-    void decisionApiPersistsAndReusesVersionedSnapshot(
-        @Autowired MockMvc mvc,@Autowired ObjectMapper json,@Autowired JdbcTemplate jdbc
+    void admissionGateSeparatesRawJobsFromTrustedRankingsAndSnapshots(
+        @Autowired MockMvc mvc,@Autowired ObjectMapper json,@Autowired JdbcTemplate jdbc,
+        @Autowired JobAdmissions admissions
     ) throws Exception {
+        var before = admissions.summarize();
         String suffix=UUID.randomUUID().toString();
+        String location="杭州准入测试区-"+suffix;
         String organization=json.readTree(mvc.perform(post("/api/v1/organizations").contentType(MediaType.APPLICATION_JSON).content("""
             {"name":"杭州决策测试单位-%s","organizationType":"PUBLIC_INSTITUTION","province":"浙江","city":"杭州"}
             """.formatted(suffix))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
         String event=json.readTree(mvc.perform(post("/api/v1/recruitment-events").contentType(MediaType.APPLICATION_JSON).content("""
             {"title":"决策测试公告","recruitmentYear":2026,"eventType":"PUBLIC_INSTITUTION","applicationEndsOn":"2026-09-30","sourceUrl":"https://example.test/decision/%s","defaultEmploymentType":"ESTABLISHMENT"}
             """.formatted(suffix))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
-        String job=json.readTree(mvc.perform(post("/api/v1/jobs").contentType(MediaType.APPLICATION_JSON).content("""
-            {"recruitmentEventId":"%s","organizationId":"%s","externalJobCode":"D01","title":"信息中心Java岗","jobFamily":"INFORMATION_SYSTEMS","employmentType":"ESTABLISHMENT","location":"杭州","headcount":1,"minimumEducation":"MASTER","exactMajors":["计算机科学与技术"],"acceptedGraduationYears":[],"requiredProfessionalTitles":[],"duties":"Java PostgreSQL 数据治理","sourceUrl":"https://example.test/decision/%s"}
-            """.formatted(event,organization,suffix))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
+        String evidenceId=UUID.randomUUID().toString();
+        jdbc.update("insert into evidence(id,evidence_type,source_url,source_title,excerpt,content_hash,captured_at) values (?,?,?,?,'公告明确标注事业编制',?,now())",
+            UUID.fromString(evidenceId),"OFFICIAL_NOTICE","https://example.test/decision/"+suffix,
+            "决策测试公告","e".repeat(64));
+        String verifiedJob=json.readTree(mvc.perform(post("/api/v1/jobs").contentType(MediaType.APPLICATION_JSON).content("""
+            {"recruitmentEventId":"%s","organizationId":"%s","externalJobCode":"D01","title":"信息中心Java岗","jobFamily":"INFORMATION_SYSTEMS","employmentType":"ESTABLISHMENT","location":"%s","headcount":1,"minimumEducation":"MASTER","exactMajors":["计算机科学与技术"],"acceptedGraduationYears":[],"requiredProfessionalTitles":[],"duties":"Java PostgreSQL 数据治理","sourceUrl":"https://example.test/decision/%s/verified","evidenceIds":["%s"]}
+            """.formatted(event,organization,location,suffix,evidenceId))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
+        String rawJob=json.readTree(mvc.perform(post("/api/v1/jobs").contentType(MediaType.APPLICATION_JSON).content("""
+            {"recruitmentEventId":"%s","organizationId":"%s","externalJobCode":"D02","title":"未核验Java岗","jobFamily":"INFORMATION_SYSTEMS","employmentType":"ESTABLISHMENT","location":"%s","headcount":1,"minimumEducation":"MASTER","exactMajors":["计算机科学与技术"],"acceptedGraduationYears":[],"requiredProfessionalTitles":[],"duties":"Java 数据治理","sourceUrl":"https://example.test/decision/%s/raw"}
+            """.formatted(event,organization,location,suffix))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
 
-        String first=mvc.perform(post("/api/v1/candidates/{candidateId}/job-decisions/{jobId}","01992f09-0000-7000-8000-000000000001",job))
+        mvc.perform(post("/api/v1/candidates/{candidateId}/job-decisions/{jobId}","01992f09-0000-7000-8000-000000000001",rawJob))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("JOB_NOT_ADMITTED"));
+
+        admissions.save(new JobAdmission(
+            UUID.fromString(verifiedJob), DataQualityStatus.VERIFIED, TargetScopeStatus.INCLUDED,
+            Set.of(JobAdmissionReason.TARGET_TECHNICAL_ROLE), "admission-v1",
+            Instant.parse("2026-08-20T12:00:00Z"), true));
+
+        String first=mvc.perform(post("/api/v1/candidates/{candidateId}/job-decisions/{jobId}","01992f09-0000-7000-8000-000000000001",verifiedJob))
             .andExpect(status().isOk()).andExpect(jsonPath("$.eligibilityStatus").value("ELIGIBLE"))
-            .andExpect(jsonPath("$.tier").value("T3")).andExpect(jsonPath("$.stability.coveragePercent").value(40))
+            .andExpect(jsonPath("$.tier").value("T1")).andExpect(jsonPath("$.stability.coveragePercent").value(40))
             .andReturn().getResponse().getContentAsString();
-        String second=mvc.perform(post("/api/v1/candidates/{candidateId}/job-decisions/{jobId}","01992f09-0000-7000-8000-000000000001",job))
+        String second=mvc.perform(post("/api/v1/candidates/{candidateId}/job-decisions/{jobId}","01992f09-0000-7000-8000-000000000001",verifiedJob))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 
         assertThat(json.readTree(second).path("decisionId").asText()).isEqualTo(json.readTree(first).path("decisionId").asText());
-        assertThat(jdbc.queryForObject("select count(*) from decision_assessment where job_posting_id=?",Long.class,UUID.fromString(job))).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("select count(*) from decision_assessment where job_posting_id=?",Long.class,UUID.fromString(verifiedJob))).isEqualTo(1L);
+
+        mvc.perform(put("/api/v1/jobs/{id}", verifiedJob).contentType(MediaType.APPLICATION_JSON).content("""
+            {"recruitmentEventId":"%s","organizationId":"%s","externalJobCode":"D01","title":"信息中心Java岗","jobFamily":"INFORMATION_SYSTEMS","employmentType":"ESTABLISHMENT","location":"%s","headcount":1,"minimumEducation":"MASTER","exactMajors":["计算机科学与技术"],"acceptedGraduationYears":[],"requiredProfessionalTitles":[],"duties":"Java PostgreSQL 数据治理","sourceUrl":"https://example.test/decision/%s/verified","evidenceIds":[]}
+            """.formatted(event,organization,location,suffix))).andExpect(status().isOk());
+        assertThat(admissions.findByJobId(UUID.fromString(verifiedJob)).orElseThrow().admitted()).isFalse();
+        mvc.perform(post("/api/v1/candidates/{candidateId}/job-decisions/{jobId}","01992f09-0000-7000-8000-000000000001",verifiedJob))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("JOB_NOT_ADMITTED"));
+
+        mvc.perform(get("/api/v1/candidates/{candidateId}/job-decisions","01992f09-0000-7000-8000-000000000001")
+                .param("location", location).param("page", "0").param("size", "20"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.total").value(0));
+        mvc.perform(get("/api/v1/job-library/summary"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.total").value(before.total() + 2))
+            .andExpect(jsonPath("$.raw").value(before.count(DataQualityStatus.RAW) + 2))
+            .andExpect(jsonPath("$.needsReview").value(before.count(TargetScopeStatus.NEEDS_REVIEW) + 2))
+            .andExpect(jsonPath("$.verified").value(before.count(DataQualityStatus.VERIFIED)))
+            .andExpect(jsonPath("$.opportunityReady").value(before.opportunityReady()));
     }
 
     @Test
@@ -306,7 +352,7 @@ class CareerOsApplicationTest {
     }
 
     @Test
-    void crudAndDecisionApiCreateAnOpportunity(@Autowired MockMvc mvc,@Autowired ObjectMapper json) throws Exception {
+    void legacyDecisionApiCannotTurnRawJobsIntoOpportunities(@Autowired MockMvc mvc,@Autowired ObjectMapper json,@Autowired JdbcTemplate jdbc) throws Exception {
         var organization=json.readTree(mvc.perform(post("/api/v1/organizations").contentType(MediaType.APPLICATION_JSON).content("""
             {"name":"杭州测试数据中心","organizationType":"PUBLIC_INSTITUTION","province":"浙江","city":"杭州"}
             """)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
@@ -318,11 +364,17 @@ class CareerOsApplicationTest {
             """.formatted(event,organization))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
         mvc.perform(post("/api/v1/eligibility-assessments").contentType(MediaType.APPLICATION_JSON).content("""
             {"candidateId":"01992f09-0000-7000-8000-000000000001","jobId":"%s"}
-            """.formatted(job))).andExpect(status().isOk()).andExpect(jsonPath("$.assessment.status").value("ELIGIBLE")).andExpect(jsonPath("$.opportunity.matchScore").value(100));
-        mvc.perform(post("/api/v1/eligibility-assessments").contentType(MediaType.APPLICATION_JSON).content("""
-            {"candidateId":"01992f09-0000-7000-8000-000000000001","jobId":"%s"}
-            """.formatted(job))).andExpect(status().isOk());
-        mvc.perform(get("/api/v1/opportunities")).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].status").value("NEW"));
+            """.formatted(job))).andExpect(status().isGone());
+        assertThat(jdbc.queryForObject("select count(*) from eligibility_assessment where job_posting_id=?",Long.class,UUID.fromString(job))).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from opportunity where job_posting_id=?",Long.class,UUID.fromString(job))).isZero();
+        UUID assessmentId=UUID.randomUUID(); UUID opportunityId=UUID.randomUUID();
+        String fingerprint=jdbc.queryForObject("select content_fingerprint from job_posting where id=?",String.class,UUID.fromString(job));
+        jdbc.update("insert into eligibility_assessment(id,candidate_profile_id,job_posting_id,status,rule_results,evidence_ids,evaluator_version,assessed_at,profile_version,job_content_fingerprint) values (?,?,?,'ELIGIBLE','{}'::jsonb,'[]'::jsonb,'legacy-test',now(),'master-spec-v1',?)",
+            assessmentId,UUID.fromString("01992f09-0000-7000-8000-000000000001"),UUID.fromString(job),fingerprint);
+        jdbc.update("insert into opportunity(id,candidate_profile_id,job_posting_id,eligibility_assessment_id,status,match_score,created_at,updated_at) values (?,?,?,?,'NEW',100,now(),now())",
+            opportunityId,UUID.fromString("01992f09-0000-7000-8000-000000000001"),UUID.fromString(job),assessmentId);
+        mvc.perform(get("/api/v1/opportunities")).andExpect(status().isOk())
+            .andExpect(jsonPath("$[?(@.jobPostingId == '%s')]".formatted(job)).isEmpty());
     }
 
     @Test
