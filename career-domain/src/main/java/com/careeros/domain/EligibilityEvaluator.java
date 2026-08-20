@@ -22,6 +22,10 @@ public final class EligibilityEvaluator {
     }
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job, Instant now) {
+        return evaluate(candidate, job, "unversioned", now);
+    }
+
+    public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job, String jobContentFingerprint, Instant now) {
         var results = new EnumMap<RuleType, RuleResult>(RuleType.class);
         results.put(RuleType.AGE, evaluateAge(candidate, job));
         results.put(RuleType.EDUCATION, evaluateEducation(candidate, job));
@@ -30,7 +34,7 @@ public final class EligibilityEvaluator {
         results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, job));
         results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, job));
         var overall = results.values().stream().map(RuleResult::status).max(EligibilityEvaluator::compareSeverity).orElse(EligibilityStatus.UNCERTAIN);
-        return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), VERSION, now);
+        return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), VERSION, now, candidate.profileVersion(), jobContentFingerprint);
     }
 
     RuleResult evaluateAge(CandidateProfile candidate, JobPosting job) {

@@ -84,6 +84,10 @@ public final class JpaModels {
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "preferred_locations", columnDefinition = "jsonb", nullable = false) List<String> preferredLocations = new ArrayList<>();
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "accepted_employment_types", columnDefinition = "jsonb", nullable = false) Set<EmploymentType> acceptedEmploymentTypes = new LinkedHashSet<>();
         @Column(name = "profile_version", nullable = false) String profileVersion;
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "skills", columnDefinition = "jsonb", nullable = false) Set<String> skills = new LinkedHashSet<>();
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "research_keywords", columnDefinition = "jsonb", nullable = false) Set<String> researchKeywords = new LinkedHashSet<>();
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "target_job_families", columnDefinition = "jsonb", nullable = false) Set<JobFamily> targetJobFamilies = new LinkedHashSet<>();
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "preferred_organization_types", columnDefinition = "jsonb", nullable = false) Set<OrganizationType> preferredOrganizationTypes = new LinkedHashSet<>();
         protected CandidateProfileEntity() {}
     }
 
@@ -120,6 +124,8 @@ public final class JpaModels {
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "evidence_ids", columnDefinition = "jsonb", nullable = false) List<UUID> evidenceIds = new ArrayList<>();
         @Column(name = "evaluator_version", nullable = false) String evaluatorVersion;
         @Column(name = "assessed_at", nullable = false) Instant assessedAt;
+        @Column(name = "profile_version", nullable = false) String profileVersion;
+        @Column(name = "job_content_fingerprint", nullable = false) String jobContentFingerprint;
         protected EligibilityAssessmentEntity() {}
     }
 

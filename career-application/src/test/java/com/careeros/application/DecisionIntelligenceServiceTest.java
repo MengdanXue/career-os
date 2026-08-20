@@ -36,6 +36,8 @@ class DecisionIntelligenceServiceTest {
 
         assertThat(repeated.decision().id()).isEqualTo(first.decision().id());
         assertThat(changed.decision().id()).isNotEqualTo(first.decision().id());
+        assertThat(changed.eligibility().profileVersion()).isEqualTo("profile-v2");
+        assertThat(changed.eligibility().jobContentFingerprint()).isEqualTo(FINGERPRINT);
         assertThat(fixture.snapshots.saved).isEqualTo(2);
     }
 
