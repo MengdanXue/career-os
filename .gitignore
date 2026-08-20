@@ -11,3 +11,5 @@ Thumbs.db
 config/candidate-profile.json
 **/var/artifacts/
 *.log
+career-ui/node_modules/
+career-ui/*.tsbuildinfo

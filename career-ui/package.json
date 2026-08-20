@@ -1,0 +1,37 @@
+{
+  "name": "career-os-workbench",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc -b --pretty false",
+    "verify": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "1.1.23",
+    "@tanstack/react-query": "5.101.4",
+    "lucide-react": "1.33.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-router-dom": "7.18.2"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.5",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.1.0",
+    "jsdom": "30.0.1",
+    "msw": "2.15.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "vitest": "4.1.11"
+  }
+}

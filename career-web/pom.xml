@@ -18,6 +18,44 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>com.github.eirslett</groupId>
+                <artifactId>frontend-maven-plugin</artifactId>
+                <version>1.15.4</version>
+                <configuration>
+                    <workingDirectory>${maven.multiModuleProjectDirectory}/career-ui</workingDirectory>
+                    <installDirectory>${project.build.directory}/frontend</installDirectory>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>install-node-and-npm</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>install-node-and-npm</goal></goals>
+                        <configuration><nodeVersion>v24.19.0</nodeVersion></configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-ci</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>npm</goal></goals>
+                        <configuration><arguments>ci --ignore-scripts</arguments></configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-build</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>npm</goal></goals>
+                        <configuration><arguments>run build</arguments></configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-verify</id>
+                        <phase>test</phase>
+                        <goals><goal>npm</goal></goals>
+                        <configuration>
+                            <arguments>run verify</arguments>
+                            <skip>${skipTests}</skip>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <executions>
