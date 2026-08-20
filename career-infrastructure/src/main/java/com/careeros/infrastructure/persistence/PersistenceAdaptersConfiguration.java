@@ -13,6 +13,7 @@ import com.careeros.application.ExtractionPorts.ReviewResolution;
 import com.careeros.domain.*;
 import com.careeros.domain.DomainEnums.*;
 import com.careeros.domain.EligibilityAssessment.RuleResult;
+import com.careeros.domain.CandidateFacts.CandidateFactConfirmation;
 import com.careeros.infrastructure.extraction.JpaExtractionPersistence;
 import java.util.*;
 import java.util.function.Function;
@@ -41,6 +42,18 @@ public class PersistenceAdaptersConfiguration {
     @Bean RepositoryPorts.Organizations organizations(OrganizationJpaRepository r) { return new OrganizationAdapter(r,this::toOrganizationEntity,this::toOrganization); }
     @Bean RepositoryPorts.JobPostings jobPostings(JobPostingJpaRepository r) { return new JobAdapter(r,this::toJobEntity,this::toJob); }
     @Bean RepositoryPorts.CandidateProfiles candidateProfiles(CandidateProfileJpaRepository r) { return new CandidateAdapter(r,this::toCandidateEntity,this::toCandidate); }
+    @Bean RepositoryPorts.CandidateFactConfirmations candidateFactConfirmations(CandidateFactConfirmationJpaRepository repository) {
+        return new RepositoryPorts.CandidateFactConfirmations() {
+            public List<CandidateFactConfirmation> findByCandidateId(UUID candidateId) {
+                return repository.findAllByIdCandidateProfileId(candidateId).stream()
+                    .map(PersistenceAdaptersConfiguration.this::toCandidateFact).toList();
+            }
+            public List<CandidateFactConfirmation> saveAll(List<CandidateFactConfirmation> values) {
+                return repository.saveAll(values.stream().map(PersistenceAdaptersConfiguration.this::toCandidateFactEntity).toList())
+                    .stream().map(PersistenceAdaptersConfiguration.this::toCandidateFact).toList();
+            }
+        };
+    }
     @Bean RepositoryPorts.PolicyRules policyRules(PolicyRuleJpaRepository r) { return new PolicyAdapter(r,this::toPolicyEntity,this::toPolicy); }
     @Bean RepositoryPorts.EvidenceRecords evidenceRecords(EvidenceJpaRepository r) { return new EvidenceAdapter(r,this::toEvidenceEntity,this::toEvidence); }
     @Bean RepositoryPorts.EligibilityAssessments eligibilityAssessments(EligibilityAssessmentJpaRepository r) { return new AssessmentAdapter(r,this::toAssessmentEntity,this::toAssessment); }
@@ -61,7 +74,12 @@ public class PersistenceAdaptersConfiguration {
         JobAdapter(JobPostingJpaRepository r,Function<JobPosting,JpaModels.JobPostingEntity>a,Function<JpaModels.JobPostingEntity,JobPosting>b){super(r,a,b);repository=r;toEntity=a;toDomain=b;}
         @Override public JobPosting save(JobPosting value){var entity=toEntity.apply(value);entity.contentFingerprint=JobContentFingerprint.of(value);repository.findById(value.id()).ifPresent(existing->{entity.stableJobKey=existing.stableJobKey;entity.active=existing.active;entity.firstSeenAt=existing.firstSeenAt;entity.lastSeenAt=existing.lastSeenAt;});return toDomain.apply(repository.save(entity));}
     }
-    private static final class CandidateAdapter extends GenericAdapter<CandidateProfile,JpaModels.CandidateProfileEntity> implements RepositoryPorts.CandidateProfiles { CandidateAdapter(CandidateProfileJpaRepository r,Function<CandidateProfile,JpaModels.CandidateProfileEntity>a,Function<JpaModels.CandidateProfileEntity,CandidateProfile>b){super(r,a,b);} }
+    private static final class CandidateAdapter extends GenericAdapter<CandidateProfile,JpaModels.CandidateProfileEntity> implements RepositoryPorts.CandidateProfiles {
+        private final CandidateProfileJpaRepository repository;
+        private final Function<JpaModels.CandidateProfileEntity,CandidateProfile> toDomain;
+        CandidateAdapter(CandidateProfileJpaRepository r,Function<CandidateProfile,JpaModels.CandidateProfileEntity>a,Function<JpaModels.CandidateProfileEntity,CandidateProfile>b){super(r,a,b);repository=r;toDomain=b;}
+        public Optional<CandidateProfile> findByIdForUpdate(UUID id){return repository.findByIdForUpdate(id).map(toDomain);}
+    }
     private static final class PolicyAdapter extends GenericAdapter<PolicyRule,JpaModels.PolicyRuleEntity> implements RepositoryPorts.PolicyRules { PolicyAdapter(PolicyRuleJpaRepository r,Function<PolicyRule,JpaModels.PolicyRuleEntity>a,Function<JpaModels.PolicyRuleEntity,PolicyRule>b){super(r,a,b);} }
     private static final class EvidenceAdapter extends GenericAdapter<Evidence,JpaModels.EvidenceEntity> implements RepositoryPorts.EvidenceRecords { EvidenceAdapter(EvidenceJpaRepository r,Function<Evidence,JpaModels.EvidenceEntity>a,Function<JpaModels.EvidenceEntity,Evidence>b){super(r,a,b);} }
     private static final class AssessmentAdapter extends GenericAdapter<EligibilityAssessment,JpaModels.EligibilityAssessmentEntity> implements RepositoryPorts.EligibilityAssessments { AssessmentAdapter(EligibilityAssessmentJpaRepository r,Function<EligibilityAssessment,JpaModels.EligibilityAssessmentEntity>a,Function<JpaModels.EligibilityAssessmentEntity,EligibilityAssessment>b){super(r,a,b);} }
@@ -78,6 +96,19 @@ public class PersistenceAdaptersConfiguration {
 
     private JpaModels.CandidateProfileEntity toCandidateEntity(CandidateProfile value) { var e=new JpaModels.CandidateProfileEntity(); e.id=value.id(); e.displayName=value.displayName(); e.birthYear=value.birthDate().year(); e.birthMonth=value.birthDate().month(); e.birthDay=value.birthDate().day(); e.highestEducation=value.highestEducation(); e.majors=new LinkedHashSet<>(value.majors()); e.graduationYear=value.graduationYear(); e.experienceYears=value.experienceYears(); e.professionalTitles=new LinkedHashSet<>(value.professionalTitles()); e.preferredLocations=new ArrayList<>(value.preferredLocations()); e.acceptedEmploymentTypes=new LinkedHashSet<>(value.acceptedEmploymentTypes()); e.profileVersion=value.profileVersion(); e.skills=new LinkedHashSet<>(value.skills()); e.researchKeywords=new LinkedHashSet<>(value.researchKeywords()); e.targetJobFamilies=new LinkedHashSet<>(value.targetJobFamilies()); e.preferredOrganizationTypes=new LinkedHashSet<>(value.preferredOrganizationTypes()); return e; }
     private CandidateProfile toCandidate(JpaModels.CandidateProfileEntity e) { return new CandidateProfile(e.id,e.displayName,new PartialDate(e.birthYear,e.birthMonth,e.birthDay),e.highestEducation,e.majors,e.graduationYear,e.experienceYears,e.professionalTitles,e.preferredLocations,e.acceptedEmploymentTypes,e.profileVersion,e.skills,e.researchKeywords,e.targetJobFamilies,e.preferredOrganizationTypes); }
+
+    private JpaModels.CandidateFactConfirmationEntity toCandidateFactEntity(CandidateFactConfirmation value) {
+        var entity = new JpaModels.CandidateFactConfirmationEntity();
+        entity.id = new JpaModels.CandidateFactConfirmationId(value.candidateProfileId(), value.factKey().name());
+        entity.status = value.status(); entity.valueFingerprint = value.valueFingerprint(); entity.source = value.source();
+        entity.confirmedAt = value.confirmedAt(); entity.updatedAt = value.updatedAt();
+        return entity;
+    }
+    private CandidateFactConfirmation toCandidateFact(JpaModels.CandidateFactConfirmationEntity entity) {
+        return new CandidateFactConfirmation(entity.id.candidateProfileId,
+            CandidateFacts.CandidateFactKey.valueOf(entity.id.factKey), entity.status, entity.valueFingerprint,
+            entity.source, entity.confirmedAt, entity.updatedAt);
+    }
 
     private JpaModels.PolicyRuleEntity toPolicyEntity(PolicyRule value) { var e=new JpaModels.PolicyRuleEntity(); e.id=value.id(); e.ruleType=value.ruleType(); e.name=value.name(); e.jurisdiction=value.jurisdiction(); e.validFrom=value.validFrom(); e.validUntil=value.validUntil(); e.parameters=new LinkedHashMap<>(value.parameters()); e.evidenceId=value.evidenceId(); return e; }
     private PolicyRule toPolicy(JpaModels.PolicyRuleEntity e) { return new PolicyRule(e.id,e.ruleType,e.name,e.jurisdiction,e.validFrom,e.validUntil,e.parameters,e.evidenceId); }

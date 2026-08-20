@@ -57,6 +57,15 @@ class EligibilityEvaluatorTest {
         assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2020, null), requiresTwo), RuleType.EXPERIENCE, EligibilityStatus.UNCERTAIN);
     }
 
+    @Test void unconfirmedCandidateFactCannotSatisfyAnAgeRule() {
+        var candidate = candidate(PartialDate.exact(LocalDate.of(1995, 1, 1)), EducationLevel.MASTER, Set.of(), 2020, 2);
+        var result = evaluator.evaluate(candidate, CandidateFacts.resolve(candidate, List.of()),
+            job(40, LocalDate.of(2026, 1, 1), EducationLevel.MASTER, Set.of(), Set.of(), null));
+
+        assertRule(result, RuleType.AGE, EligibilityStatus.UNCERTAIN);
+        assertThat(result.ruleResults().get(RuleType.AGE).explanation()).contains("未确认");
+    }
+
     private EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) { return evaluator.evaluate(candidate, job, Instant.parse("2026-08-14T00:00:00Z")); }
     private void assertRule(EligibilityAssessment assessment, RuleType rule, EligibilityStatus expected) { assertThat(assessment.ruleResults().get(rule).status()).isEqualTo(expected); }
 

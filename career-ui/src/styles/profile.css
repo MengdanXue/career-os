@@ -1,6 +1,11 @@
 .page-frame { width: min(1120px, calc(100% - 40px)); margin: 0 auto; padding: clamp(42px, 7vw, 82px) 0 120px; }
 .page-frame h1 { max-width: 760px; margin: 0; font: 500 clamp(38px, 6vw, 68px)/1 Georgia, "Songti SC", serif; letter-spacing: -.035em; }
 .page-intro { max-width: 720px; margin: 22px 0 40px; color: var(--muted); font-size: 17px; line-height: 1.75; }
+.fact-readiness { display: flex; flex-wrap: wrap; gap: 10px; max-width: 900px; margin: -18px 0 24px; }
+.fact-count { padding: 7px 11px; border: 1px solid var(--line); background: var(--paper); color: var(--muted); font: 700 12px ui-monospace, monospace; }
+.fact-confirmed { border-color: var(--eligible); color: var(--eligible); }
+.fact-pending { border-color: var(--caution); color: var(--caution); }
+.fact-unknown { color: var(--archive); }
 .profile-form { max-width: 900px; padding: 30px; border-top: 4px solid var(--tide); background: var(--paper); box-shadow: var(--shadow); }
 .profile-form fieldset { margin: 0 0 30px; padding: 0 0 28px; border: 0; border-bottom: 1px solid var(--line); }
 .profile-form legend { margin-bottom: 18px; color: var(--caution); font: 700 12px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
@@ -17,6 +22,7 @@
 .primary-action { background: var(--tide); color: #fffaf0; }
 .secondary-action { background: transparent; color: var(--tide); }
 .profile-confirmed { max-width: 850px; padding: 34px; border-top: 4px solid var(--eligible); background: var(--paper); box-shadow: var(--shadow); }
+.profile-confirmed .fact-readiness { margin: 24px 0; }
 .profile-confirmed > p:not(.eyebrow) { color: var(--muted); font-size: 18px; }
 .profile-confirmed dl { display: grid; grid-template-columns: repeat(3, 1fr); margin: 30px 0; border-block: 1px solid var(--line); }
 .profile-confirmed dl div { padding: 18px; border-right: 1px solid var(--line); }

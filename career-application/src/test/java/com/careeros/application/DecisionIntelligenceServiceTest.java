@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.careeros.application.JobAdmissionPorts.AdmissionSummary;
 import com.careeros.application.JobAdmissionPorts.JobAdmissions;
 import com.careeros.domain.*;
+import com.careeros.domain.CandidateFacts.CandidateFactConfirmation;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
@@ -92,6 +93,17 @@ class DecisionIntelligenceServiceTest {
     }
 
     @Test
+    void storedCandidateValuesRemainUncertainUntilTheirCurrentFingerprintsAreConfirmed() {
+        var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
+        fixture.facts.values.clear();
+
+        var result = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW);
+
+        assertThat(result.eligibility().status()).isEqualTo(EligibilityStatus.UNCERTAIN);
+        assertThat(result.fit().score()).isZero();
+    }
+
+    @Test
     void concurrentIdenticalAssessmentsShareOneSnapshot() throws Exception {
         var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
         fixture.snapshots.slowFind = true;
@@ -133,8 +145,14 @@ class DecisionIntelligenceServiceTest {
             jobId, DataQualityStatus.VERIFIED, TargetScopeStatus.INCLUDED,
             Set.of(JobAdmissionReason.TARGET_TECHNICAL_ROLE), "admission-v1", NOW, true));
         var inputLock = new SynchronizedDecisionInputLock();
-        var service = new DecisionIntelligenceService(candidates, assessments, contexts, organizationId1 -> List.of(), snapshots, admissions, inputLock, new EligibilityEvaluator(), new FitEvaluator(), new StabilityEvaluator());
-        return new Fixture(initialCandidate.id(), jobId, candidates, snapshots, admissions, inputLock, service);
+        var facts = new MemoryFacts();
+        for (var key : CandidateFacts.CandidateFactKey.values()) {
+            facts.values.add(new CandidateFactConfirmation(initialCandidate.id(), key,
+                CandidateFacts.CandidateFactStatus.CONFIRMED, CandidateFacts.fingerprint(initialCandidate, key),
+                CandidateFacts.CandidateFactSource.USER_CONFIRMED, NOW, NOW));
+        }
+        var service = new DecisionIntelligenceService(candidates, facts, assessments, contexts, organizationId1 -> List.of(), snapshots, admissions, inputLock, new EligibilityEvaluator(), new FitEvaluator(), new StabilityEvaluator());
+        return new Fixture(initialCandidate.id(), jobId, candidates, facts, snapshots, admissions, inputLock, service);
     }
 
     private static CandidateProfile candidate(String version, Set<String> majors) {
@@ -147,7 +165,7 @@ class DecisionIntelligenceServiceTest {
             Set.of("Java", "PostgreSQL"), Set.of("数据治理"), Set.of(JobFamily.SOFTWARE), Set.of(OrganizationType.PUBLIC_INSTITUTION));
     }
 
-    private record Fixture(UUID candidateId, UUID jobId, MemoryCandidates candidates, MemorySnapshots snapshots, MemoryAdmissions admissions, SynchronizedDecisionInputLock inputLock, DecisionIntelligenceService service) {}
+    private record Fixture(UUID candidateId, UUID jobId, MemoryCandidates candidates, MemoryFacts facts, MemorySnapshots snapshots, MemoryAdmissions admissions, SynchronizedDecisionInputLock inputLock, DecisionIntelligenceService service) {}
 
     private abstract static class MemoryRepository<T> implements RepositoryPorts.Repository<T> {
         final Map<UUID,T> values = new LinkedHashMap<>();
@@ -157,7 +175,15 @@ class DecisionIntelligenceServiceTest {
         public List<T> findAll() { return List.copyOf(values.values()); }
         public void deleteById(UUID id) { values.remove(id); }
     }
-    private static final class MemoryCandidates extends MemoryRepository<CandidateProfile> implements RepositoryPorts.CandidateProfiles { UUID id(CandidateProfile value) { return value.id(); } }
+    private static final class MemoryCandidates extends MemoryRepository<CandidateProfile> implements RepositoryPorts.CandidateProfiles {
+        UUID id(CandidateProfile value) { return value.id(); }
+        public Optional<CandidateProfile> findByIdForUpdate(UUID id) { return findById(id); }
+    }
+    private static final class MemoryFacts implements RepositoryPorts.CandidateFactConfirmations {
+        private final List<CandidateFactConfirmation> values = new ArrayList<>();
+        public List<CandidateFactConfirmation> findByCandidateId(UUID candidateId) { return values.stream().filter(value -> value.candidateProfileId().equals(candidateId)).toList(); }
+        public List<CandidateFactConfirmation> saveAll(List<CandidateFactConfirmation> confirmations) { values.addAll(confirmations); return confirmations; }
+    }
     private static final class MemoryEligibility extends MemoryRepository<EligibilityAssessment> implements RepositoryPorts.EligibilityAssessments { UUID id(EligibilityAssessment value) { return value.id(); } }
     private static final class MemoryContexts implements JobContexts {
         private final JobContext context;

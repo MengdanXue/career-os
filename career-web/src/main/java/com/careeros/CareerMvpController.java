@@ -1,6 +1,7 @@
 package com.careeros;
 
 import com.careeros.application.CareerDecisionService;
+import com.careeros.application.CandidateProfileService;
 import com.careeros.application.RepositoryPorts;
 import com.careeros.domain.*;
 import com.careeros.domain.DomainEnums.*;
@@ -12,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.format.annotation.DateTimeFormat;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.transaction.annotation.Transactional;
 
 @RestController
 @RequestMapping("/api/v1")
@@ -21,11 +23,12 @@ class CareerMvpController {
     private final RepositoryPorts.JobPostings jobs;
     private final RepositoryPorts.CandidateProfiles candidates;
     private final RepositoryPorts.Opportunities opportunities;
+    private final CandidateProfileService candidateProfiles;
     private final CareerDecisionService decisions;
     private final OfficialExcelImportService excelImports;
 
-    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CareerDecisionService decisions, OfficialExcelImportService excelImports) {
-        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.decisions=decisions; this.excelImports=excelImports;
+    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CandidateProfileService candidateProfiles, CareerDecisionService decisions, OfficialExcelImportService excelImports) {
+        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.candidateProfiles=candidateProfiles; this.decisions=decisions; this.excelImports=excelImports;
     }
 
     @GetMapping("/organizations") List<Organization> organizations() { return organizations.findAll(); }
@@ -48,9 +51,11 @@ class CareerMvpController {
 
     @GetMapping("/candidates") List<CandidateProfile> candidates() { return candidates.findAll(); }
     @GetMapping("/candidates/{id}") CandidateProfile candidate(@PathVariable("id") UUID id) { return required(candidates.findById(id),"CandidateProfile",id); }
-    @PostMapping("/candidates") @ResponseStatus(HttpStatus.CREATED) CandidateProfile createCandidate(@RequestBody CandidateRequest request) { return candidates.save(request.toDomain(UUID.randomUUID())); }
-    @PutMapping("/candidates/{id}") CandidateProfile updateCandidate(@PathVariable("id") UUID id,@RequestBody CandidateRequest request) { required(candidates.findById(id),"CandidateProfile",id); return candidates.save(request.toDomain(id)); }
+    @PostMapping("/candidates") @ResponseStatus(HttpStatus.CREATED) @Transactional CandidateProfile createCandidate(@RequestBody CandidateRequest request) { return candidateProfiles.create(request.toDomain(UUID.randomUUID())); }
+    @PutMapping("/candidates/{id}") @Transactional CandidateProfile updateCandidate(@PathVariable("id") UUID id,@RequestBody CandidateRequest request) { return candidateProfiles.saveDraft(id, request.toDomain(id)); }
     @DeleteMapping("/candidates/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteCandidate(@PathVariable("id") UUID id) { required(candidates.findById(id),"CandidateProfile",id); candidates.deleteById(id); }
+    @GetMapping("/candidates/{id}/facts") CandidateProfileService.CandidateProfileFacts candidateFacts(@PathVariable("id") UUID id) { return candidateProfiles.facts(id); }
+    @PostMapping("/candidates/{id}/facts/confirm") @Transactional CandidateProfileService.CandidateProfileFacts confirmCandidateFacts(@PathVariable("id") UUID id,@RequestBody ConfirmCandidateFactsRequest request) { return candidateProfiles.confirm(id, request.factKeys()); }
 
     @PostMapping("/eligibility-assessments") void assess(@RequestBody AssessmentRequest request) {
         throw new ResponseStatusException(HttpStatus.GONE,
@@ -91,8 +96,9 @@ class CareerMvpController {
         JobPosting toDomain(UUID id){return new JobPosting(id,recruitmentEventId,organizationId,externalJobCode,title,jobFamily,employmentType,location,headcount,minimumEducation,exactMajors,acceptedGraduationYears,maximumAge,ageReferenceDate,minimumExperienceYears,requiredProfessionalTitles,duties,sourceUrl,evidenceIds);}
     }
     record CandidateRequest(String displayName,int birthYear,int birthMonth,Integer birthDay,EducationLevel highestEducation,Set<String> majors,Integer graduationYear,Integer experienceYears,Set<String> professionalTitles,List<String> preferredLocations,Set<EmploymentType> acceptedEmploymentTypes,String profileVersion,Set<String> skills,Set<String> researchKeywords,Set<JobFamily> targetJobFamilies,Set<OrganizationType> preferredOrganizationTypes) {
-        CandidateProfile toDomain(UUID id){return new CandidateProfile(id,displayName,new PartialDate(birthYear,birthMonth,birthDay),highestEducation,majors,graduationYear,experienceYears,professionalTitles,preferredLocations,acceptedEmploymentTypes,profileVersion,skills,researchKeywords,targetJobFamilies,preferredOrganizationTypes);}
+        CandidateProfile toDomain(UUID id){return new CandidateProfile(id,displayName,new PartialDate(birthYear,birthMonth,birthDay),highestEducation,majors,graduationYear,experienceYears,professionalTitles,preferredLocations,acceptedEmploymentTypes,"server-pending",skills,researchKeywords,targetJobFamilies,preferredOrganizationTypes);}
     }
+    record ConfirmCandidateFactsRequest(Set<CandidateFacts.CandidateFactKey> factKeys) {}
     record AssessmentRequest(UUID candidateId,UUID jobId) {}
     record OpportunityStatusRequest(OpportunityStatus status,String decisionNote) {}
 }

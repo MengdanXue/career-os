@@ -5,6 +5,7 @@ import com.careeros.domain.DomainEnums.EmploymentType;
 import com.careeros.domain.DomainEnums.JobFamily;
 import com.careeros.domain.DomainEnums.OrganizationType;
 import java.util.List;
+import java.util.Collection;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -20,6 +21,11 @@ public record CandidateProfile(UUID id, String displayName, PartialDate birthDat
         researchKeywords = researchKeywords == null ? Set.of() : Set.copyOf(researchKeywords);
         targetJobFamilies = targetJobFamilies == null ? Set.of() : Set.copyOf(targetJobFamilies);
         preferredOrganizationTypes = preferredOrganizationTypes == null ? Set.of() : Set.copyOf(preferredOrganizationTypes);
+        requireTokens(majors, "majors");
+        requireTokens(professionalTitles, "professionalTitles");
+        requireTokens(preferredLocations, "preferredLocations");
+        requireTokens(skills, "skills");
+        requireTokens(researchKeywords, "researchKeywords");
     }
     public CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion) {
         this(id, displayName, birthDate, highestEducation, majors, graduationYear, experienceYears,
@@ -27,4 +33,9 @@ public record CandidateProfile(UUID id, String displayName, PartialDate birthDat
             Set.of(), Set.of(), Set.of(), Set.of());
     }
     private static void require(String value, String field) { if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required"); }
+    private static void requireTokens(Collection<String> values, String field) {
+        if (values.stream().anyMatch(value -> value == null || value.isBlank())) {
+            throw new IllegalArgumentException(field + " cannot contain blank values");
+        }
+    }
 }

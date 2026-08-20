@@ -2,6 +2,7 @@ package com.careeros.domain;
 
 import static com.careeros.domain.DomainEnums.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
@@ -36,6 +37,27 @@ class FitEvaluatorTest {
             .allMatch(d -> d.factStatus() == AssessmentFactStatus.UNKNOWN && d.achievedPoints() == 0);
         assertThat(result.score()).isEqualTo(70);
         assertThat(result.coveragePercent()).isEqualTo(70);
+    }
+
+    @Test
+    void storedButUnconfirmedSkillsDoNotAddPositiveFitPoints() {
+        var candidate = candidate(Set.of("Java", "PostgreSQL"), Set.of("数据治理"));
+        var result = new FitEvaluator().evaluate(
+            candidate, CandidateFacts.resolve(candidate, List.of()),
+            job(EmploymentType.ESTABLISHMENT, "负责Java、PostgreSQL平台与数据治理研究", List.of(UUID.randomUUID())),
+            organization(OrganizationType.PUBLIC_INSTITUTION), "c".repeat(64), Instant.parse("2026-08-20T12:00:00Z")
+        );
+
+        assertThat(result.dimensions().stream()
+            .filter(d -> d.type() == AssessmentDimensionType.SKILL_FIT || d.type() == AssessmentDimensionType.RESEARCH_FIT))
+            .allMatch(d -> d.factStatus() == AssessmentFactStatus.UNKNOWN && d.achievedPoints() == 0);
+    }
+
+    @Test
+    void candidateRejectsBlankDecisionKeywords() {
+        assertThatThrownBy(() -> candidate(Set.of("  "), Set.of("数据治理")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("skills");
     }
 
     private static CandidateProfile candidate(Set<String> skills, Set<String> research) {

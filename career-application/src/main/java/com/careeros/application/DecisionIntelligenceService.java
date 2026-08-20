@@ -15,6 +15,7 @@ import java.util.UUID;
 public final class DecisionIntelligenceService implements DecisionAssessor {
     public static final String VERSION = "decision-v1";
     private final RepositoryPorts.CandidateProfiles candidates;
+    private final RepositoryPorts.CandidateFactConfirmations candidateFacts;
     private final RepositoryPorts.EligibilityAssessments eligibilityAssessments;
     private final JobContexts jobContexts;
     private final OrganizationStabilityFacts stabilityFacts;
@@ -27,6 +28,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
 
     public DecisionIntelligenceService(
         RepositoryPorts.CandidateProfiles candidates,
+        RepositoryPorts.CandidateFactConfirmations candidateFacts,
         RepositoryPorts.EligibilityAssessments eligibilityAssessments,
         JobContexts jobContexts,
         OrganizationStabilityFacts stabilityFacts,
@@ -38,6 +40,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         StabilityEvaluator stabilityEvaluator
     ) {
         this.candidates = Objects.requireNonNull(candidates);
+        this.candidateFacts = Objects.requireNonNull(candidateFacts);
         this.eligibilityAssessments = Objects.requireNonNull(eligibilityAssessments);
         this.jobContexts = Objects.requireNonNull(jobContexts);
         this.stabilityFacts = Objects.requireNonNull(stabilityFacts);
@@ -50,18 +53,19 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     }
 
     public DecisionBundle assess(UUID candidateId, UUID jobId, Instant now) {
-        var candidate = candidate(candidateId);
         return inputLock.execute(lockFingerprint(candidateId, jobId), () -> {
+            var candidate = candidate(candidateId);
+            var facts = CandidateFacts.resolve(candidate, candidateFacts.findByCandidateId(candidateId));
             var context = lockedContext(jobId);
             requireDecisionReady(jobId, context);
             var input = input(candidate, context);
-            return snapshots.findByInput(input).orElseGet(() -> evaluate(input, candidate, context, now));
+            return snapshots.findByInput(input).orElseGet(() -> evaluate(input, candidate, facts, context, now));
         });
     }
 
     public DecisionBundle current(UUID candidateId, UUID jobId) {
-        var candidate = candidate(candidateId);
         return inputLock.execute(lockFingerprint(candidateId, jobId), () -> {
+            var candidate = candidate(candidateId);
             var context = lockedContext(jobId);
             requireDecisionReady(jobId, context);
             return snapshots.findByInput(input(candidate, context))
@@ -108,9 +112,9 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         }
     }
 
-    private DecisionBundle evaluate(DecisionInputKey input, CandidateProfile candidate, JobContext context, Instant now) {
-        var eligibility = eligibilityAssessments.save(eligibilityEvaluator.evaluate(candidate, context.job(), context.contentFingerprint(), now));
-        var fit = fitEvaluator.evaluate(candidate, context.job(), context.organization(), context.contentFingerprint(), now);
+    private DecisionBundle evaluate(DecisionInputKey input, CandidateProfile candidate, CandidateFacts facts, JobContext context, Instant now) {
+        var eligibility = eligibilityAssessments.save(eligibilityEvaluator.evaluate(candidate, facts, context.job(), context.contentFingerprint(), now));
+        var fit = fitEvaluator.evaluate(candidate, facts, context.job(), context.organization(), context.contentFingerprint(), now);
         var stabilityResult = stabilityEvaluator.evaluate(candidate, context.job(), context.organization(), stabilityFacts.findByOrganizationId(context.organization().id()), context.contentFingerprint(), now);
         OpportunityTier tier = excluded(eligibility.status()) ? OpportunityTier.EXCLUDED : stabilityResult.tier();
         int coverage = Math.round((fit.coveragePercent() + stabilityResult.assessment().coveragePercent()) / 2f);

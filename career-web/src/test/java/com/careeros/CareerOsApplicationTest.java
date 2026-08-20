@@ -2,6 +2,7 @@ package com.careeros;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
@@ -217,8 +218,30 @@ class CareerOsApplicationTest {
                     }
                     """))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.profileVersion").value("profile-api-v2"))
+            .andExpect(jsonPath("$.profileVersion").value(startsWith("profile-")))
             .andExpect(jsonPath("$.skills", hasItem("Java")));
+
+        mvc.perform(get("/api/v1/candidates/{id}/facts", "01992f09-0000-7000-8000-000000000001"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.statuses.SKILLS").value("UNCONFIRMED"))
+            .andExpect(jsonPath("$.decisionReady").value(false));
+
+        mvc.perform(post("/api/v1/candidates/{id}/facts/confirm", "01992f09-0000-7000-8000-000000000001")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"factKeys":["BIRTH_DATE","HIGHEST_EDUCATION","MAJORS","GRADUATION_YEAR",
+                    "EXPERIENCE_YEARS","PROFESSIONAL_TITLES","PREFERRED_LOCATIONS",
+                    "ACCEPTED_EMPLOYMENT_TYPES","SKILLS","RESEARCH_KEYWORDS","TARGET_JOB_FAMILIES",
+                    "PREFERRED_ORGANIZATION_TYPES"]}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.profile.profileVersion").value(startsWith("profile-")))
+            .andExpect(jsonPath("$.statuses.SKILLS").value("CONFIRMED"))
+            .andExpect(jsonPath("$.decisionReady").value(true));
+
+        mvc.perform(get("/api/v1/candidates/{id}/facts", "01992f09-0000-7000-8000-000000000001"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.statuses.SKILLS").value("CONFIRMED"));
     }
 
     @Test

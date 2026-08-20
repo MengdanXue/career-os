@@ -5,7 +5,6 @@ import { splitFacts } from './profileSchema'
 
 type Props = {
   candidate: CandidateProfile
-  profileVersion: string
   submitLabel: string
   error: unknown
   pending: boolean
@@ -20,6 +19,7 @@ type Fields = {
   majors: string
   graduationYear: string
   experienceYears: string
+  professionalTitles: string
   preferredLocations: string
   acceptedEmploymentTypes: string[]
   skills: string
@@ -37,6 +37,7 @@ function initialFields(candidate: CandidateProfile): Fields {
     majors: candidate.majors.join(', '),
     graduationYear: candidate.graduationYear?.toString() ?? '',
     experienceYears: candidate.experienceYears?.toString() ?? '',
+    professionalTitles: candidate.professionalTitles.join(', '),
     preferredLocations: candidate.preferredLocations.join(', '),
     acceptedEmploymentTypes: candidate.acceptedEmploymentTypes,
     skills: candidate.skills.join(', '),
@@ -46,9 +47,9 @@ function initialFields(candidate: CandidateProfile): Fields {
   }
 }
 
-export function ProfileForm({ candidate, profileVersion, submitLabel, error, pending, onSubmit }: Props) {
+export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }: Props) {
   const [fields, setFields] = useState(() => initialFields(candidate))
-  useEffect(() => setFields(initialFields(candidate)), [candidate, profileVersion])
+  useEffect(() => setFields(initialFields(candidate)), [candidate])
 
   function set<K extends keyof Fields>(key: K, value: Fields[K]) {
     setFields(previous => ({ ...previous, [key]: value }))
@@ -65,10 +66,9 @@ export function ProfileForm({ candidate, profileVersion, submitLabel, error, pen
       majors: splitFacts(fields.majors),
       graduationYear: fields.graduationYear ? Number(fields.graduationYear) : null,
       experienceYears: fields.experienceYears ? Number(fields.experienceYears) : null,
-      professionalTitles: candidate.professionalTitles,
+      professionalTitles: splitFacts(fields.professionalTitles),
       preferredLocations: splitFacts(fields.preferredLocations),
       acceptedEmploymentTypes: fields.acceptedEmploymentTypes,
-      profileVersion,
       skills: splitFacts(fields.skills),
       researchKeywords: splitFacts(fields.researchKeywords),
       targetJobFamilies: fields.targetJobFamilies,
@@ -93,6 +93,7 @@ export function ProfileForm({ candidate, profileVersion, submitLabel, error, pen
       <fieldset disabled={pending}>
         <legend>岗位匹配依据</legend>
         <label>专业<input aria-label="专业" required value={fields.majors} onChange={event => set('majors', event.target.value)} /><small>多个专业用逗号分隔；用于检查公告中的专业硬条件。</small></label>
+        <label>专业职称<input aria-label="专业职称" value={fields.professionalTitles} onChange={event => set('professionalTitles', event.target.value)} /><small>没有职称可以留空；确认后会作为明确没有参与判断。</small></label>
         <label>技能关键词<input aria-label="技能关键词" value={fields.skills} onChange={event => set('skills', event.target.value)} /><small>只填写你能用经历或作品证明的技能。</small></label>
         <label>研究或业务关键词<input value={fields.researchKeywords} onChange={event => set('researchKeywords', event.target.value)} /></label>
       </fieldset>

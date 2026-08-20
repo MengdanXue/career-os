@@ -1,10 +1,12 @@
 package com.careeros.infrastructure.persistence;
 
 import com.careeros.domain.DomainEnums.*;
+import com.careeros.domain.CandidateFacts;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
+import java.io.Serializable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -101,6 +103,34 @@ public final class JpaModels {
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "target_job_families", columnDefinition = "jsonb", nullable = false) Set<JobFamily> targetJobFamilies = new LinkedHashSet<>();
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "preferred_organization_types", columnDefinition = "jsonb", nullable = false) Set<OrganizationType> preferredOrganizationTypes = new LinkedHashSet<>();
         protected CandidateProfileEntity() {}
+    }
+
+    @Embeddable
+    public static class CandidateFactConfirmationId implements Serializable {
+        @Column(name = "candidate_profile_id", nullable = false) UUID candidateProfileId;
+        @Column(name = "fact_key", nullable = false) String factKey;
+        protected CandidateFactConfirmationId() {}
+        CandidateFactConfirmationId(UUID candidateProfileId, String factKey) {
+            this.candidateProfileId = candidateProfileId;
+            this.factKey = factKey;
+        }
+        @Override public boolean equals(Object other) {
+            return other instanceof CandidateFactConfirmationId value
+                && Objects.equals(candidateProfileId, value.candidateProfileId)
+                && Objects.equals(factKey, value.factKey);
+        }
+        @Override public int hashCode() { return Objects.hash(candidateProfileId, factKey); }
+    }
+
+    @Entity @Table(name = "candidate_fact_confirmation")
+    public static class CandidateFactConfirmationEntity {
+        @EmbeddedId CandidateFactConfirmationId id;
+        @Enumerated(EnumType.STRING) @Column(nullable = false) CandidateFacts.CandidateFactStatus status;
+        @Column(name = "value_fingerprint", nullable = false, length = 64) String valueFingerprint;
+        @Enumerated(EnumType.STRING) @Column(nullable = false) CandidateFacts.CandidateFactSource source;
+        @Column(name = "confirmed_at") Instant confirmedAt;
+        @Column(name = "updated_at", nullable = false) Instant updatedAt;
+        protected CandidateFactConfirmationEntity() {}
     }
 
     @Entity @Table(name = "policy_rule")
