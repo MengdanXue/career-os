@@ -1,7 +1,7 @@
 :root {
   font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
-  color: #1d2927;
-  background: #f2efe6;
+  color: var(--archive);
+  background: var(--porcelain);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -40,7 +40,7 @@ a { color: inherit; }
 }
 
 .primary-navigation a { padding: 8px 14px; color: #596460; text-decoration: none; border-bottom: 2px solid transparent; }
-.primary-navigation a.active { color: #173d39; border-color: #d58137; font-weight: 650; }
+.primary-navigation a.active { color: var(--tide); border-color: var(--caution); font-weight: 650; }
 
 .shell-content { width: min(1120px, calc(100% - 40px)); margin: 0 auto; padding: clamp(48px, 8vw, 100px) 0; }
 .eyebrow { margin: 0 0 16px; color: #b56a2c; font-size: 12px; font-weight: 750; letter-spacing: .16em; }

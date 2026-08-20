@@ -1,0 +1,13 @@
+:root {
+  --porcelain: #f2efe6;
+  --paper: #faf7ef;
+  --archive: #1d2927;
+  --muted: #66706d;
+  --line: #c9c5b8;
+  --tide: #173d39;
+  --evidence: #2a806b;
+  --caution: #d58137;
+  --blocker: #a9483d;
+  --eligible: #2d725f;
+  --shadow: 0 18px 50px rgba(29, 41, 39, .1);
+}
