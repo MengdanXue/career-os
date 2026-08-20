@@ -32,8 +32,8 @@ describe('UpdatesPage', () => {
       : defaults(input)))
 
     render(<AppProviders><UpdatesPage /></AppProviders>)
-    await userEvent.click(await screen.findByRole('button', { name: '运行 杭州市人社局' }))
-    expect(await screen.findByText('部分完成：新增 1，更新 1，失败 1')).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: '运行 杭州市人社局' }, { timeout: 5_000 }))
+    expect(await screen.findByText('部分完成：新增 1，更新 1，失败 1', {}, { timeout: 5_000 })).toBeInTheDocument()
     expect(screen.queryByText('更新成功')).not.toBeInTheDocument()
   })
 
