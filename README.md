@@ -7,9 +7,12 @@
 - Phase 1：岗位、单位、候选人、资格评估和 Opportunity Tracker；官方 Excel 增量导入支持新增、变更、未变化和下线。
 - Phase 2：HTML/PDF 证据解析、可选 LLM 结构化抽取、JSON Schema 校验、证据定位、Review Queue、幂等复用、OpenAPI 和采集指标。
 - Phase 3A：浙江省、杭州市人社官方源定时增量采集；稳定公告键、SHA-256 内容指纹、条件请求、附件路由、PostgreSQL 分布式锁，以及新增/变更/下线变化流。
+- Phase 4A：确定性硬资格门槛、六维岗位匹配、证据感知稳定性、T1/T2/T3 分层、版本化决策快照、排名 API，以及带无模型回退的受控自然语言决策 Agent。
 - Java 21：编译与运行均使用 Java 21，Spring 任务执行器启用虚拟线程，适合并发下载、文档解析和数据库等待等 I/O 密集工作。
 
 当前阶段没有引入全网爬虫、登录/CAPTCHA、自动投递或前端。Phase 3A 只启用两个官方核心源，采集结果继续进入现有的确定性 Excel 导入或 HTML/PDF 证据审核管道。
+
+Phase 4A 的模型不是决策者：资格、分数、层级和证据均由 Java 规则计算。模型默认关闭，启用后也只负责润色已经生成的解释，失败时自动回退到确定性中文说明。
 
 ## 模块
 
@@ -36,6 +39,12 @@ $env:CAREER_OS_AI_MODEL='gpt-5-mini'
 ```
 
 模型输出必须通过 JSON Schema 和证据校验；LLM 不能覆盖确定性资格规则。需要强制模型成功时，在上传元数据中设置 `requireModel=true`。
+
+如只启用 Phase 4A Agent 的可选模型润色，还需设置：
+
+```powershell
+$env:CAREER_OS_AGENT_LLM_ENABLED='true'
+```
 
 ## 构建与运行
 
@@ -68,4 +77,4 @@ java -jar career-web\target\career-web-0.1.0-SNAPSHOT.jar
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - 指标：`http://localhost:8080/actuator/metrics`
 
-接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md) 和 [Phase 3 增量采集 API](docs/PHASE3_API.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。
+接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md)、[Phase 3 增量采集 API](docs/PHASE3_API.md) 和 [Phase 4A 决策智能与 Agent API](docs/PHASE4A_API.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。
