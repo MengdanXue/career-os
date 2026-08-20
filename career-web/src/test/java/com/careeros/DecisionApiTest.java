@@ -76,6 +76,15 @@ class DecisionApiTest {
         verify(decisions, never()).assess(any(), any(), any());
     }
 
+    @Test void rawJobReturnsStableAdmissionProblemCode() throws Exception {
+        when(decisions.assess(eq(CANDIDATE_ID), eq(JOB_ID), any()))
+            .thenThrow(new DecisionExceptions.JobNotAdmittedException("Job is not admitted"));
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/job-decisions/{jobId}", CANDIDATE_ID, JOB_ID))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("JOB_NOT_ADMITTED"));
+    }
+
     private static DecisionBundle bundle() {
         UUID eventId=UUID.randomUUID(), organizationId=UUID.randomUUID(), eligibilityId=UUID.randomUUID(), fitId=UUID.randomUUID(), stabilityId=UUID.randomUUID();
         UUID evidenceId=UUID.randomUUID();

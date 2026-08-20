@@ -5,6 +5,8 @@ import static com.careeros.domain.DomainEnums.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+import com.careeros.application.JobAdmissionPorts.AdmissionSummary;
+import com.careeros.application.JobAdmissionPorts.JobAdmissions;
 import com.careeros.domain.*;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -23,11 +25,29 @@ class DecisionRankingAndExplanationTest {
         var contexts = new Contexts(List.of(t2.jobContext(), excluded.jobContext(), t1.jobContext()));
         Map<UUID,DecisionBundle> byJob = Map.of(t1.decision().jobPostingId(), t1, t2.decision().jobPostingId(), t2, excluded.decision().jobPostingId(), excluded);
 
-        var page = new DecisionRankingService(contexts, (candidateId, jobId, now) -> byJob.get(jobId))
+        var page = new DecisionRankingService(contexts, admissionsFor(contexts.values), (candidateId, jobId, now) -> byJob.get(jobId))
             .rank(CANDIDATE_ID, new DecisionRankingService.RankingQuery(null, null, null, 0, 10, false), NOW);
 
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).extracting(item -> item.decision().tier()).containsExactly(OpportunityTier.T1, OpportunityTier.T2);
+    }
+
+    @Test
+    void rankingOnlyAssessesVerifiedIncludedJobs() {
+        var admitted = bundle(OpportunityTier.T1, EligibilityStatus.ELIGIBLE, 70, "可信岗位", LocalDate.of(2026, 9, 1));
+        var raw = bundle(OpportunityTier.T1, EligibilityStatus.ELIGIBLE, 99, "原始岗位", LocalDate.of(2026, 9, 1));
+        var contexts = new Contexts(List.of(admitted.jobContext(), raw.jobContext()));
+        var admissions = admissionsFor(List.of(admitted.jobContext()));
+        var assessed = new ArrayList<UUID>();
+
+        var page = new DecisionRankingService(contexts, admissions, (candidateId, jobId, now) -> {
+            assessed.add(jobId);
+            return jobId.equals(admitted.decision().jobPostingId()) ? admitted : raw;
+        }).rank(CANDIDATE_ID, new DecisionRankingService.RankingQuery(null, null, null, 0, 10, false), NOW);
+
+        assertThat(page.items()).extracting(item -> item.jobContext().job().id())
+            .containsExactly(admitted.jobContext().job().id());
+        assertThat(assessed).containsExactly(admitted.jobContext().job().id());
     }
 
     @Test
@@ -45,7 +65,7 @@ class DecisionRankingAndExplanationTest {
     void veryLargePageNumberReturnsAnEmptyPageWithoutOverflowing() {
         var value = bundle(OpportunityTier.T1, EligibilityStatus.ELIGIBLE, 70, "信息中心", LocalDate.of(2026, 9, 1));
         var contexts = new Contexts(List.of(value.jobContext()));
-        var service = new DecisionRankingService(contexts, (candidateId, jobId, now) -> value);
+        var service = new DecisionRankingService(contexts, admissionsFor(contexts.values), (candidateId, jobId, now) -> value);
 
         assertThatCode(() -> {
             var page = service.rank(CANDIDATE_ID, new DecisionRankingService.RankingQuery(null, null, null, Integer.MAX_VALUE, 100, false), NOW);
@@ -72,5 +92,17 @@ class DecisionRankingAndExplanationTest {
     private record Contexts(List<JobContext> values) implements JobContexts {
         public Optional<JobContext> findByJobId(UUID id) { return values.stream().filter(v -> v.job().id().equals(id)).findFirst(); }
         public List<JobContext> findActive() { return values.stream().filter(JobContext::active).toList(); }
+    }
+
+    private static JobAdmissions admissionsFor(List<JobContext> contexts) {
+        var values = new LinkedHashMap<UUID, JobAdmission>();
+        contexts.forEach(context -> values.put(context.job().id(), new JobAdmission(
+            context.job().id(), DataQualityStatus.VERIFIED, TargetScopeStatus.INCLUDED,
+            Set.of(JobAdmissionReason.TARGET_TECHNICAL_ROLE), "admission-v1", NOW, true)));
+        return new JobAdmissions() {
+            public Optional<JobAdmission> findByJobId(UUID jobId) { return Optional.ofNullable(values.get(jobId)); }
+            public JobAdmission save(JobAdmission value) { values.put(value.jobPostingId(), value); return value; }
+            public AdmissionSummary summarize() { throw new UnsupportedOperationException(); }
+        };
     }
 }

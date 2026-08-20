@@ -227,7 +227,7 @@ git commit -m "feat(admission): persist raw and verified job states"
 - Produces: new constructors `DecisionRankingService(JobContexts, JobAdmissions, DecisionAssessor)` and `DecisionIntelligenceService(..., JobAdmissions, ...)`.
 - Produces: HTTP `409` with Problem Detail code `JOB_NOT_ADMITTED` for direct assessment of raw/review jobs.
 
-- [ ] **Step 1: Write failing gate tests**
+- [x] **Step 1: Write failing gate tests**
 
 Add a ranking test with one admitted and one raw active job:
 
@@ -247,7 +247,7 @@ assertThat(snapshots.values).isEmpty();
 
 Add an API test expecting `409` and `$.code == "JOB_NOT_ADMITTED"`.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 ```powershell
 mvn -pl career-web -am '-Dtest=DecisionRankingAndExplanationTest,DecisionIntelligenceServiceTest,DecisionApiTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
@@ -255,7 +255,7 @@ mvn -pl career-web -am '-Dtest=DecisionRankingAndExplanationTest,DecisionIntelli
 
 Expected: constructor/signature compilation failures and missing exception mapping.
 
-- [ ] **Step 3: Implement the gate**
+- [x] **Step 3: Implement the gate**
 
 In ranking, filter active contexts before calling the assessor:
 
@@ -269,7 +269,7 @@ In direct assessment, call a private `requireAdmitted(jobId)` before snapshot lo
 
 Map this exception to HTTP 409 with code `JOB_NOT_ADMITTED`, title `Job not admitted`, and a plain detail. Wire the shared `JpaJobAdmissionStore` through `ApplicationConfiguration`.
 
-- [ ] **Step 4: Run decision tests GREEN**
+- [x] **Step 4: Run decision tests GREEN**
 
 ```powershell
 mvn -pl career-web -am '-Dtest=DecisionRankingAndExplanationTest,DecisionIntelligenceServiceTest,DecisionApiTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
@@ -277,7 +277,7 @@ mvn -pl career-web -am '-Dtest=DecisionRankingAndExplanationTest,DecisionIntelli
 
 Expected: raw jobs are never assessed, admitted jobs retain existing ordering, and direct raw assessment returns the stable 409 problem.
 
-- [ ] **Step 5: Commit the decision gate**
+- [x] **Step 5: Commit the decision gate**
 
 ```powershell
 git add career-application/src/main/java/com/careeros/application/DecisionRankingService.java career-application/src/main/java/com/careeros/application/DecisionIntelligenceService.java career-application/src/main/java/com/careeros/application/DecisionExceptions.java career-application/src/test/java/com/careeros/application/DecisionRankingAndExplanationTest.java career-application/src/test/java/com/careeros/application/DecisionIntelligenceServiceTest.java career-web/src/main/java/com/careeros/ApplicationConfiguration.java career-web/src/main/java/com/careeros/ApiExceptionHandler.java career-web/src/test/java/com/careeros/DecisionApiTest.java

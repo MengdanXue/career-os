@@ -3,6 +3,7 @@ package com.careeros.application;
 import static com.careeros.application.DecisionPorts.*;
 import static com.careeros.domain.DomainEnums.*;
 
+import com.careeros.application.JobAdmissionPorts.JobAdmissions;
 import com.careeros.domain.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -18,6 +19,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     private final JobContexts jobContexts;
     private final OrganizationStabilityFacts stabilityFacts;
     private final DecisionSnapshots snapshots;
+    private final JobAdmissions admissions;
     private final DecisionInputLock inputLock;
     private final EligibilityEvaluator eligibilityEvaluator;
     private final FitEvaluator fitEvaluator;
@@ -29,6 +31,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         JobContexts jobContexts,
         OrganizationStabilityFacts stabilityFacts,
         DecisionSnapshots snapshots,
+        JobAdmissions admissions,
         DecisionInputLock inputLock,
         EligibilityEvaluator eligibilityEvaluator,
         FitEvaluator fitEvaluator,
@@ -39,6 +42,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         this.jobContexts = Objects.requireNonNull(jobContexts);
         this.stabilityFacts = Objects.requireNonNull(stabilityFacts);
         this.snapshots = Objects.requireNonNull(snapshots);
+        this.admissions = Objects.requireNonNull(admissions);
         this.inputLock = Objects.requireNonNull(inputLock);
         this.eligibilityEvaluator = Objects.requireNonNull(eligibilityEvaluator);
         this.fitEvaluator = Objects.requireNonNull(fitEvaluator);
@@ -48,6 +52,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     public DecisionBundle assess(UUID candidateId, UUID jobId, Instant now) {
         var candidate = candidate(candidateId);
         var context = context(jobId);
+        requireAdmitted(jobId);
         var input = input(candidate, context);
         return inputLock.execute(inputFingerprint(input),
             () -> snapshots.findByInput(input).orElseGet(() -> evaluate(input, candidate, context, now)));
@@ -56,6 +61,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     public DecisionBundle current(UUID candidateId, UUID jobId) {
         var candidate = candidate(candidateId);
         var context = context(jobId);
+        requireAdmitted(jobId);
         return snapshots.findByInput(input(candidate, context))
             .orElseThrow(() -> new DecisionExceptions.DecisionNotFoundException(
                 "Decision not found for the current candidate and job versions"));
@@ -69,6 +75,14 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     private JobContext context(UUID jobId) {
         return jobContexts.findByJobId(jobId)
             .orElseThrow(() -> new DecisionExceptions.JobNotFoundException("Job not found: " + jobId));
+    }
+
+    private void requireAdmitted(UUID jobId) {
+        if (admissions.findByJobId(jobId).map(value -> value.admitted()).orElse(false)) {
+            return;
+        }
+        throw new DecisionExceptions.JobNotAdmittedException(
+            "Job has not passed evidence admission: " + jobId);
     }
 
     private static DecisionInputKey input(CandidateProfile candidate, JobContext context) {

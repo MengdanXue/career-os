@@ -5,6 +5,8 @@ import static com.careeros.domain.DomainEnums.*;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.careeros.application.JobAdmissionPorts.AdmissionSummary;
+import com.careeros.application.JobAdmissionPorts.JobAdmissions;
 import com.careeros.domain.*;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -55,6 +57,18 @@ class DecisionIntelligenceServiceTest {
     }
 
     @Test
+    void rawJobIsRejectedBeforeAnyAssessmentIsSaved() {
+        var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
+        fixture.admissions.save(JobAdmission.raw(
+            fixture.jobId, NOW, JobAdmissionReason.LEGACY_UNVERIFIED));
+
+        assertThatThrownBy(() -> fixture.service.assess(fixture.candidateId, fixture.jobId, NOW))
+            .isInstanceOf(DecisionExceptions.JobNotAdmittedException.class);
+
+        assertThat(fixture.snapshots.saved).isZero();
+    }
+
+    @Test
     void concurrentIdenticalAssessmentsShareOneSnapshot() throws Exception {
         var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
         fixture.snapshots.slowFind = true;
@@ -87,9 +101,13 @@ class DecisionIntelligenceServiceTest {
         var contexts = new MemoryContexts(new JobContext(job, organization, event, FINGERPRINT, true));
         var snapshots = new MemorySnapshots();
         var assessments = new MemoryEligibility();
+        var admissions = new MemoryAdmissions();
+        admissions.save(new JobAdmission(
+            jobId, DataQualityStatus.VERIFIED, TargetScopeStatus.INCLUDED,
+            Set.of(JobAdmissionReason.TARGET_TECHNICAL_ROLE), "admission-v1", NOW, true));
         var inputLock = new SynchronizedDecisionInputLock();
-        var service = new DecisionIntelligenceService(candidates, assessments, contexts, organizationId1 -> List.of(), snapshots, inputLock, new EligibilityEvaluator(), new FitEvaluator(), new StabilityEvaluator());
-        return new Fixture(initialCandidate.id(), jobId, candidates, snapshots, inputLock, service);
+        var service = new DecisionIntelligenceService(candidates, assessments, contexts, organizationId1 -> List.of(), snapshots, admissions, inputLock, new EligibilityEvaluator(), new FitEvaluator(), new StabilityEvaluator());
+        return new Fixture(initialCandidate.id(), jobId, candidates, snapshots, admissions, inputLock, service);
     }
 
     private static CandidateProfile candidate(String version, Set<String> majors) {
@@ -102,7 +120,7 @@ class DecisionIntelligenceServiceTest {
             Set.of("Java", "PostgreSQL"), Set.of("数据治理"), Set.of(JobFamily.SOFTWARE), Set.of(OrganizationType.PUBLIC_INSTITUTION));
     }
 
-    private record Fixture(UUID candidateId, UUID jobId, MemoryCandidates candidates, MemorySnapshots snapshots, SynchronizedDecisionInputLock inputLock, DecisionIntelligenceService service) {}
+    private record Fixture(UUID candidateId, UUID jobId, MemoryCandidates candidates, MemorySnapshots snapshots, MemoryAdmissions admissions, SynchronizedDecisionInputLock inputLock, DecisionIntelligenceService service) {}
 
     private abstract static class MemoryRepository<T> implements RepositoryPorts.Repository<T> {
         final Map<UUID,T> values = new LinkedHashMap<>();
@@ -119,6 +137,12 @@ class DecisionIntelligenceServiceTest {
         MemoryContexts(JobContext context) { this.context = context; }
         public Optional<JobContext> findByJobId(UUID id) { return context.job().id().equals(id) ? Optional.of(context) : Optional.empty(); }
         public List<JobContext> findActive() { return context.active() ? List.of(context) : List.of(); }
+    }
+    private static final class MemoryAdmissions implements JobAdmissions {
+        private final Map<UUID, JobAdmission> values = new LinkedHashMap<>();
+        public Optional<JobAdmission> findByJobId(UUID jobId) { return Optional.ofNullable(values.get(jobId)); }
+        public JobAdmission save(JobAdmission value) { values.put(value.jobPostingId(), value); return value; }
+        public AdmissionSummary summarize() { throw new UnsupportedOperationException(); }
     }
     private static final class MemorySnapshots implements DecisionSnapshots {
         private final Map<DecisionInputKey,DecisionBundle> values = new LinkedHashMap<>();

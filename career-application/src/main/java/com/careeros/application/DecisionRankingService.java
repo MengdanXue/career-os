@@ -3,6 +3,7 @@ package com.careeros.application;
 import static com.careeros.application.DecisionPorts.*;
 import static com.careeros.domain.DomainEnums.*;
 
+import com.careeros.application.JobAdmissionPorts.JobAdmissions;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -12,10 +13,12 @@ import java.util.stream.Stream;
 
 public final class DecisionRankingService {
     private final JobContexts jobContexts;
+    private final JobAdmissions admissions;
     private final DecisionAssessor assessor;
 
-    public DecisionRankingService(JobContexts jobContexts, DecisionAssessor assessor) {
+    public DecisionRankingService(JobContexts jobContexts, JobAdmissions admissions, DecisionAssessor assessor) {
         this.jobContexts = jobContexts;
+        this.admissions = admissions;
         this.assessor = assessor;
     }
 
@@ -23,6 +26,9 @@ public final class DecisionRankingService {
         if (query.page() < 0) throw new IllegalArgumentException("page must not be negative");
         if (query.size() < 1 || query.size() > 100) throw new IllegalArgumentException("size must be between 1 and 100");
         Stream<DecisionBundle> stream = jobContexts.findActive().stream()
+            .filter(context -> admissions.findByJobId(context.job().id())
+                .map(admission -> admission.admitted())
+                .orElse(false))
             .filter(context -> query.location() == null || contains(context.job().location(), query.location()))
             .filter(context -> query.jobFamily() == null || context.job().jobFamily() == query.jobFamily())
             .map(context -> assessor.assess(candidateId, context.job().id(), now))

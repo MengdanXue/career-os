@@ -61,6 +61,10 @@ class ApiExceptionHandler {
     ResponseEntity<ProblemDetail> jobMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND", "Job not found", exception.getMessage());
     }
+    @ExceptionHandler(DecisionExceptions.JobNotAdmittedException.class)
+    ResponseEntity<ProblemDetail> jobNotAdmitted(RuntimeException exception) {
+        return problem(HttpStatus.CONFLICT, "JOB_NOT_ADMITTED", "Job not admitted", exception.getMessage());
+    }
     @ExceptionHandler(DecisionExceptions.DecisionNotFoundException.class)
     ResponseEntity<ProblemDetail> decisionMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "DECISION_NOT_FOUND", "Decision not found", exception.getMessage());
