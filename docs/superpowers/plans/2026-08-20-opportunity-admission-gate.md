@@ -62,7 +62,7 @@
 - Produces: `JobAdmissionPorts.JobAdmissions.findByJobId(UUID)`, `save(JobAdmission)`, and `summarize()`.
 - Produces: `AdmissionSummary(long total, Map<DataQualityStatus,Long> byQuality, Map<TargetScopeStatus,Long> byTargetScope, long opportunityReady)` with defensive immutable maps.
 
-- [ ] **Step 1: Write the failing domain tests**
+- [x] **Step 1: Write the failing domain tests**
 
 ```java
 @Test
@@ -82,7 +82,7 @@ void rawFactoryNeverClaimsHumanVerification() {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -92,7 +92,7 @@ mvn -pl career-domain -am '-Dtest=JobAdmissionTest' '-Dsurefire.failIfNoSpecifie
 
 Expected: test compilation fails because `JobAdmission`, `TargetScopeStatus`, and `JobAdmissionReason` do not exist.
 
-- [ ] **Step 3: Implement the minimal domain types and port**
+- [x] **Step 3: Implement the minimal domain types and port**
 
 Add to `DomainEnums`:
 
@@ -117,7 +117,7 @@ public boolean admitted() {
 
 Implement `JobAdmissionPorts` with the exact signatures in the Interfaces section. `AdmissionSummary` fills absent enum keys with zero when queried through `count(DataQualityStatus)` or `count(TargetScopeStatus)` helper methods.
 
-- [ ] **Step 4: Run focused domain and application compilation tests**
+- [x] **Step 4: Run focused domain and application compilation tests**
 
 ```powershell
 mvn -pl career-application -am '-Dtest=JobAdmissionTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
@@ -125,7 +125,7 @@ mvn -pl career-application -am '-Dtest=JobAdmissionTest' '-Dsurefire.failIfNoSpe
 
 Expected: `JobAdmissionTest` passes and the application module compiles.
 
-- [ ] **Step 5: Commit the domain contract**
+- [x] **Step 5: Commit the domain contract**
 
 ```powershell
 git add career-domain/src/main/java/com/careeros/domain/DomainEnums.java career-domain/src/main/java/com/careeros/domain/JobAdmission.java career-domain/src/test/java/com/careeros/domain/JobAdmissionTest.java career-application/src/main/java/com/careeros/application/JobAdmissionPorts.java
@@ -177,7 +177,7 @@ Create `job_admission` with:
 ```sql
 CREATE TABLE job_admission (
     job_posting_id UUID PRIMARY KEY REFERENCES job_posting(id) ON DELETE CASCADE,
-    data_quality_status TEXT NOT NULL CHECK (data_quality_status IN ('RAW','PARSED','NORMALIZED','REVIEW_REQUIRED','VERIFIED','REJECTED')),
+    data_quality_status TEXT NOT NULL CHECK (data_quality_status IN ('RAW','PARSED','NORMALIZED','REVIEW_REQUIRED','VERIFIED','REJECTED','FAILED')),
     target_scope_status TEXT NOT NULL CHECK (target_scope_status IN ('INCLUDED','EXCLUDED','NEEDS_REVIEW')),
     reason_codes JSONB NOT NULL DEFAULT '[]'::jsonb,
     evaluator_version TEXT NOT NULL,
@@ -298,7 +298,7 @@ git commit -m "fix(decision): exclude unverified jobs from opportunities"
 **Interfaces:**
 - Consumes: `JobAdmissions.summarize()`.
 - Produces: `GET /api/v1/job-library/summary`.
-- Produces JSON fields `total`, `raw`, `parsed`, `normalized`, `reviewRequired`, `verified`, `rejected`, `included`, `excluded`, `needsReview`, and `opportunityReady`.
+- Produces JSON fields `total`, `raw`, `parsed`, `normalized`, `reviewRequired`, `verified`, `rejected`, `failed`, `included`, `excluded`, `needsReview`, and `opportunityReady`.
 
 - [ ] **Step 1: Write failing service and controller tests**
 
@@ -369,7 +369,7 @@ Add a summary response fixture:
 ```ts
 const admissionSummary = {
   total: 2291, raw: 2291, parsed: 0, normalized: 0,
-  reviewRequired: 0, verified: 0, rejected: 0,
+  reviewRequired: 0, verified: 0, rejected: 0, failed: 0,
   included: 0, excluded: 0, needsReview: 2291, opportunityReady: 0,
 }
 ```

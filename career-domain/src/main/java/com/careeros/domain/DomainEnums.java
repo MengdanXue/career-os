@@ -14,6 +14,13 @@ public final class DomainEnums {
     public enum OpportunityStatus { NEW, REVIEWING, SHORTLISTED, APPLIED, CLOSED, REJECTED, ARCHIVED }
     public enum ExtractionSourceType { HTML, PDF }
     public enum DataQualityStatus { RAW, PARSED, NORMALIZED, REVIEW_REQUIRED, VERIFIED, REJECTED, FAILED }
+    public enum TargetScopeStatus { INCLUDED, EXCLUDED, NEEDS_REVIEW }
+    public enum JobAdmissionReason {
+        LEGACY_UNVERIFIED, NOT_CLASSIFIED, CONTENT_CHANGED, TARGET_TECHNICAL_ROLE,
+        DOCTOR_REQUIRED, TEACHING_ROLE, POSTDOCTORAL_ROLE, ADMINISTRATIVE_ROLE,
+        SALES_ROLE, LABOR_DISPATCH, PROJECT_BASED, INTERNSHIP,
+        NON_TECHNICAL_ROLE, AMBIGUOUS_DUTIES
+    }
     public enum ParserQuality { ACCEPTABLE, LOW_TEXT_QUALITY }
     public enum FactStatus { EXPLICIT, INTERPRETED, UNKNOWN }
     public enum ReviewStatus { PENDING, RESOLVED }
