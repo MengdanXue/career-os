@@ -1,0 +1,48 @@
+.update-section { margin-top: 34px; border-top: 4px solid var(--tide); background: rgba(250,247,239,.6); box-shadow: var(--shadow); }
+.update-section > header { display: flex; justify-content: space-between; gap: 20px; align-items: end; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+.update-section h2 { margin: 6px 0 0; font: 500 27px Georgia, "Songti SC", serif; }
+.update-section > header > span { color: var(--muted); font-size: 12px; }
+.source-row { display: grid; grid-template-columns: 1fr auto; gap: 12px 20px; padding: 18px 22px; border-bottom: 1px solid var(--line); background: var(--paper); }
+.source-row > div > div { display: flex; gap: 9px; align-items: center; color: var(--muted); font-size: 12px; }
+.source-row strong { display: block; margin: 9px 0 4px; font-size: 18px; }
+.source-row a { color: var(--muted); font-size: 12px; }
+.source-row > button { align-self: center; padding: 9px 13px; border: 1px solid var(--tide); background: transparent; color: var(--tide); font-weight: 700; cursor: pointer; }
+.run-result { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border-left: 3px solid var(--eligible); background: #e8f2ed; }
+.run-result.partially_succeeded { border-color: var(--caution); background: #fbf0df; }
+.run-result.failed { border-color: var(--blocker); background: #f8e9e6; }
+.import-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+.import-form { padding: 24px; background: var(--paper); }
+.import-form h3 { margin: 0; font: 500 22px Georgia, "Songti SC", serif; }
+.import-form > p { color: var(--muted); line-height: 1.6; }
+.import-form label { display: grid; gap: 6px; margin: 14px 0; font-weight: 650; }
+.import-form input { padding: 10px; border: 1px solid #aaa79d; background: #fffefa; font: inherit; }
+.import-result { padding: 10px 12px; border-left: 3px solid var(--eligible); background: #e8f2ed; }
+.review-layout { display: grid; grid-template-columns: minmax(300px,.75fr) minmax(520px,1.25fr); min-height: 520px; }
+.review-queue { border-right: 1px solid var(--line); }
+.review-queue article { border-bottom: 1px solid var(--line); }
+.review-queue article[data-active="true"] { box-shadow: inset 4px 0 var(--evidence); background: #eef2eb; }
+.review-queue button { width: 100%; padding: 17px 20px; text-align: left; border: 0; background: transparent; cursor: pointer; }
+.review-queue span, .review-queue strong, .review-queue small { display: block; }
+.review-queue span, .review-queue small { color: var(--muted); font-size: 12px; }
+.review-queue strong { margin: 8px 0 5px; font: 600 18px Georgia, "Songti SC", serif; }
+.review-dossier { min-width: 0; padding: 24px; background: var(--paper); }
+.review-dossier header h3 { margin: 4px 0; font: 500 28px Georgia, "Songti SC", serif; }
+.review-dossier header > p:last-child { color: var(--muted); }
+.review-dossier section { padding: 16px 0; border-top: 1px solid var(--line); }
+.review-dossier h4 { margin: 0 0 12px; }
+.review-dossier dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.review-dossier dl div { padding: 10px; background: #f3f0e8; }
+.review-dossier dt { color: var(--muted); font-size: 11px; }
+.review-dossier dd { margin: 4px 0 0; }
+.review-dossier ol { padding-left: 24px; }
+.review-dossier ol li { padding: 8px 0; }
+.review-dossier ol small { display: block; margin-top: 3px; color: var(--muted); }
+.review-actions { padding-top: 18px; border-top: 3px solid var(--tide); }
+.review-actions label { display: grid; gap: 6px; margin: 12px 0; font-weight: 650; }
+.review-actions input, .review-actions textarea { padding: 10px; border: 1px solid #aaa79d; background: #fffefa; font: inherit; }
+.review-actions > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.review-actions button { padding: 9px 11px; border: 1px solid var(--tide); background: transparent; color: var(--tide); font-weight: 700; cursor: pointer; }
+.review-actions button:first-child { background: var(--tide); color: #fffaf0; }
+.review-actions button.reject { border-color: var(--blocker); color: var(--blocker); }
+@media (max-width: 900px) { .import-grid, .review-layout { grid-template-columns: 1fr; } .review-queue { border-right: 0; } }
+@media (max-width: 580px) { .source-row { grid-template-columns: 1fr; } .source-row > button { justify-self: start; } .review-dossier { padding: 18px; } .review-dossier dl { grid-template-columns: 1fr; } }

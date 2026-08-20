@@ -5,11 +5,12 @@ import { ProfileGate } from './features/profile/ProfileGate'
 import { ProfilePage } from './features/profile/ProfilePage'
 import { OpportunitiesPage } from './features/opportunities/OpportunitiesPage'
 import { TodayPage } from './features/today/TodayPage'
+import { UpdatesPage } from './features/updates/UpdatesPage'
 
 function RoutePlaceholder({ title }: { title: string }) {
   return <main className="shell-content"><p className="eyebrow">CAREER OS</p><h1>{title}</h1></main>
 }
 
 export function App() {
-  return <AppProviders><Routes><Route element={<AppShell />}><Route index element={<ProfileGate><TodayPage /></ProfileGate>} /><Route path="opportunities" element={<ProfileGate><OpportunitiesPage /></ProfileGate>} /><Route path="opportunities/:jobId" element={<ProfileGate><OpportunitiesPage /></ProfileGate>} /><Route path="updates" element={<ProfileGate><RoutePlaceholder title="更新岗位库" /></ProfileGate>} /><Route path="profile" element={<ProfilePage />} /></Route></Routes></AppProviders>
+  return <AppProviders><Routes><Route element={<AppShell />}><Route index element={<ProfileGate><TodayPage /></ProfileGate>} /><Route path="opportunities" element={<ProfileGate><OpportunitiesPage /></ProfileGate>} /><Route path="opportunities/:jobId" element={<ProfileGate><OpportunitiesPage /></ProfileGate>} /><Route path="updates" element={<ProfileGate><UpdatesPage /></ProfileGate>} /><Route path="profile" element={<ProfilePage />} /></Route></Routes></AppProviders>
 }

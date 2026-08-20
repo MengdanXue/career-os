@@ -1,0 +1,6 @@
+import { ReviewProposalForm } from './ReviewProposalForm'
+import type { ReviewItem } from './updateApi'
+
+export function ReviewDossier({ review }: { review: ReviewItem }) {
+  return <aside className="review-dossier"><header><p className="eyebrow">HUMAN REVIEW · 人工复核</p><h3>{review.proposal.recruitmentEvent.title}</h3><p>{review.proposal.organization.name} · 版本 {review.version}</p></header>{review.proposal.warnings.length > 0 && <section><h4>抽取警告</h4><ul>{review.proposal.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></section>}<section><h4>公告事实</h4><dl><div><dt>招聘年份</dt><dd>{review.proposal.recruitmentEvent.recruitmentYear}</dd></div><div><dt>事件类型</dt><dd>{review.proposal.recruitmentEvent.eventType}</dd></div><div><dt>截止时间</dt><dd>{String(review.proposal.recruitmentEvent.applicationEndsOn.value ?? '待核实')}</dd></div><div><dt>完整快照</dt><dd>{review.proposal.completeSnapshot ? '是' : '否'}</dd></div></dl></section><section><h4>岗位提案（{review.proposal.jobs.length}）</h4><ol>{review.proposal.jobs.map((job, index) => <li key={index}><strong>{String((job.title as { value?: unknown })?.value ?? '岗位名称待核实')}</strong><small>{String(job.externalJobCode ?? '无岗位代码')} · {String(job.location ?? '地点待核实')}</small></li>)}</ol></section><ReviewProposalForm review={review} /></aside>
+}
