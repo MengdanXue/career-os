@@ -7,6 +7,7 @@ import './styles/components.css'
 import './styles/profile.css'
 import './styles/opportunities.css'
 import './styles/agent.css'
+import './styles/today.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

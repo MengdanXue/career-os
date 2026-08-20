@@ -12,12 +12,15 @@ import com.careeros.infrastructure.artifact.FileSystemArtifactStore;
 import com.careeros.infrastructure.acquisition.*;
 import java.net.http.HttpClient;
 import com.careeros.infrastructure.extraction.*;
+import com.careeros.application.workbench.WorkbenchPorts.*;
+import com.careeros.application.workbench.WorkbenchSummaryService;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,6 +34,27 @@ class ApplicationConfiguration {
     @Bean DecisionIntelligenceService decisionIntelligenceService(RepositoryPorts.CandidateProfiles candidates,RepositoryPorts.EligibilityAssessments assessments,DecisionPorts.JobContexts jobContexts,DecisionPorts.OrganizationStabilityFacts stabilityFacts,DecisionPorts.DecisionSnapshots snapshots,EligibilityEvaluator eligibilityEvaluator,FitEvaluator fitEvaluator,StabilityEvaluator stabilityEvaluator) { return new DecisionIntelligenceService(candidates,assessments,jobContexts,stabilityFacts,snapshots,eligibilityEvaluator,fitEvaluator,stabilityEvaluator); }
     @Bean DecisionRankingService decisionRankingService(DecisionPorts.JobContexts jobContexts,DecisionIntelligenceService decisions) { return new DecisionRankingService(jobContexts,decisions); }
     @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }
+    @Bean WorkbenchSummaryService workbenchSummaryService(
+        DecisionRankingService rankings, AcquisitionStore acquisitionStore,
+        ReviewPersistence reviewPersistence, Clock clock
+    ) {
+        DecisionOverview decisions = (candidateId, now) -> rankings.rank(candidateId,
+            new DecisionRankingService.RankingQuery(null, null, null, 0, 100, true), now)
+            .items().stream().map(bundle -> new DecisionSignal(
+                bundle.decision().jobPostingId(), bundle.jobContext().job().title(),
+                bundle.jobContext().organization().name(), bundle.jobContext().job().location(),
+                bundle.decision().eligibilityStatus(), bundle.decision().tier(),
+                bundle.decision().fitScore(), bundle.decision().stabilityScore(),
+                bundle.decision().coveragePercent(), bundle.jobContext().event().applicationEndsOn())).toList();
+        AcquisitionOverview acquisition = now -> new AcquisitionSnapshot(
+            acquisitionStore.findChanges(null, null, Set.of(), 10).items().stream()
+                .map(value -> new ChangeSignal(value.id(), value.changeType().name(), value.canonicalUri(), value.jobDeltaSummary(), value.occurredAt())).toList(),
+            acquisitionStore.findSources().stream()
+                .map(value -> new SourceSignal(value.id(), value.name(), value.enabled(), value.lastSuccessAt(), value.lastFailureAt(), value.consecutiveFailureCount())).toList());
+        ReviewOverview reviews = () -> reviewPersistence.findPage(
+            com.careeros.domain.DomainEnums.ReviewStatus.PENDING, 0, 1).totalElements();
+        return new WorkbenchSummaryService(decisions, acquisition, reviews, clock);
+    }
     @Bean CareerDecisionService careerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator) { return new CareerDecisionService(candidates,jobs,assessments,opportunities,evaluator); }
     @Bean ArtifactStore artifactStore(@Value("${career-os.artifacts.root:${user.dir}/var/artifacts}") String root) { return new FileSystemArtifactStore(Path.of(root)); }
     @Bean DocumentParser documentParser() { return new MediaTypeDocumentParser(List.of(new JsoupDocumentParser(),new PdfBoxDocumentParser())); }
