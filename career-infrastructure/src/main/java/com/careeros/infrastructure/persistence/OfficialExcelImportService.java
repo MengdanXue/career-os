@@ -26,11 +26,16 @@ public class OfficialExcelImportService {
 
     @Transactional
     public ImportResult importWorkbook(InputStream input,ImportCommand command) throws Exception {
-        var legacyEvent = command.sourceUrl().equals(command.workbookSourceUrl())
+        var sourceEvent = command.sourceUrl().equals(command.workbookSourceUrl())
             ? Optional.<JpaModels.RecruitmentEventEntity>empty()
-            : events.findFirstBySourceUrl(command.sourceUrl())
-                .filter(value -> value.evidenceIds == null || value.evidenceIds.isEmpty());
-        var event=events.findFirstBySourceUrl(command.workbookSourceUrl()).orElseGet(()->createEvent(command));
+            : events.findFirstBySourceUrl(command.sourceUrl());
+        var announcementEvent = sourceEvent
+            .filter(value -> value.evidenceIds != null && !value.evidenceIds.isEmpty());
+        var legacyEvent = sourceEvent
+            .filter(value -> value.evidenceIds == null || value.evidenceIds.isEmpty());
+        var event=events.findFirstBySourceUrl(command.workbookSourceUrl())
+            .map(existing -> mergeAnnouncementDates(existing, command, announcementEvent.orElse(null)))
+            .orElseGet(()->createEvent(command, announcementEvent.orElse(null)));
         int recognizedSheets=0; var errors=new ArrayList<RowError>(); var seen=new HashSet<String>(); var normalizedJobs=new ArrayList<NormalizedJob>();
         try(var workbook=WorkbookFactory.create(input)){
             var formatter=new DataFormatter(Locale.ROOT);
@@ -90,7 +95,9 @@ public class OfficialExcelImportService {
         return new ImportResult(event.id,result.inserted(),result.updated(),result.unchanged(),result.deactivated(),List.copyOf(errors));
     }
 
-    private JpaModels.RecruitmentEventEntity createEvent(ImportCommand c){var e=new JpaModels.RecruitmentEventEntity();e.id=UUID.randomUUID();e.title=c.announcementTitle();e.recruitmentYear=c.recruitmentYear();e.eventType=c.eventType();e.publishedOn=c.publishedOn();e.sourceUrl=c.workbookSourceUrl();e.defaultEmploymentType=EmploymentType.UNKNOWN;e.evidenceIds=new ArrayList<>();return events.save(e);}
+    private JpaModels.RecruitmentEventEntity createEvent(ImportCommand c,JpaModels.RecruitmentEventEntity announcement){var e=new JpaModels.RecruitmentEventEntity();e.id=UUID.randomUUID();e.title=c.announcementTitle();e.recruitmentYear=c.recruitmentYear();e.eventType=c.eventType();e.publishedOn=first(announcement==null?null:announcement.publishedOn,c.publishedOn());e.applicationStartsOn=announcement==null?null:announcement.applicationStartsOn;e.applicationEndsOn=announcement==null?null:announcement.applicationEndsOn;e.sourceUrl=c.workbookSourceUrl();e.defaultEmploymentType=EmploymentType.UNKNOWN;e.evidenceIds=new ArrayList<>();return events.save(e);}
+    private JpaModels.RecruitmentEventEntity mergeAnnouncementDates(JpaModels.RecruitmentEventEntity event,ImportCommand c,JpaModels.RecruitmentEventEntity announcement){boolean changed=false;if(event.publishedOn==null){var value=first(announcement==null?null:announcement.publishedOn,c.publishedOn());if(value!=null){event.publishedOn=value;changed=true;}}if(announcement!=null&&event.applicationStartsOn==null&&announcement.applicationStartsOn!=null){event.applicationStartsOn=announcement.applicationStartsOn;changed=true;}if(announcement!=null&&event.applicationEndsOn==null&&announcement.applicationEndsOn!=null){event.applicationEndsOn=announcement.applicationEndsOn;changed=true;}return changed?events.save(event):event;}
+    private static <T> T first(T preferred,T fallback){return preferred!=null?preferred:fallback;}
     private JpaModels.OrganizationEntity findOrCreateOrganization(String name,String location,EventType eventType){return organizations.findFirstByName(name).orElseGet(()->{var e=new JpaModels.OrganizationEntity();e.id=UUID.randomUUID();e.name=name;e.organizationType=organizationType(name,eventType);e.province=location!=null&&location.contains("浙江")?"浙江":null;e.city=location!=null&&location.contains("杭州")?"杭州":null;return organizations.save(e);});}
 
     private Header findHeader(Sheet sheet,DataFormatter formatter,boolean allowsDefaultOrganization){for(int r=sheet.getFirstRowNum();r<=Math.min(sheet.getLastRowNum(),30);r++){var row=sheet.getRow(r);if(row==null)continue;var map=new HashMap<String,Integer>();for(Cell cell:row){String text=normalizeHeader(formatter.formatCellValue(cell));if(!text.isBlank())map.put(text,cell.getColumnIndex());}boolean hasJob=containsAny(map,"岗位名称","招聘岗位","招聘岗位名称","岗位");boolean hasOrganization=containsAny(map,"招聘单位","单位名称","用人单位","招聘主体","用人学院（部门）","用人学院部门");if(hasJob&&(hasOrganization||allowsDefaultOrganization))return new Header(r,map);}return null;}

@@ -8,7 +8,8 @@
 .candidate-match-section h2 { margin: 5px 0 0; font: 500 25px/1.25 Georgia, "Songti SC", serif; }
 .candidate-match-section > header > p { max-width: 480px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .candidate-match-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
-.candidate-match-card { padding: 18px; border: 1px solid var(--line); background: #fffdf7; }
+.candidate-match-card { padding: 18px; border: 1px solid var(--line); background: #fffdf7; transition: border-color .16s ease, box-shadow .16s ease; }
+.candidate-match-card[data-selected="true"] { border-color: var(--evidence); box-shadow: inset 0 -3px var(--evidence); }
 .candidate-match-card h3 { margin: 14px 0 0; font: 600 20px Georgia, "Songti SC", serif; }
 .candidate-match-meta, .candidate-match-scores { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 .candidate-match-meta span:first-child { color: var(--eligible); font-weight: 750; }
@@ -17,7 +18,35 @@
 .identity-warning, .identity-confirmed { margin: 14px 0 10px; padding: 8px 10px; font-size: 12px; font-weight: 750; }
 .identity-warning { color: #7f4f28; background: #fbf0df; border-left: 3px solid var(--caution); }
 .identity-confirmed { color: var(--eligible); background: #e8f2ed; border-left: 3px solid var(--eligible); }
-.candidate-match-card a { color: var(--tide); font-size: 13px; font-weight: 750; text-underline-offset: 3px; }
+.candidate-detail-button { display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 10px 0 2px; border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--tide); font-size: 13px; font-weight: 750; cursor: pointer; }
+.candidate-detail-button span { font-size: 18px; }
+.candidate-detail-button:focus-visible, .official-detail-close:focus-visible, .official-job-detail a:focus-visible { outline: 3px solid rgba(26,91,87,.28); outline-offset: 3px; }
+.official-job-detail { margin-top: 22px; border: 1px solid var(--line); border-top: 5px solid var(--evidence); background: #fffdf7; }
+.official-job-detail > header { display: flex; justify-content: space-between; gap: 24px; padding: 25px 28px 22px; border-bottom: 1px solid var(--line); }
+.official-job-detail h3 { margin: 5px 0 7px; font: 600 30px/1.2 Georgia, "Songti SC", serif; }
+.official-job-detail header p:last-child { margin: 0; color: var(--muted); }
+.official-detail-close { flex: 0 0 auto; width: 38px; height: 38px; border: 1px solid var(--line); background: transparent; color: var(--archive); font-size: 25px; cursor: pointer; }
+.official-job-detail > section { padding: 22px 28px; border-bottom: 1px solid var(--line); }
+.official-identity { display: grid; grid-template-columns: 120px minmax(180px, auto) 1fr; gap: 12px 20px; align-items: center; }
+.official-identity span { color: var(--muted); font-size: 12px; letter-spacing: .08em; }
+.official-identity strong { font: 600 19px Georgia, "Songti SC", serif; }
+.official-identity small { color: var(--muted); line-height: 1.55; }
+.official-identity.pending { background: #fbf0df; border-left: 4px solid var(--caution); }
+.official-identity.confirmed { background: #e8f2ed; border-left: 4px solid var(--eligible); }
+.official-detail-kicker { margin: 0 0 14px; color: var(--tide); font: 750 11px ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; }
+.official-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; border-top: 1px solid var(--line); }
+.official-facts > div { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.official-facts > div:nth-child(odd) { padding-right: 22px; }
+.official-facts > div:nth-child(even) { padding-left: 22px; border-left: 1px solid var(--line); }
+.official-facts dt { color: var(--muted); font-size: 12px; }
+.official-facts dd { margin: 0; font-weight: 650; line-height: 1.5; }
+.official-major-list, .official-duties { margin: 0; line-height: 1.75; }
+.official-major-list { padding: 14px 16px; border-left: 4px solid var(--evidence); background: #eef3ef; font-weight: 650; }
+.official-review-notes { background: #f8f2e8; }
+.official-review-notes ul { margin: 0; padding-left: 20px; color: #7f4f28; line-height: 1.7; }
+.official-job-detail > footer { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; padding: 20px 28px; }
+.official-job-detail footer p { max-width: 620px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.official-job-detail footer a { padding: 10px 14px; border: 1px solid var(--tide); color: var(--tide); font-size: 13px; font-weight: 750; text-decoration: none; }
 .tier-tabs { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 0 26px; border-block: 1px solid var(--line); }
 .tier-tabs button { min-height: 84px; padding: 14px 16px; text-align: left; border: 0; border-right: 1px solid var(--line); border-bottom: 4px solid transparent; background: transparent; color: var(--archive); cursor: pointer; }
 .tier-tabs button:last-child { border-right: 0; }
@@ -65,4 +94,4 @@
 .admission-empty p:not(.section-number) { margin: 16px 0 10px; color: #7f4f28; font-weight: 750; }
 .admission-empty small { display: block; max-width: 430px; color: var(--muted); line-height: 1.65; }
 @media (max-width: 980px) { .tier-tabs { grid-template-columns: 1fr 1fr; } .opportunity-layout { grid-template-columns: 1fr; } .opportunity-layout > section { border-right: 0; } .job-dossier { border-top: 4px solid var(--tide); } }
-@media (max-width: 600px) { .page-heading, .candidate-match-section > header { display: block; } .candidate-match-section > header > p { margin-top: 12px; } .ledger-note { display: none; } .tier-tabs { display: flex; overflow-x: auto; } .tier-tabs button { min-width: 155px; } .job-dossier > header, .job-dossier > section { padding-inline: 18px; } }
+@media (max-width: 600px) { .page-heading, .candidate-match-section > header { display: block; } .candidate-match-section > header > p { margin-top: 12px; } .ledger-note { display: none; } .tier-tabs { display: flex; overflow-x: auto; } .tier-tabs button { min-width: 155px; } .job-dossier > header, .job-dossier > section { padding-inline: 18px; } .official-job-detail > header, .official-job-detail > section, .official-job-detail > footer { padding-inline: 18px; } .official-identity, .official-job-detail > footer { display: block; } .official-identity strong, .official-identity small { display: block; margin-top: 7px; } .official-facts { grid-template-columns: 1fr; } .official-facts > div:nth-child(n) { padding-inline: 0; border-left: 0; } .official-job-detail footer a { display: inline-block; margin-top: 14px; } }

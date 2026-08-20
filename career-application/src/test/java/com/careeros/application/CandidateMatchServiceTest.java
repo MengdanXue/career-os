@@ -38,6 +38,18 @@ class CandidateMatchServiceTest {
         assertThat(match.employmentIdentityConfirmed()).isFalse();
         assertThat(match.warnings()).contains("用工身份待官方证据确认");
         assertThat(match.sourceUrl()).startsWith("https://hrss.hangzhou.gov.cn/");
+        assertThat(match.externalJobCode()).isEqualTo("101");
+        assertThat(match.headcount()).isEqualTo(1);
+        assertThat(match.jobFamily()).isEqualTo(JobFamily.INFORMATION_SYSTEMS);
+        assertThat(match.minimumEducation()).isEqualTo(EducationLevel.MASTER);
+        assertThat(match.exactMajors()).containsExactly("计算机科学与技术");
+        assertThat(match.maximumAge()).isEqualTo(38);
+        assertThat(match.ageReferenceDate()).isEqualTo(LocalDate.of(2026, 8, 1));
+        assertThat(match.duties()).isEqualTo("医院信息系统建设和数据库管理");
+        assertThat(match.eventTitle()).isEqualTo("2026年公开招聘");
+        assertThat(match.publishedOn()).isEqualTo(LocalDate.of(2026, 7, 1));
+        assertThat(match.applicationStartsOn()).isNull();
+        assertThat(match.applicationEndsOn()).isNull();
     }
 
     private static RepositoryPorts.CandidateProfiles candidates(CandidateProfile candidate) {

@@ -15,4 +15,5 @@ career-ui/node_modules/
 career-ui/*.tsbuildinfo
 .run/
 output/playwright/
+.playwright-cli/
 __pycache__/

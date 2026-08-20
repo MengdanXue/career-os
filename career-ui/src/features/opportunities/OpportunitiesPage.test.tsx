@@ -118,7 +118,13 @@ describe('OpportunitiesPage', () => {
       employmentType: 'UNKNOWN', employmentIdentityConfirmed: false,
       admissionReasons: ['TARGET_TECHNICAL_ROLE', 'EMPLOYMENT_IDENTITY_UNKNOWN'],
       warnings: ['用工身份待官方证据确认'], sourceUrl: 'https://hrss.hangzhou.gov.cn/notice',
-      jobContentFingerprint: 'a'.repeat(64),
+      jobContentFingerprint: 'a'.repeat(64), externalJobCode: 'HZ-101',
+      headcount: 1, jobFamily: 'INFORMATION_SYSTEMS', minimumEducation: 'MASTER',
+      exactMajors: ['计算机科学与技术'], acceptedGraduationYears: [], maximumAge: 38,
+      ageReferenceDate: '2026-08-01', minimumExperienceYears: null,
+      requiredProfessionalTitles: ['中级'], duties: '医院信息系统建设和数据库管理',
+      eventTitle: '2026年杭州市西溪医院公开招聘', publishedOn: '2026-07-01',
+      applicationStartsOn: '2026-07-10', applicationEndsOn: '2026-07-20',
     }])
     vi.stubGlobal('fetch', vi.fn(async input => route(input, page([]), candidateMatches)))
 
@@ -128,6 +134,19 @@ describe('OpportunitiesPage', () => {
     expect(screen.getByText(/共 1 个符合画像/)).toBeInTheDocument()
     expect(screen.getByText('信息中心工作人员')).toBeInTheDocument()
     expect(screen.getByText('用工身份待确认')).toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: '查看 信息中心工作人员 完整详情' })
+    await userEvent.click(trigger)
+    const detail = screen.getByRole('complementary', { name: '信息中心工作人员 官网岗位详情' })
+    expect(detail).toBeInTheDocument()
+    expect(detail).toHaveFocus()
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('HZ-101')).toBeInTheDocument()
+    expect(screen.getByText('医院信息系统建设和数据库管理')).toBeInTheDocument()
+    expect(screen.getByText('计算机科学与技术')).toBeInTheDocument()
+    expect(screen.getByText('2026-07-10 至 2026-07-20')).toBeInTheDocument()
+    expect(screen.getByText('官网未明确用工性质')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '查看官方公告' })).toHaveAttribute('href', 'https://hrss.hangzhou.gov.cn/notice')
+    await userEvent.click(screen.getByRole('button', { name: '关闭官网岗位详情' }))
+    expect(trigger).toHaveFocus()
   })
 })

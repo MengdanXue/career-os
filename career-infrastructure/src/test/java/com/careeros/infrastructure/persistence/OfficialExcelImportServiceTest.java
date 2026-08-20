@@ -22,6 +22,77 @@ import org.mockito.ArgumentCaptor;
 
 class OfficialExcelImportServiceTest {
     @Test
+    void doesNotCopyDatesFromEvidenceEmptyLegacyEvent() throws Exception {
+        String announcementUrl = "https://hrss.hangzhou.gov.cn/art/2026/notice.html";
+        String workbookUrl = "https://hrss.hangzhou.gov.cn/files/plan-a.xlsx";
+        RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
+        OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
+        JobUpsertService upserts = mock(JobUpsertService.class);
+        OfficialJobAdmissionService admissions = mock(OfficialJobAdmissionService.class);
+        var legacy = new JpaModels.RecruitmentEventEntity();
+        legacy.id = UUID.randomUUID(); legacy.sourceUrl = announcementUrl;
+        legacy.evidenceIds = new java.util.ArrayList<>();
+        legacy.applicationStartsOn = LocalDate.of(2025, 1, 1);
+        legacy.applicationEndsOn = LocalDate.of(2025, 1, 2);
+        when(events.findFirstBySourceUrl(announcementUrl)).thenReturn(Optional.of(legacy));
+        when(events.findFirstBySourceUrl(workbookUrl)).thenReturn(Optional.empty());
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(organizations.findFirstByName(any())).thenReturn(Optional.empty());
+        when(organizations.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(upserts.stableKey(any())).thenAnswer(invocation ->
+            ((JobUpsertService.NormalizedJob) invocation.getArgument(0)).title());
+        when(upserts.upsert(any())).thenReturn(new JobUpsertResult(1, 0, 0, 0, List.of(UUID.randomUUID())));
+
+        new OfficialExcelImportService(events, organizations, upserts, admissions).importWorkbook(
+            new ByteArrayInputStream(workbook()), new OfficialExcelImportService.ImportCommand(
+                "2026年公开招聘", announcementUrl, 2026, LocalDate.of(2026, 8, 1),
+                LocalDate.of(2026, 8, 1), "杭州", EventType.PUBLIC_INSTITUTION, null, workbookUrl));
+
+        ArgumentCaptor<JpaModels.RecruitmentEventEntity> saved = ArgumentCaptor.forClass(JpaModels.RecruitmentEventEntity.class);
+        org.mockito.Mockito.verify(events).save(saved.capture());
+        assertThat(saved.getValue().applicationStartsOn).isNull();
+        assertThat(saved.getValue().applicationEndsOn).isNull();
+        ArgumentCaptor<JobUpsertBatch> batch = ArgumentCaptor.forClass(JobUpsertBatch.class);
+        org.mockito.Mockito.verify(upserts).upsert(batch.capture());
+        assertThat(batch.getValue().legacyRecruitmentEventId()).isEqualTo(legacy.id);
+    }
+
+    @Test
+    void backfillsExistingWorkbookEventWithParentAnnouncementDates() throws Exception {
+        String announcementUrl = "https://hrss.hangzhou.gov.cn/art/2026/notice.html";
+        String workbookUrl = "https://hrss.hangzhou.gov.cn/files/plan-a.xlsx";
+        RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
+        OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
+        JobUpsertService upserts = mock(JobUpsertService.class);
+        OfficialJobAdmissionService admissions = mock(OfficialJobAdmissionService.class);
+        var announcement = new JpaModels.RecruitmentEventEntity();
+        announcement.id = UUID.randomUUID(); announcement.sourceUrl = announcementUrl;
+        announcement.evidenceIds = new java.util.ArrayList<>(List.of(UUID.randomUUID()));
+        announcement.applicationStartsOn = LocalDate.of(2026, 8, 10);
+        announcement.applicationEndsOn = LocalDate.of(2026, 8, 20);
+        var workbookEvent = new JpaModels.RecruitmentEventEntity();
+        workbookEvent.id = UUID.randomUUID(); workbookEvent.sourceUrl = workbookUrl;
+        workbookEvent.evidenceIds = new java.util.ArrayList<>();
+        when(events.findFirstBySourceUrl(announcementUrl)).thenReturn(Optional.of(announcement));
+        when(events.findFirstBySourceUrl(workbookUrl)).thenReturn(Optional.of(workbookEvent));
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(organizations.findFirstByName(any())).thenReturn(Optional.empty());
+        when(organizations.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(upserts.stableKey(any())).thenAnswer(invocation ->
+            ((JobUpsertService.NormalizedJob) invocation.getArgument(0)).title());
+        when(upserts.upsert(any())).thenReturn(new JobUpsertResult(0, 0, 1, 0, List.of(UUID.randomUUID())));
+
+        new OfficialExcelImportService(events, organizations, upserts, admissions).importWorkbook(
+            new ByteArrayInputStream(workbook()), new OfficialExcelImportService.ImportCommand(
+                "2026年公开招聘", announcementUrl, 2026, LocalDate.of(2026, 8, 1),
+                LocalDate.of(2026, 8, 1), "杭州", EventType.PUBLIC_INSTITUTION, null, workbookUrl));
+
+        assertThat(workbookEvent.applicationStartsOn).isEqualTo(LocalDate.of(2026, 8, 10));
+        assertThat(workbookEvent.applicationEndsOn).isEqualTo(LocalDate.of(2026, 8, 20));
+        org.mockito.Mockito.verify(events).save(workbookEvent);
+    }
+
+    @Test
     void evidenceBackedAnnouncementEventIsNotTreatedAsLegacyWorkbookProvenance() throws Exception {
         String announcementUrl = "https://hrss.hangzhou.gov.cn/art/2026/notice.html";
         String workbookUrl = "https://hrss.hangzhou.gov.cn/files/plan-a.xlsx";
@@ -33,6 +104,8 @@ class OfficialExcelImportServiceTest {
         announcementEvent.id = UUID.randomUUID();
         announcementEvent.sourceUrl = announcementUrl;
         announcementEvent.evidenceIds = new java.util.ArrayList<>(List.of(UUID.randomUUID()));
+        announcementEvent.applicationStartsOn = LocalDate.of(2026, 8, 10);
+        announcementEvent.applicationEndsOn = LocalDate.of(2026, 8, 20);
         when(events.findFirstBySourceUrl(announcementUrl)).thenReturn(Optional.of(announcementEvent));
         when(events.findFirstBySourceUrl(workbookUrl)).thenReturn(Optional.empty());
         when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -50,8 +123,12 @@ class OfficialExcelImportServiceTest {
                 EventType.PUBLIC_INSTITUTION, "杭州科技职业技术学院", workbookUrl));
 
         ArgumentCaptor<JobUpsertBatch> batch = ArgumentCaptor.forClass(JobUpsertBatch.class);
+        ArgumentCaptor<JpaModels.RecruitmentEventEntity> savedEvent = ArgumentCaptor.forClass(JpaModels.RecruitmentEventEntity.class);
         org.mockito.Mockito.verify(upserts).upsert(batch.capture());
+        org.mockito.Mockito.verify(events).save(savedEvent.capture());
         assertThat(batch.getValue().legacyRecruitmentEventId()).isNull();
+        assertThat(savedEvent.getValue().applicationStartsOn).isEqualTo(LocalDate.of(2026, 8, 10));
+        assertThat(savedEvent.getValue().applicationEndsOn).isEqualTo(LocalDate.of(2026, 8, 20));
     }
 
     @Test

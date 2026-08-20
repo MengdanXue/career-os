@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -78,10 +79,16 @@ public class CandidateMatchService {
             .filter(result -> result.status() != EligibilityStatus.ELIGIBLE)
             .map(EligibilityAssessment.RuleResult::explanation).forEach(warnings::add);
         return new CandidateMatch(
-            context.job().id(), context.job().title(), context.organization().name(), context.job().location(),
+            context.job().id(), context.job().externalJobCode(), context.job().title(),
+            context.organization().name(), context.job().location(),
             eligibilityResult.status(), fitResult.score(), fitResult.coveragePercent(),
             context.job().employmentType(), identityConfirmed, admission.reasonCodes(), List.copyOf(warnings),
-            context.job().sourceUrl(), context.contentFingerprint());
+            context.job().sourceUrl(), context.contentFingerprint(),
+            context.job().headcount(), context.job().jobFamily(), context.job().minimumEducation(),
+            context.job().exactMajors(), context.job().acceptedGraduationYears(), context.job().maximumAge(),
+            context.job().ageReferenceDate(), context.job().minimumExperienceYears(),
+            context.job().requiredProfessionalTitles(), context.job().duties(), context.event().title(),
+            context.event().publishedOn(), context.event().applicationStartsOn(), context.event().applicationEndsOn());
     }
 
     private static boolean isTarget(JobAdmission admission) {
@@ -115,15 +122,23 @@ public class CandidateMatchService {
         public MatchPage { items = List.copyOf(items); }
     }
     public record CandidateMatch(
-        UUID jobId, String jobTitle, String organizationName, String location,
+        UUID jobId, String externalJobCode, String jobTitle, String organizationName, String location,
         EligibilityStatus eligibilityStatus, int fitScore, int coveragePercent,
         EmploymentType employmentType, boolean employmentIdentityConfirmed,
         Set<JobAdmissionReason> admissionReasons, List<String> warnings,
-        String sourceUrl, String jobContentFingerprint
+        String sourceUrl, String jobContentFingerprint,
+        int headcount, JobFamily jobFamily, EducationLevel minimumEducation,
+        Set<String> exactMajors, Set<Integer> acceptedGraduationYears,
+        Integer maximumAge, LocalDate ageReferenceDate, Integer minimumExperienceYears,
+        Set<String> requiredProfessionalTitles, String duties, String eventTitle,
+        LocalDate publishedOn, LocalDate applicationStartsOn, LocalDate applicationEndsOn
     ) {
         public CandidateMatch {
             admissionReasons = Set.copyOf(admissionReasons);
             warnings = List.copyOf(warnings);
+            exactMajors = Set.copyOf(exactMajors);
+            acceptedGraduationYears = Set.copyOf(acceptedGraduationYears);
+            requiredProfessionalTitles = Set.copyOf(requiredProfessionalTitles);
         }
     }
 }
