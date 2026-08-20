@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { AgentComposer } from '../features/agent/AgentComposer'
 
 const navItems = [
   { to: '/', label: '今天', end: true },
@@ -21,6 +22,7 @@ export function AppShell() {
         {navItems.map(item => <NavLink key={item.to} end={item.end} to={item.to}>{item.label}</NavLink>)}
       </nav>
       <Outlet />
+      <AgentComposer />
     </div>
   )
 }
