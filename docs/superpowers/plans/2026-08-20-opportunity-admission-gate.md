@@ -300,7 +300,7 @@ git commit -m "fix(decision): exclude unverified jobs from opportunities"
 - Produces: `GET /api/v1/job-library/summary`.
 - Produces JSON fields `total`, `raw`, `parsed`, `normalized`, `reviewRequired`, `verified`, `rejected`, `failed`, `included`, `excluded`, `needsReview`, and `opportunityReady`.
 
-- [ ] **Step 1: Write failing service and controller tests**
+- [x] **Step 1: Write failing service and controller tests**
 
 Use an inventory fixture with `total=2291`, `raw=2291`, `needsReview=2291`, `opportunityReady=0`, then assert the service and JSON preserve those exact counts.
 
@@ -313,7 +313,7 @@ mvc.perform(get("/api/v1/job-library/summary"))
     .andExpect(jsonPath("$.opportunityReady").value(0));
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 ```powershell
 mvn -pl career-web -am '-Dtest=JobLibrarySummaryServiceTest,JobLibrarySummaryApiTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
@@ -321,11 +321,11 @@ mvn -pl career-web -am '-Dtest=JobLibrarySummaryServiceTest,JobLibrarySummaryApi
 
 Expected: missing service/controller compilation failures.
 
-- [ ] **Step 3: Implement the read model and endpoint**
+- [x] **Step 3: Implement the read model and endpoint**
 
 Implement `JobLibrarySummaryService.load()` as a pure mapping from enum maps to the explicit response record. Keep zero-valued fields in JSON so the UI never guesses missing counters. The controller contains only `@GetMapping` and delegates to `load()`.
 
-- [ ] **Step 4: Run API tests GREEN**
+- [x] **Step 4: Run API tests GREEN**
 
 ```powershell
 mvn -pl career-web -am '-Dtest=JobLibrarySummaryServiceTest,JobLibrarySummaryApiTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
@@ -333,7 +333,7 @@ mvn -pl career-web -am '-Dtest=JobLibrarySummaryServiceTest,JobLibrarySummaryApi
 
 Expected: stable summary response passes with all fields present.
 
-- [ ] **Step 5: Commit summary API**
+- [x] **Step 5: Commit summary API**
 
 ```powershell
 git add career-application/src/main/java/com/careeros/application/JobLibrarySummaryService.java career-application/src/test/java/com/careeros/application/JobLibrarySummaryServiceTest.java career-web/src/main/java/com/careeros/JobLibrarySummaryController.java career-web/src/test/java/com/careeros/JobLibrarySummaryApiTest.java career-web/src/main/java/com/careeros/ApplicationConfiguration.java
