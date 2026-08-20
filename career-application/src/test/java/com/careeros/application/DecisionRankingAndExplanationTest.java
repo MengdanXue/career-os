@@ -3,6 +3,7 @@ package com.careeros.application;
 import static com.careeros.application.DecisionPorts.*;
 import static com.careeros.domain.DomainEnums.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.careeros.domain.*;
 import java.time.Instant;
@@ -38,6 +39,19 @@ class DecisionRankingAndExplanationTest {
         assertThat(explanation.text()).contains("资格").contains("T1").contains("匹配度 70");
         assertThat(explanation.text()).doesNotContain("录取概率");
         assertThat(explanation.warnings()).anyMatch(warning -> warning.contains("证据覆盖率"));
+    }
+
+    @Test
+    void veryLargePageNumberReturnsAnEmptyPageWithoutOverflowing() {
+        var value = bundle(OpportunityTier.T1, EligibilityStatus.ELIGIBLE, 70, "信息中心", LocalDate.of(2026, 9, 1));
+        var contexts = new Contexts(List.of(value.jobContext()));
+        var service = new DecisionRankingService(contexts, (candidateId, jobId, now) -> value);
+
+        assertThatCode(() -> {
+            var page = service.rank(CANDIDATE_ID, new DecisionRankingService.RankingQuery(null, null, null, Integer.MAX_VALUE, 100, false), NOW);
+            assertThat(page.items()).isEmpty();
+            assertThat(page.total()).isEqualTo(1);
+        }).doesNotThrowAnyException();
     }
 
     private static DecisionBundle bundle(OpportunityTier tier, EligibilityStatus eligibilityStatus, int fitScore, String title, LocalDate deadline) {

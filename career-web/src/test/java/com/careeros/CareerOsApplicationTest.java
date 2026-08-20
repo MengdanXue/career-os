@@ -1,6 +1,7 @@
 package com.careeros;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
@@ -21,6 +22,7 @@ import java.io.*;
 import java.time.LocalDate;
 import java.nio.file.*;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Assumptions;
@@ -39,6 +41,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -108,11 +111,68 @@ class CareerOsApplicationTest {
     }
 
     @Test
-    void openApiDocumentsExtractionAndReviewResources(@Autowired MockMvc mvc) throws Exception {
+    void openApiDocumentsExtractionReviewAndDecisionResources(@Autowired MockMvc mvc) throws Exception {
         mvc.perform(get("/v3/api-docs"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.paths['/api/v1/extractions']").exists())
-            .andExpect(jsonPath("$.paths['/api/v1/reviews']").exists());
+            .andExpect(jsonPath("$.paths['/api/v1/reviews']").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/candidates/{candidateId}/job-decisions']").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/candidates/{candidateId}/job-decisions/{jobId}']").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/candidates/{candidateId}/agent-queries']").exists());
+    }
+
+    @Test
+    void decisionApiPersistsAndReusesVersionedSnapshot(
+        @Autowired MockMvc mvc,@Autowired ObjectMapper json,@Autowired JdbcTemplate jdbc
+    ) throws Exception {
+        String suffix=UUID.randomUUID().toString();
+        String organization=json.readTree(mvc.perform(post("/api/v1/organizations").contentType(MediaType.APPLICATION_JSON).content("""
+            {"name":"杭州决策测试单位-%s","organizationType":"PUBLIC_INSTITUTION","province":"浙江","city":"杭州"}
+            """.formatted(suffix))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
+        String event=json.readTree(mvc.perform(post("/api/v1/recruitment-events").contentType(MediaType.APPLICATION_JSON).content("""
+            {"title":"决策测试公告","recruitmentYear":2026,"eventType":"PUBLIC_INSTITUTION","applicationEndsOn":"2026-09-30","sourceUrl":"https://example.test/decision/%s","defaultEmploymentType":"ESTABLISHMENT"}
+            """.formatted(suffix))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
+        String job=json.readTree(mvc.perform(post("/api/v1/jobs").contentType(MediaType.APPLICATION_JSON).content("""
+            {"recruitmentEventId":"%s","organizationId":"%s","externalJobCode":"D01","title":"信息中心Java岗","jobFamily":"INFORMATION_SYSTEMS","employmentType":"ESTABLISHMENT","location":"杭州","headcount":1,"minimumEducation":"MASTER","exactMajors":["计算机科学与技术"],"acceptedGraduationYears":[],"requiredProfessionalTitles":[],"duties":"Java PostgreSQL 数据治理","sourceUrl":"https://example.test/decision/%s"}
+            """.formatted(event,organization,suffix))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
+
+        String first=mvc.perform(post("/api/v1/candidates/{candidateId}/job-decisions/{jobId}","01992f09-0000-7000-8000-000000000001",job))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.eligibilityStatus").value("ELIGIBLE"))
+            .andExpect(jsonPath("$.tier").value("T3")).andExpect(jsonPath("$.stability.coveragePercent").value(40))
+            .andReturn().getResponse().getContentAsString();
+        String second=mvc.perform(post("/api/v1/candidates/{candidateId}/job-decisions/{jobId}","01992f09-0000-7000-8000-000000000001",job))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        assertThat(json.readTree(second).path("decisionId").asText()).isEqualTo(json.readTree(first).path("decisionId").asText());
+        assertThat(jdbc.queryForObject("select count(*) from decision_assessment where job_posting_id=?",Long.class,UUID.fromString(job))).isEqualTo(1L);
+    }
+
+    @Test
+    void candidateDecisionProfileCanBeUpdatedThroughItsResource(@Autowired MockMvc mvc) throws Exception {
+        mvc.perform(put("/api/v1/candidates/{id}", "01992f09-0000-7000-8000-000000000001")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "displayName":"候选人",
+                      "birthYear":1992,
+                      "birthMonth":9,
+                      "highestEducation":"MASTER",
+                      "majors":["计算机科学与技术"],
+                      "graduationYear":2018,
+                      "experienceYears":6,
+                      "professionalTitles":[],
+                      "preferredLocations":["杭州"],
+                      "acceptedEmploymentTypes":["ESTABLISHMENT","CONTRACT"],
+                      "profileVersion":"profile-api-v2",
+                      "skills":["Java","PostgreSQL"],
+                      "researchKeywords":["数据治理"],
+                      "targetJobFamilies":["INFORMATION_SYSTEMS"],
+                      "preferredOrganizationTypes":["PUBLIC_INSTITUTION"]
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.profileVersion").value("profile-api-v2"))
+            .andExpect(jsonPath("$.skills", hasItem("Java")));
     }
 
     @Test

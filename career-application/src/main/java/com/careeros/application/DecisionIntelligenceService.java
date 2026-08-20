@@ -40,10 +40,32 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     }
 
     public DecisionBundle assess(UUID candidateId, UUID jobId, Instant now) {
-        var candidate = candidates.findById(candidateId).orElseThrow(() -> new DecisionExceptions.CandidateNotFoundException("Candidate not found: " + candidateId));
-        var context = jobContexts.findByJobId(jobId).orElseThrow(() -> new DecisionExceptions.JobNotFoundException("Job not found: " + jobId));
-        var input = new DecisionInputKey(candidateId, jobId, candidate.profileVersion(), context.contentFingerprint(), VERSION);
+        var candidate = candidate(candidateId);
+        var context = context(jobId);
+        var input = input(candidate, context);
         return snapshots.findByInput(input).orElseGet(() -> evaluate(input, candidate, context, now));
+    }
+
+    public DecisionBundle current(UUID candidateId, UUID jobId) {
+        var candidate = candidate(candidateId);
+        var context = context(jobId);
+        return snapshots.findByInput(input(candidate, context))
+            .orElseThrow(() -> new DecisionExceptions.DecisionNotFoundException(
+                "Decision not found for the current candidate and job versions"));
+    }
+
+    private CandidateProfile candidate(UUID candidateId) {
+        return candidates.findById(candidateId)
+            .orElseThrow(() -> new DecisionExceptions.CandidateNotFoundException("Candidate not found: " + candidateId));
+    }
+
+    private JobContext context(UUID jobId) {
+        return jobContexts.findByJobId(jobId)
+            .orElseThrow(() -> new DecisionExceptions.JobNotFoundException("Job not found: " + jobId));
+    }
+
+    private static DecisionInputKey input(CandidateProfile candidate, JobContext context) {
+        return new DecisionInputKey(candidate.id(), context.job().id(), candidate.profileVersion(), context.contentFingerprint(), VERSION);
     }
 
     private DecisionBundle evaluate(DecisionInputKey input, CandidateProfile candidate, JobContext context, Instant now) {

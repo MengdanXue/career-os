@@ -5,6 +5,8 @@ import com.careeros.application.AcquisitionHttpPorts.*;
 import com.careeros.application.AcquisitionPorts.*;
 import com.careeros.application.ExtractionPorts.*;
 import com.careeros.domain.EligibilityEvaluator;
+import com.careeros.domain.FitEvaluator;
+import com.careeros.domain.StabilityEvaluator;
 import com.careeros.domain.ReviewPolicy;
 import com.careeros.infrastructure.artifact.FileSystemArtifactStore;
 import com.careeros.infrastructure.acquisition.*;
@@ -24,6 +26,11 @@ import org.springframework.context.annotation.Configuration;
 class ApplicationConfiguration {
     @Bean Clock clock() { return Clock.systemUTC(); }
     @Bean EligibilityEvaluator eligibilityEvaluator() { return new EligibilityEvaluator(); }
+    @Bean FitEvaluator fitEvaluator() { return new FitEvaluator(); }
+    @Bean StabilityEvaluator stabilityEvaluator() { return new StabilityEvaluator(); }
+    @Bean DecisionIntelligenceService decisionIntelligenceService(RepositoryPorts.CandidateProfiles candidates,RepositoryPorts.EligibilityAssessments assessments,DecisionPorts.JobContexts jobContexts,DecisionPorts.OrganizationStabilityFacts stabilityFacts,DecisionPorts.DecisionSnapshots snapshots,EligibilityEvaluator eligibilityEvaluator,FitEvaluator fitEvaluator,StabilityEvaluator stabilityEvaluator) { return new DecisionIntelligenceService(candidates,assessments,jobContexts,stabilityFacts,snapshots,eligibilityEvaluator,fitEvaluator,stabilityEvaluator); }
+    @Bean DecisionRankingService decisionRankingService(DecisionPorts.JobContexts jobContexts,DecisionIntelligenceService decisions) { return new DecisionRankingService(jobContexts,decisions); }
+    @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }
     @Bean CareerDecisionService careerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator) { return new CareerDecisionService(candidates,jobs,assessments,opportunities,evaluator); }
     @Bean ArtifactStore artifactStore(@Value("${career-os.artifacts.root:${user.dir}/var/artifacts}") String root) { return new FileSystemArtifactStore(Path.of(root)); }
     @Bean DocumentParser documentParser() { return new MediaTypeDocumentParser(List.of(new JsoupDocumentParser(),new PdfBoxDocumentParser())); }

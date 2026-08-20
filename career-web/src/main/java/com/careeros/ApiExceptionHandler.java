@@ -1,6 +1,7 @@
 package com.careeros;
 
 import com.careeros.application.ExtractionExceptions;
+import com.careeros.application.DecisionExceptions;
 import java.net.URI;
 import java.util.NoSuchElementException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -51,6 +52,18 @@ class ApiExceptionHandler {
     @ExceptionHandler(NoSuchElementException.class)
     ResponseEntity<ProblemDetail> missingAcquisition(NoSuchElementException exception) {
         return problem(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Resource not found", exception.getMessage());
+    }
+    @ExceptionHandler(DecisionExceptions.CandidateNotFoundException.class)
+    ResponseEntity<ProblemDetail> candidateMissing(RuntimeException exception) {
+        return problem(HttpStatus.NOT_FOUND, "CANDIDATE_NOT_FOUND", "Candidate not found", exception.getMessage());
+    }
+    @ExceptionHandler(DecisionExceptions.JobNotFoundException.class)
+    ResponseEntity<ProblemDetail> jobMissing(RuntimeException exception) {
+        return problem(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND", "Job not found", exception.getMessage());
+    }
+    @ExceptionHandler(DecisionExceptions.DecisionNotFoundException.class)
+    ResponseEntity<ProblemDetail> decisionMissing(RuntimeException exception) {
+        return problem(HttpStatus.NOT_FOUND, "DECISION_NOT_FOUND", "Decision not found", exception.getMessage());
     }
 
     private static ResponseEntity<ProblemDetail> problem(

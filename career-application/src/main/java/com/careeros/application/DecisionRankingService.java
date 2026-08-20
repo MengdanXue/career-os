@@ -29,7 +29,7 @@ public final class DecisionRankingService {
             .filter(bundle -> query.includeExcluded() || bundle.decision().tier() != OpportunityTier.EXCLUDED)
             .filter(bundle -> query.tier() == null || bundle.decision().tier() == query.tier());
         List<DecisionBundle> ordered = stream.sorted(order()).toList();
-        int from = Math.min(query.page() * query.size(), ordered.size());
+        int from = (int) Math.min((long) query.page() * query.size(), ordered.size());
         int to = Math.min(from + query.size(), ordered.size());
         return new RankingPage(ordered.subList(from, to), query.page(), query.size(), ordered.size());
     }

@@ -2,6 +2,7 @@ package com.careeros.application;
 
 import static com.careeros.application.DecisionPorts.*;
 import static com.careeros.domain.DomainEnums.*;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.careeros.domain.*;
@@ -39,6 +40,16 @@ class DecisionIntelligenceServiceTest {
         assertThat(changed.eligibility().profileVersion()).isEqualTo("profile-v2");
         assertThat(changed.eligibility().jobContentFingerprint()).isEqualTo(FINGERPRINT);
         assertThat(fixture.snapshots.saved).isEqualTo(2);
+    }
+
+    @Test
+    void currentDecisionNeverCreatesAMissingSnapshot() {
+        var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
+
+        assertThatThrownBy(() -> fixture.service.current(fixture.candidateId, fixture.jobId))
+            .isInstanceOf(DecisionExceptions.DecisionNotFoundException.class);
+
+        assertThat(fixture.snapshots.saved).isZero();
     }
 
     private static Fixture fixture(CandidateProfile initialCandidate) {

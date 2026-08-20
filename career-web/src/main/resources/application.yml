@@ -59,3 +59,6 @@ career-os:
     lock-connection-timeout-ms: ${CAREER_OS_ACQUISITION_LOCK_CONNECTION_TIMEOUT_MS:5000}
     lock-poll-interval-ms: ${CAREER_OS_ACQUISITION_LOCK_POLL_INTERVAL_MS:50}
     live-smoke-enabled: ${CAREER_OS_ACQUISITION_LIVE_SMOKE_ENABLED:false}
+  agent:
+    llm:
+      enabled: ${CAREER_OS_AGENT_LLM_ENABLED:false}

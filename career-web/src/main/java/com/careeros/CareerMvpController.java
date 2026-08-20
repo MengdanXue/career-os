@@ -29,32 +29,32 @@ class CareerMvpController {
     }
 
     @GetMapping("/organizations") List<Organization> organizations() { return organizations.findAll(); }
-    @GetMapping("/organizations/{id}") Organization organization(@PathVariable UUID id) { return required(organizations.findById(id),"Organization",id); }
+    @GetMapping("/organizations/{id}") Organization organization(@PathVariable("id") UUID id) { return required(organizations.findById(id),"Organization",id); }
     @PostMapping("/organizations") @ResponseStatus(HttpStatus.CREATED) Organization createOrganization(@RequestBody OrganizationRequest request) { return organizations.save(request.toDomain(UUID.randomUUID())); }
-    @PutMapping("/organizations/{id}") Organization updateOrganization(@PathVariable UUID id,@RequestBody OrganizationRequest request) { required(organizations.findById(id),"Organization",id); return organizations.save(request.toDomain(id)); }
-    @DeleteMapping("/organizations/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteOrganization(@PathVariable UUID id) { required(organizations.findById(id),"Organization",id); organizations.deleteById(id); }
+    @PutMapping("/organizations/{id}") Organization updateOrganization(@PathVariable("id") UUID id,@RequestBody OrganizationRequest request) { required(organizations.findById(id),"Organization",id); return organizations.save(request.toDomain(id)); }
+    @DeleteMapping("/organizations/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteOrganization(@PathVariable("id") UUID id) { required(organizations.findById(id),"Organization",id); organizations.deleteById(id); }
 
     @GetMapping("/recruitment-events") List<RecruitmentEvent> events() { return events.findAll(); }
-    @GetMapping("/recruitment-events/{id}") RecruitmentEvent event(@PathVariable UUID id) { return required(events.findById(id),"RecruitmentEvent",id); }
+    @GetMapping("/recruitment-events/{id}") RecruitmentEvent event(@PathVariable("id") UUID id) { return required(events.findById(id),"RecruitmentEvent",id); }
     @PostMapping("/recruitment-events") @ResponseStatus(HttpStatus.CREATED) RecruitmentEvent createEvent(@RequestBody EventRequest request) { return events.save(request.toDomain(UUID.randomUUID())); }
-    @PutMapping("/recruitment-events/{id}") RecruitmentEvent updateEvent(@PathVariable UUID id,@RequestBody EventRequest request) { required(events.findById(id),"RecruitmentEvent",id); return events.save(request.toDomain(id)); }
-    @DeleteMapping("/recruitment-events/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteEvent(@PathVariable UUID id) { required(events.findById(id),"RecruitmentEvent",id); events.deleteById(id); }
+    @PutMapping("/recruitment-events/{id}") RecruitmentEvent updateEvent(@PathVariable("id") UUID id,@RequestBody EventRequest request) { required(events.findById(id),"RecruitmentEvent",id); return events.save(request.toDomain(id)); }
+    @DeleteMapping("/recruitment-events/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteEvent(@PathVariable("id") UUID id) { required(events.findById(id),"RecruitmentEvent",id); events.deleteById(id); }
 
     @GetMapping("/jobs") List<JobPosting> jobs() { return jobs.findAll(); }
-    @GetMapping("/jobs/{id}") JobPosting job(@PathVariable UUID id) { return required(jobs.findById(id),"JobPosting",id); }
+    @GetMapping("/jobs/{id}") JobPosting job(@PathVariable("id") UUID id) { return required(jobs.findById(id),"JobPosting",id); }
     @PostMapping("/jobs") @ResponseStatus(HttpStatus.CREATED) JobPosting createJob(@RequestBody JobRequest request) { validateReferences(request); return jobs.save(request.toDomain(UUID.randomUUID())); }
-    @PutMapping("/jobs/{id}") JobPosting updateJob(@PathVariable UUID id,@RequestBody JobRequest request) { required(jobs.findById(id),"JobPosting",id); validateReferences(request); return jobs.save(request.toDomain(id)); }
-    @DeleteMapping("/jobs/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteJob(@PathVariable UUID id) { required(jobs.findById(id),"JobPosting",id); jobs.deleteById(id); }
+    @PutMapping("/jobs/{id}") JobPosting updateJob(@PathVariable("id") UUID id,@RequestBody JobRequest request) { required(jobs.findById(id),"JobPosting",id); validateReferences(request); return jobs.save(request.toDomain(id)); }
+    @DeleteMapping("/jobs/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteJob(@PathVariable("id") UUID id) { required(jobs.findById(id),"JobPosting",id); jobs.deleteById(id); }
 
     @GetMapping("/candidates") List<CandidateProfile> candidates() { return candidates.findAll(); }
-    @GetMapping("/candidates/{id}") CandidateProfile candidate(@PathVariable UUID id) { return required(candidates.findById(id),"CandidateProfile",id); }
+    @GetMapping("/candidates/{id}") CandidateProfile candidate(@PathVariable("id") UUID id) { return required(candidates.findById(id),"CandidateProfile",id); }
     @PostMapping("/candidates") @ResponseStatus(HttpStatus.CREATED) CandidateProfile createCandidate(@RequestBody CandidateRequest request) { return candidates.save(request.toDomain(UUID.randomUUID())); }
-    @PutMapping("/candidates/{id}") CandidateProfile updateCandidate(@PathVariable UUID id,@RequestBody CandidateRequest request) { required(candidates.findById(id),"CandidateProfile",id); return candidates.save(request.toDomain(id)); }
-    @DeleteMapping("/candidates/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteCandidate(@PathVariable UUID id) { required(candidates.findById(id),"CandidateProfile",id); candidates.deleteById(id); }
+    @PutMapping("/candidates/{id}") CandidateProfile updateCandidate(@PathVariable("id") UUID id,@RequestBody CandidateRequest request) { required(candidates.findById(id),"CandidateProfile",id); return candidates.save(request.toDomain(id)); }
+    @DeleteMapping("/candidates/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) void deleteCandidate(@PathVariable("id") UUID id) { required(candidates.findById(id),"CandidateProfile",id); candidates.deleteById(id); }
 
     @PostMapping("/eligibility-assessments") CareerDecisionService.DecisionResult assess(@RequestBody AssessmentRequest request) { return decisions.assess(request.candidateId(),request.jobId(),Instant.now()); }
     @GetMapping("/opportunities") List<Opportunity> opportunities() { return opportunities.findAll(); }
-    @PatchMapping("/opportunities/{id}/status") Opportunity updateOpportunityStatus(@PathVariable UUID id,@RequestBody OpportunityStatusRequest request) {
+    @PatchMapping("/opportunities/{id}/status") Opportunity updateOpportunityStatus(@PathVariable("id") UUID id,@RequestBody OpportunityStatusRequest request) {
         var current=required(opportunities.findById(id),"Opportunity",id);
         return opportunities.save(new Opportunity(current.id(),current.candidateProfileId(),current.jobPostingId(),current.eligibilityAssessmentId(),request.status(),current.matchScore(),request.decisionNote()==null?current.decisionNote():request.decisionNote(),current.createdAt(),Instant.now()));
     }
@@ -62,9 +62,9 @@ class CareerMvpController {
     @PostMapping(value="/imports/excel",consumes="multipart/form-data")
     OfficialExcelImportService.ImportResult importExcel(
         @RequestPart("file") MultipartFile file,
-        @RequestParam String announcementTitle,
-        @RequestParam String sourceUrl,
-        @RequestParam int recruitmentYear,
+        @RequestParam("announcementTitle") String announcementTitle,
+        @RequestParam("sourceUrl") String sourceUrl,
+        @RequestParam("recruitmentYear") int recruitmentYear,
         @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate publishedOn,
         @RequestParam(required=false) @DateTimeFormat(iso=DateTimeFormat.ISO.DATE) LocalDate ageReferenceDate,
         @RequestParam(defaultValue="浙江杭州") String defaultLocation,
@@ -86,8 +86,8 @@ class CareerMvpController {
     record JobRequest(UUID recruitmentEventId,UUID organizationId,String externalJobCode,String title,JobFamily jobFamily,EmploymentType employmentType,String location,int headcount,EducationLevel minimumEducation,Set<String> exactMajors,Set<Integer> acceptedGraduationYears,Integer maximumAge,LocalDate ageReferenceDate,Integer minimumExperienceYears,Set<String> requiredProfessionalTitles,String duties,String sourceUrl,List<UUID> evidenceIds) {
         JobPosting toDomain(UUID id){return new JobPosting(id,recruitmentEventId,organizationId,externalJobCode,title,jobFamily,employmentType,location,headcount,minimumEducation,exactMajors,acceptedGraduationYears,maximumAge,ageReferenceDate,minimumExperienceYears,requiredProfessionalTitles,duties,sourceUrl,evidenceIds);}
     }
-    record CandidateRequest(String displayName,int birthYear,int birthMonth,Integer birthDay,EducationLevel highestEducation,Set<String> majors,Integer graduationYear,Integer experienceYears,Set<String> professionalTitles,List<String> preferredLocations,Set<EmploymentType> acceptedEmploymentTypes,String profileVersion) {
-        CandidateProfile toDomain(UUID id){return new CandidateProfile(id,displayName,new PartialDate(birthYear,birthMonth,birthDay),highestEducation,majors,graduationYear,experienceYears,professionalTitles,preferredLocations,acceptedEmploymentTypes,profileVersion);}
+    record CandidateRequest(String displayName,int birthYear,int birthMonth,Integer birthDay,EducationLevel highestEducation,Set<String> majors,Integer graduationYear,Integer experienceYears,Set<String> professionalTitles,List<String> preferredLocations,Set<EmploymentType> acceptedEmploymentTypes,String profileVersion,Set<String> skills,Set<String> researchKeywords,Set<JobFamily> targetJobFamilies,Set<OrganizationType> preferredOrganizationTypes) {
+        CandidateProfile toDomain(UUID id){return new CandidateProfile(id,displayName,new PartialDate(birthYear,birthMonth,birthDay),highestEducation,majors,graduationYear,experienceYears,professionalTitles,preferredLocations,acceptedEmploymentTypes,profileVersion,skills,researchKeywords,targetJobFamilies,preferredOrganizationTypes);}
     }
     record AssessmentRequest(UUID candidateId,UUID jobId) {}
     record OpportunityStatusRequest(OpportunityStatus status,String decisionNote) {}

@@ -1,0 +1,72 @@
+{
+  "datasetVersion": "phase4a-hangzhou-semi-public-v1",
+  "sourceNote": "人工冻结的决策边界样例；用于验证编制、半体制合同、派遣、排除和证据不足场景。",
+  "cases": [
+    {
+      "id": "t1-establishment",
+      "employmentType": "ESTABLISHMENT",
+      "organizationType": "PUBLIC_INSTITUTION",
+      "hasJobEvidence": true,
+      "candidateMajor": "计算机科学与技术",
+      "jobMajor": "计算机科学与技术",
+      "expectedEligibility": "ELIGIBLE",
+      "expectedTier": "T1",
+      "expectedStabilityCoverage": 40
+    },
+    {
+      "id": "t2-university-contract",
+      "employmentType": "CONTRACT",
+      "organizationType": "UNIVERSITY",
+      "hasJobEvidence": true,
+      "candidateMajor": "计算机科学与技术",
+      "jobMajor": "计算机科学与技术",
+      "expectedEligibility": "ELIGIBLE",
+      "expectedTier": "T2",
+      "expectedStabilityCoverage": 40
+    },
+    {
+      "id": "t3-dispatch",
+      "employmentType": "LABOR_DISPATCH",
+      "organizationType": "STATE_OWNED_ENTERPRISE",
+      "hasJobEvidence": true,
+      "candidateMajor": "计算机科学与技术",
+      "jobMajor": "计算机科学与技术",
+      "expectedEligibility": "ELIGIBLE",
+      "expectedTier": "T3",
+      "expectedStabilityCoverage": 40
+    },
+    {
+      "id": "excluded-major-mismatch",
+      "employmentType": "ESTABLISHMENT",
+      "organizationType": "PUBLIC_INSTITUTION",
+      "hasJobEvidence": true,
+      "candidateMajor": "计算机科学与技术",
+      "jobMajor": "临床医学",
+      "expectedEligibility": "INELIGIBLE",
+      "expectedTier": "EXCLUDED",
+      "expectedStabilityCoverage": 40
+    },
+    {
+      "id": "insufficient-employment-evidence",
+      "employmentType": "ESTABLISHMENT",
+      "organizationType": "PUBLIC_INSTITUTION",
+      "hasJobEvidence": false,
+      "candidateMajor": "计算机科学与技术",
+      "jobMajor": "计算机科学与技术",
+      "expectedEligibility": "ELIGIBLE",
+      "expectedTier": "T3",
+      "expectedStabilityCoverage": 40
+    },
+    {
+      "id": "unknown-employment",
+      "employmentType": "UNKNOWN",
+      "organizationType": "OTHER",
+      "hasJobEvidence": false,
+      "candidateMajor": "计算机科学与技术",
+      "jobMajor": "计算机科学与技术",
+      "expectedEligibility": "ELIGIBLE",
+      "expectedTier": "T3",
+      "expectedStabilityCoverage": 0
+    }
+  ]
+}
