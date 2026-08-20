@@ -27,4 +27,13 @@
 .agent-answer li a { color: var(--tide); font-size: 12px; font-weight: 700; }
 .agent-disclaimer { margin: 10px 0 0; color: #78532e; font-size: 11px; }
 .agent-error { margin: 10px 16px 0; padding: 9px 10px; border-left: 3px solid var(--blocker); background: #f8e9e6; color: #7f342c; }
-@media (max-width: 600px) { .agent-composer { right: 8px; bottom: 8px; width: calc(100vw - 16px); } .agent-answer li { grid-template-columns: auto 1fr; } .agent-answer li a { grid-column: 2; } }
+@media (max-width: 600px) {
+  .agent-composer { right: 8px; bottom: 8px; width: calc(100vw - 16px); }
+  .agent-composer[data-open="false"] { width: 54px; }
+  .agent-launcher { display: block; width: 54px; height: 54px; padding: 7px; border-radius: 50%; }
+  .agent-launcher > span { width: 38px; height: 38px; border-radius: 50%; }
+  .agent-launcher strong, .agent-launcher small { display: none; }
+  .agent-panel { max-height: calc(100svh - 16px); overflow-y: auto; }
+  .agent-answer li { grid-template-columns: auto 1fr; }
+  .agent-answer li a { grid-column: 2; }
+}

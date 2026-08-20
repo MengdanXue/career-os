@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Route, Routes } from 'react-router-dom'
 import { AppProviders } from '../../app/AppProviders'
 import { OpportunitiesPage } from './OpportunitiesPage'
 
@@ -25,6 +26,7 @@ function page(items: unknown[]) {
 
 describe('OpportunitiesPage', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/opportunities')
     localStorage.clear()
     localStorage.setItem('career-os.selected-candidate', candidateId)
   })
@@ -66,5 +68,16 @@ describe('OpportunitiesPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: /查看 信息中心 Java 岗/ }))
     await waitFor(() => expect(screen.getAllByText('待核实').length).toBeGreaterThan(0))
     expect(screen.queryByText('0/20')).not.toBeInTheDocument()
+  })
+
+  it('opens a dossier from an agent deep link', async () => {
+    const linked = decision()
+    window.history.replaceState({}, '', `/opportunities/${linked.jobId}?tier=T1`)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(page([linked])))
+
+    render(<AppProviders><Routes><Route path="/opportunities/:jobId" element={<OpportunitiesPage />} /></Routes></AppProviders>)
+
+    expect(await screen.findByText('岗位适配')).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: '信息中心 Java 岗 岗位档案' })).toBeInTheDocument()
   })
 })

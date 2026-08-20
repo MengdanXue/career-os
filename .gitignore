@@ -13,3 +13,6 @@ config/candidate-profile.json
 *.log
 career-ui/node_modules/
 career-ui/*.tsbuildinfo
+.run/
+output/playwright/
+__pycache__/

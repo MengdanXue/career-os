@@ -8,9 +8,10 @@
 - Phase 2：HTML/PDF 证据解析、可选 LLM 结构化抽取、JSON Schema 校验、证据定位、Review Queue、幂等复用、OpenAPI 和采集指标。
 - Phase 3A：浙江省、杭州市人社官方源定时增量采集；稳定公告键、SHA-256 内容指纹、条件请求、附件路由、PostgreSQL 分布式锁，以及新增/变更/下线变化流。
 - Phase 4A：确定性硬资格门槛、六维岗位匹配、证据感知稳定性、T1/T2/T3 分层、版本化决策快照、排名 API，以及带无模型回退的受控自然语言决策 Agent。
+- Phase 4B：可直接使用的 React 决策工作台，覆盖首次资料确认、今日变化、分层机会池、岗位证据档案、官方源更新、附件导入、人工复核和常驻 Career OS Agent。
 - Java 21：编译与运行均使用 Java 21，Spring 任务执行器启用虚拟线程，适合并发下载、文档解析和数据库等待等 I/O 密集工作。
 
-当前阶段没有引入全网爬虫、登录/CAPTCHA、自动投递或前端。Phase 3A 只启用两个官方核心源，采集结果继续进入现有的确定性 Excel 导入或 HTML/PDF 证据审核管道。
+当前阶段没有引入全网爬虫、登录/CAPTCHA 或自动投递。Phase 3A 只启用两个官方核心源，采集结果继续进入现有的确定性 Excel 导入或 HTML/PDF 证据审核管道。
 
 Phase 4A 的模型不是决策者：资格、分数、层级和证据均由 Java 规则计算。模型默认关闭，启用后也只负责润色已经生成的解释，失败时自动回退到确定性中文说明。
 
@@ -50,6 +51,18 @@ $env:CAREER_OS_AGENT_LLM_ENABLED='true'
 
 要求 Java 21、Maven 3.9+、PostgreSQL 16。运行 Docker 还可执行 Testcontainers 集成测试。
 
+Windows 本地使用推荐直接执行：
+
+```powershell
+pwsh -NoProfile -File scripts/start-career-os.ps1
+```
+
+脚本使用 Docker 启动项目专属 PostgreSQL（默认本机端口 `55432`），自动构建有变化的前后端、等待健康检查并打开网页。停止且保留数据：
+
+```powershell
+pwsh -NoProfile -File scripts/stop-career-os.ps1
+```
+
 ```powershell
 mvn clean test
 mvn -DskipTests package
@@ -77,4 +90,4 @@ java -jar career-web\target\career-web-0.1.0-SNAPSHOT.jar
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - 指标：`http://localhost:8080/actuator/metrics`
 
-接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md)、[Phase 3 增量采集 API](docs/PHASE3_API.md) 和 [Phase 4A 决策智能与 Agent API](docs/PHASE4A_API.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。
+接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md)、[Phase 3 增量采集 API](docs/PHASE3_API.md)、[Phase 4A 决策智能与 Agent API](docs/PHASE4A_API.md) 和 [Phase 4B 决策工作台](docs/PHASE4B_WORKBENCH.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。
