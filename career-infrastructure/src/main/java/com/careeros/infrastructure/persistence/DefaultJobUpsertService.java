@@ -91,7 +91,17 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
             if (!seen.add(key)) throw new IllegalArgumentException("Batch contains duplicate stable job key: " + key);
             String fingerprint = contentFingerprint(job);
             var existing = jobs.findByStableJobKey(key);
-            if (existing.isPresent() && fingerprint.equals(existing.orElseThrow().contentFingerprint)) {
+            boolean adoptedLegacyKey = false;
+            if (batch.legacyRecruitmentEventId() != null && existing.isEmpty()
+                && !blank(job.legacyStableSourceUrl())
+                && !job.stableSourceUrl().equals(job.legacyStableSourceUrl())) {
+                existing = jobs.findByStableJobKey(stableKey(job, job.legacyStableSourceUrl()))
+                    .filter(candidate -> normalizeIdentity(candidate.title)
+                        .equals(normalizeIdentity(job.title())));
+                adoptedLegacyKey = existing.isPresent();
+            }
+            if (!adoptedLegacyKey && existing.isPresent()
+                && fingerprint.equals(existing.orElseThrow().contentFingerprint)) {
                 JpaModels.JobPostingEntity entity = existing.orElseThrow();
                 entity.active = true;
                 entity.lastSeenAt = now;
@@ -134,8 +144,12 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
     @Override
     public String stableKey(NormalizedJob job) {
         Objects.requireNonNull(job, "job");
+        return stableKey(job, job.stableSourceUrl());
+    }
+
+    private String stableKey(NormalizedJob job, String stableSourceUrl) {
         String codeOrTitle = blank(job.externalJobCode()) ? job.title() : job.externalJobCode();
-        return sha256(job.sourceUrl() + "|" + normalizeIdentity(job.organizationName())
+        return sha256(stableSourceUrl + "|" + normalizeIdentity(job.organizationName())
             + "|" + normalizeIdentity(codeOrTitle));
     }
 

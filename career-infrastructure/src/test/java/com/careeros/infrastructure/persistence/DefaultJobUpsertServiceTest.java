@@ -76,6 +76,22 @@ class DefaultJobUpsertServiceTest {
     }
 
     @Test
+    void differentWorkbookSourcesCannotCollideWhenAnnouncementOrganizationAndCodeMatch() {
+        NormalizedJob firstWorkbook = job(2);
+        NormalizedJob secondWorkbook = new NormalizedJob(
+            firstWorkbook.recruitmentEventId(), firstWorkbook.organizationId(),
+            firstWorkbook.organizationName(), firstWorkbook.externalJobCode(), firstWorkbook.title(),
+            firstWorkbook.jobFamily(), firstWorkbook.employmentType(), firstWorkbook.location(),
+            firstWorkbook.headcount(), firstWorkbook.minimumEducation(), firstWorkbook.exactMajors(),
+            firstWorkbook.acceptedGraduationYears(), firstWorkbook.maximumAge(),
+            firstWorkbook.ageReferenceDate(), firstWorkbook.minimumExperienceYears(),
+            firstWorkbook.requiredProfessionalTitles(), firstWorkbook.duties(), firstWorkbook.sourceUrl(),
+            "https://example.gov.cn/files/second-workbook.xlsx", firstWorkbook.evidenceIds());
+
+        assertThat(service.stableKey(secondWorkbook)).isNotEqualTo(service.stableKey(firstWorkbook));
+    }
+
+    @Test
     void evidenceAndOrganizationChangesInvalidateTheContentFingerprint() {
         NormalizedJob original = job(2);
         NormalizedJob evidenceChanged = copyWithAssociations(

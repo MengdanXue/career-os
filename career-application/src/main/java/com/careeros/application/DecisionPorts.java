@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Set;
 import java.util.function.Supplier;
 
 public final class DecisionPorts {
@@ -33,6 +34,9 @@ public final class DecisionPorts {
         Optional<JobContext> findByJobId(UUID id);
         default Optional<JobContext> findByJobIdForUpdate(UUID id) { return findByJobId(id); }
         List<JobContext> findActive();
+        default List<JobContext> findActiveByJobIds(Set<UUID> ids) {
+            return findActive().stream().filter(context -> ids.contains(context.job().id())).toList();
+        }
     }
 
     @FunctionalInterface

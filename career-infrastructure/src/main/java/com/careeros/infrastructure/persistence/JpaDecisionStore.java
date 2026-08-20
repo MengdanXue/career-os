@@ -35,6 +35,18 @@ public class JpaDecisionStore implements JobContexts, OrganizationStabilityFacts
     @Override public Optional<JobContext> findByJobId(UUID id) { return jobs.findById(id).map(this::context); }
     @Override public Optional<JobContext> findByJobIdForUpdate(UUID id) { return jobs.findByIdForDecision(id).map(this::context); }
     @Override public List<JobContext> findActive() { return jobs.findByActiveTrue().stream().map(this::context).toList(); }
+    @Override public List<JobContext> findActiveByJobIds(Set<UUID> ids) {
+        if (ids.isEmpty()) return List.of();
+        var jobValues = jobs.findAllById(ids).stream().filter(value -> value.active).toList();
+        var organizationValues = new HashMap<UUID,JpaModels.OrganizationEntity>();
+        organizations.findAllById(jobValues.stream().map(value -> value.organizationId).collect(java.util.stream.Collectors.toSet()))
+            .forEach(value -> organizationValues.put(value.id, value));
+        var eventValues = new HashMap<UUID,JpaModels.RecruitmentEventEntity>();
+        events.findAllById(jobValues.stream().map(value -> value.recruitmentEventId).collect(java.util.stream.Collectors.toSet()))
+            .forEach(value -> eventValues.put(value.id, value));
+        return jobValues.stream().map(value -> context(value,
+            organizationValues.get(value.organizationId), eventValues.get(value.recruitmentEventId))).toList();
+    }
 
     @Override public List<OrganizationStabilityFact> findByOrganizationId(UUID organizationId) {
         return facts.findByOrganizationId(organizationId).stream().map(this::fact).toList();
@@ -88,6 +100,11 @@ public class JpaDecisionStore implements JobContexts, OrganizationStabilityFacts
     private JobContext context(JpaModels.JobPostingEntity job) {
         var organization = organizations.findById(job.organizationId).orElseThrow();
         var event = events.findById(job.recruitmentEventId).orElseThrow();
+        return context(job, organization, event);
+    }
+
+    private JobContext context(JpaModels.JobPostingEntity job, JpaModels.OrganizationEntity organization,
+                               JpaModels.RecruitmentEventEntity event) {
         String fingerprint = job.contentFingerprint == null || job.contentFingerprint.isBlank() ? "legacy-" + job.id : job.contentFingerprint;
         return new JobContext(
             new JobPosting(job.id,job.recruitmentEventId,job.organizationId,job.externalJobCode,job.title,job.jobFamily,job.employmentType,job.location,job.headcount,job.minimumEducation,job.exactMajors,job.acceptedGraduationYears,job.maximumAge,job.ageReferenceDate,job.minimumExperienceYears,job.requiredProfessionalTitles,job.duties,job.sourceUrl,job.evidenceIds),

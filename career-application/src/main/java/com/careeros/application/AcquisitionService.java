@@ -115,12 +115,14 @@ public final class AcquisitionService {
             List<DiscoveredLink> details = discoverer.discover(source, list.finalUri(), list.content());
             counts.discovered = details.size();
             for (DiscoveredLink detail : details) {
-                DocumentOutcome outcome = acquire(source, runId, detail, null, DocumentKind.ANNOUNCEMENT, counts);
+                DocumentOutcome outcome = acquire(source, runId, detail, null, DocumentKind.ANNOUNCEMENT,
+                    detail.title(), counts);
                 if (outcome.document == null) continue;
                 List<DiscoveredLink> attachmentLinks = discoverAttachments(source, detail, outcome);
                 counts.discovered += attachmentLinks.size();
                 for (DiscoveredLink attachment : attachmentLinks) {
-                    acquire(source, runId, attachment, outcome.document, DocumentKind.ATTACHMENT, counts);
+                    acquire(source, runId, attachment, outcome.document, DocumentKind.ATTACHMENT,
+                        detail.title(), counts);
                 }
             }
             RunStatus status = counts.failed == 0 ? RunStatus.SUCCEEDED
@@ -145,6 +147,7 @@ public final class AcquisitionService {
         DiscoveredLink link,
         AcquiredDocument parent,
         DocumentKind kind,
+        String announcementTitle,
         Counts counts
     ) {
         Optional<AcquiredDocument> prior = store.findDocument(source.id(), link.uri());
@@ -178,7 +181,8 @@ public final class AcquisitionService {
         if (transition.shouldProcess()) {
             try {
                 byte[] content = response.content().length > 0 ? response.content() : readStored(document);
-                processing = processor.process(processCommand(source, link, parent, document, content));
+                processing = processor.process(processCommand(
+                    source, link, parent, document, content, announcementTitle));
                 if (processing.successful()) document = document.processed(document.contentFingerprint());
                 else {
                     counts.failed++;
@@ -261,14 +265,14 @@ public final class AcquisitionService {
 
     private ProcessDocumentCommand processCommand(
         RecruitmentSource source, DiscoveredLink link, AcquiredDocument parent,
-        AcquiredDocument document, byte[] content
+        AcquiredDocument document, byte[] content, String announcementTitle
     ) {
         URI announcementUri = parent == null ? document.canonicalUri() : parent.canonicalUri();
         LocalDate published = publishedDate(announcementUri);
         int year = published == null ? titleYear(link.title()).orElse(
             clock.instant().atZone(ZoneId.of(source.timeZone())).getYear()) : published.getYear();
         return new ProcessDocumentCommand(content, document.mediaType(), document.canonicalUri(), announcementUri,
-            link.title(), clock.instant(), year, published, source.region(), EventType.PUBLIC_INSTITUTION);
+            announcementTitle, clock.instant(), year, published, source.region(), EventType.PUBLIC_INSTITUTION);
     }
 
     private byte[] readStored(AcquiredDocument document) {

@@ -4,6 +4,7 @@ import com.careeros.domain.DomainEnums.DataQualityStatus;
 import com.careeros.domain.DomainEnums.TargetScopeStatus;
 import com.careeros.domain.JobAdmission;
 import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,6 +17,8 @@ public final class JobAdmissionPorts {
         default Optional<JobAdmission> findByJobIdForUpdate(UUID jobId) { return findByJobId(jobId); }
 
         JobAdmission save(JobAdmission value);
+
+        default List<JobAdmission> findCandidateMatches() { return List.of(); }
 
         AdmissionSummary summarize();
     }

@@ -69,7 +69,12 @@ public final class EligibilityEvaluator {
         if (!facts.isConfirmed(MAJORS)) return uncertain("候选人专业尚未确认");
         if (candidate.majors().isEmpty()) return uncertain("候选人专业信息缺失");
         Set<String> allowed = job.exactMajors().stream().map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
-        boolean match = candidate.majors().stream().map(EligibilityEvaluator::normalize).anyMatch(allowed::contains);
+        Set<String> candidateMajors = candidate.majors().stream()
+            .map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
+        boolean match = candidateMajors.stream().anyMatch(allowed::contains)
+            || job.exactMajors().stream().map(EligibilityEvaluator::normalize)
+                .anyMatch(restricted -> candidateMajors.stream()
+                    .anyMatch(major -> restricted.endsWith("限" + major)));
         if (match) return eligible("专业名称与允许目录精确匹配");
         boolean taxonomyNeedsReview = job.exactMajors().stream().anyMatch(value -> value.contains("门类") || value.endsWith("类") || value.contains("相关专业"));
         return taxonomyNeedsReview ? uncertain("岗位使用专业门类或宽泛目录，需要权威专业分类表判定") : ineligible("专业名称不在岗位允许目录中");
@@ -94,7 +99,10 @@ public final class EligibilityEvaluator {
         if (!facts.isConfirmed(PROFESSIONAL_TITLES)) return uncertain("候选人职称情况尚未确认");
         if (candidate.professionalTitles().isEmpty()) return ineligible("缺少岗位要求的职称");
         Set<String> candidateTitles = candidate.professionalTitles().stream().map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
-        boolean match = job.requiredProfessionalTitles().stream().map(EligibilityEvaluator::normalize).anyMatch(candidateTitles::contains);
+        boolean match = job.requiredProfessionalTitles().stream().map(EligibilityEvaluator::normalize)
+            .anyMatch(required -> candidateTitles.stream().anyMatch(candidateTitle ->
+                candidateTitle.equals(required) || candidateTitle.startsWith(required + "：")
+                    || candidateTitle.startsWith(required + ":")));
         return match ? eligible("职称满足要求") : ineligible("职称不满足要求");
     }
 

@@ -33,8 +33,15 @@ function summary(value = admissionSummary) {
   return new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 
-function route(input: RequestInfo | URL, decisions: Response) {
-  return String(input).includes('/api/v1/job-library/summary') ? summary() : decisions
+function matches(items: unknown[] = []) {
+  return new Response(JSON.stringify({ items, page: 0, size: 20, total: items.length }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+}
+
+function route(input: RequestInfo | URL, decisions: Response, candidateMatches: Response = matches()) {
+  const url = String(input)
+  if (url.includes('/api/v1/job-library/summary')) return summary()
+  if (url.includes('/job-matches')) return candidateMatches
+  return decisions
 }
 
 describe('OpportunitiesPage', () => {
@@ -102,5 +109,25 @@ describe('OpportunitiesPage', () => {
     expect(await screen.findByText('目前没有通过证据准入的可信岗位')).toBeInTheDocument()
     expect(screen.getByText('原始岗位不会自动进入 T1/T2/T3')).toBeInTheDocument()
     expect(screen.queryByText('这一层暂时没有岗位')).not.toBeInTheDocument()
+  })
+
+  it('shows official workbook matches while employment identity awaits evidence', async () => {
+    const candidateMatches = matches([{
+      jobId: crypto.randomUUID(), jobTitle: '信息中心工作人员', organizationName: '杭州市西溪医院',
+      location: '杭州', eligibilityStatus: 'ELIGIBLE', fitScore: 65, coveragePercent: 60,
+      employmentType: 'UNKNOWN', employmentIdentityConfirmed: false,
+      admissionReasons: ['TARGET_TECHNICAL_ROLE', 'EMPLOYMENT_IDENTITY_UNKNOWN'],
+      warnings: ['用工身份待官方证据确认'], sourceUrl: 'https://hrss.hangzhou.gov.cn/notice',
+      jobContentFingerprint: 'a'.repeat(64),
+    }])
+    vi.stubGlobal('fetch', vi.fn(async input => route(input, page([]), candidateMatches)))
+
+    render(<AppProviders><OpportunitiesPage /></AppProviders>)
+
+    expect(await screen.findByText('杭州市西溪医院')).toBeInTheDocument()
+    expect(screen.getByText(/共 1 个符合画像/)).toBeInTheDocument()
+    expect(screen.getByText('信息中心工作人员')).toBeInTheDocument()
+    expect(screen.getByText('用工身份待确认')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查看官方公告' })).toHaveAttribute('href', 'https://hrss.hangzhou.gov.cn/notice')
   })
 })

@@ -67,10 +67,16 @@ public interface AcquiredDocumentProcessor {
             return new ProcessingResult(ProcessingStatus.UNSUPPORTED, null, null, 0, 0, 0, 0,
                 "UNSUPPORTED_MEDIA_TYPE");
         }
+        public static ProcessingResult ignored(String reasonCode) {
+            requireText(reasonCode, "reasonCode");
+            return new ProcessingResult(ProcessingStatus.IGNORED, null, null, 0, 0, 0, 0, reasonCode);
+        }
         public static ProcessingResult failed(String code) {
             return new ProcessingResult(ProcessingStatus.FAILED, null, null, 0, 0, 0, 0, code);
         }
-        public boolean successful() { return status == ProcessingStatus.PROCESSED; }
+        public boolean successful() {
+            return status == ProcessingStatus.PROCESSED || status == ProcessingStatus.IGNORED;
+        }
         public Map<String, Object> summary() {
             Map<String, Object> summary = new LinkedHashMap<>();
             summary.put("processingStatus", status.name());
@@ -85,7 +91,7 @@ public interface AcquiredDocumentProcessor {
         }
     }
 
-    enum ProcessingStatus { PROCESSED, UNSUPPORTED, FAILED }
+    enum ProcessingStatus { PROCESSED, IGNORED, UNSUPPORTED, FAILED }
 
     private static void requireText(String value, String field) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required");

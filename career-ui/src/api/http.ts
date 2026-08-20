@@ -66,6 +66,7 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
 export const queryKeys = {
   candidate: (candidateId: string) => ['candidate', candidateId] as const,
   decisions: (candidateId: string, filters: Record<string, unknown>) => ['decisions', candidateId, filters] as const,
+  candidateMatches: (candidateId: string) => ['candidate-matches', candidateId] as const,
   workbench: (candidateId: string) => ['workbench', candidateId] as const,
   sources: ['acquisition-sources'] as const,
   jobLibrarySummary: ['job-library-summary'] as const,

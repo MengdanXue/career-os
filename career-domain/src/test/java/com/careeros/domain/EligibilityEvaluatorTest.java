@@ -43,6 +43,15 @@ class EligibilityEvaluatorTest {
         assertRule(fail, RuleType.EXACT_MAJOR, EligibilityStatus.INELIGIBLE);
     }
 
+    @Test void explicitMajorInsideAnOfficialRestrictedCategoryIsEligible() {
+        var candidate = candidate(PartialDate.exact(LocalDate.of(1995, 1, 1)), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2020, 5);
+        var restricted = job(null, null, EducationLevel.MASTER,
+            Set.of("计算机科学与技术类（限计算机科学与技术"), Set.of(), null);
+
+        assertRule(evaluator.evaluate(candidate, restricted), RuleType.EXACT_MAJOR, EligibilityStatus.ELIGIBLE);
+    }
+
     @Test void graduateRestrictionIsDeterministicAndMissingDataIsUncertain() {
         var restricted = job(null, null, EducationLevel.MASTER, Set.of(), Set.of(2025, 2026), null);
         assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2026, 0), restricted), RuleType.GRADUATE_YEAR, EligibilityStatus.ELIGIBLE);
@@ -55,6 +64,19 @@ class EligibilityEvaluatorTest {
         assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2020, 2), requiresTwo), RuleType.EXPERIENCE, EligibilityStatus.ELIGIBLE);
         assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2020, 1), requiresTwo), RuleType.EXPERIENCE, EligibilityStatus.INELIGIBLE);
         assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2020, null), requiresTwo), RuleType.EXPERIENCE, EligibilityStatus.UNCERTAIN);
+    }
+
+    @Test void specificCandidateTitleSatisfiesAGenericRequiredLevel() {
+        var candidate = new CandidateProfile(UUID.randomUUID(), "test", PartialDate.exact(LocalDate.of(1995, 1, 1)),
+            EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5,
+            Set.of("中级：计算机应用（评审）"), List.of("杭州"),
+            Set.of(EmploymentType.ESTABLISHMENT), "test-v1");
+        var job = new JobPosting(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "TEST", "信息管理",
+            JobFamily.INFORMATION_SYSTEMS, EmploymentType.UNKNOWN, "杭州", 1, EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(), null, null, null, Set.of("中级"), "",
+            "https://example.test/official", List.of());
+
+        assertRule(evaluator.evaluate(candidate, job), RuleType.PROFESSIONAL_TITLE, EligibilityStatus.ELIGIBLE);
     }
 
     @Test void unconfirmedCandidateFactCannotSatisfyAnAgeRule() {

@@ -6,6 +6,8 @@ import { queryKeys } from '../../api/http'
 import { AsyncState } from '../../components/AsyncState'
 import { getJobLibrarySummary } from '../updates/updateApi'
 import { JobDossier } from './JobDossier'
+import { CandidateMatchQueue } from './CandidateMatchQueue'
+import { listCandidateMatches } from './candidateMatchApi'
 import { listDecisions, type JobDecision } from './opportunityApi'
 import { OpportunityQueue } from './OpportunityQueue'
 import { searchWithTier, tierFromSearch } from './opportunityFilters'
@@ -19,6 +21,7 @@ export function OpportunitiesPage({ initialTier }: { initialTier?: OpportunityTi
   const [selected, setSelected] = useState<JobDecision | null>(null)
   const candidateId = localStorage.getItem('career-os.selected-candidate') ?? '01992f09-0000-7000-8000-000000000001'
   const decisions = useQuery({ queryKey: queryKeys.decisions(candidateId, { tier, page: 0 }), queryFn: () => listDecisions(candidateId, tier) })
+  const candidateMatches = useQuery({ queryKey: queryKeys.candidateMatches(candidateId), queryFn: () => listCandidateMatches(candidateId) })
   const library = useQuery({ queryKey: queryKeys.jobLibrarySummary, queryFn: getJobLibrarySummary })
 
   useEffect(() => {
@@ -45,9 +48,12 @@ export function OpportunitiesPage({ initialTier }: { initialTier?: OpportunityTi
 
   return <main className="opportunities-page page-frame wide-frame">
     <div className="page-heading">
-      <div><p className="eyebrow">OPPORTUNITY LEDGER · 机会账本</p><h1>机会池</h1><p className="page-intro">只展示通过证据准入的岗位。先判断能不能报，再比较适配度与长期稳定性。</p></div>
+      <div><p className="eyebrow">OPPORTUNITY LEDGER · 机会账本</p><h1>机会池</h1><p className="page-intro">官网 Excel 岗位会先按你的画像初筛，证据完整后再进入可信决策队列。</p></div>
       <p className="ledger-note">当前候选人<br /><strong>{candidateId.slice(0, 8)}</strong>{library.data ? <small>{library.data.opportunityReady} / {library.data.total} 个可信机会</small> : null}</p>
     </div>
+    <AsyncState loading={candidateMatches.isLoading} error={candidateMatches.error} empty={false}>
+      <CandidateMatchQueue matches={candidateMatches.data?.items ?? []} total={candidateMatches.data?.total ?? 0} />
+    </AsyncState>
     <TierTabs value={tier} onChange={changeTier} />
     <AsyncState loading={decisions.isLoading || library.isLoading} error={decisions.error ?? library.error} empty={false}>
       <div className="opportunity-layout">

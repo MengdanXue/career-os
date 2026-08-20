@@ -36,6 +36,8 @@ class ApplicationConfiguration {
     @Bean DecisionRankingService decisionRankingService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,DecisionIntelligenceService decisions) { return new DecisionRankingService(jobContexts,admissions,decisions); }
     @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }
     @Bean JobLibrarySummaryService jobLibrarySummaryService(JobAdmissionPorts.JobAdmissions admissions) { return new JobLibrarySummaryService(admissions); }
+    @Bean OfficialJobAdmissionService officialJobAdmissionService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions) { return new OfficialJobAdmissionService(jobContexts,admissions); }
+    @Bean CandidateMatchService candidateMatchService(RepositoryPorts.CandidateProfiles candidates,RepositoryPorts.CandidateFactConfirmations facts,DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,EligibilityEvaluator eligibilityEvaluator,FitEvaluator fitEvaluator) { return new CandidateMatchService(candidates,facts,jobContexts,admissions,eligibilityEvaluator,fitEvaluator); }
     @Bean WorkbenchSummaryService workbenchSummaryService(
         DecisionRankingService rankings, AcquisitionStore acquisitionStore,
         ReviewPersistence reviewPersistence, Clock clock

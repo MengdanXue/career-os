@@ -33,8 +33,67 @@ public interface JobUpsertService {
         Set<String> requiredProfessionalTitles,
         String duties,
         String sourceUrl,
+        String stableSourceUrl,
+        String legacyStableSourceUrl,
         List<UUID> evidenceIds
     ) {
+        public NormalizedJob(
+            UUID recruitmentEventId,
+            UUID organizationId,
+            String organizationName,
+            String externalJobCode,
+            String title,
+            JobFamily jobFamily,
+            EmploymentType employmentType,
+            String location,
+            int headcount,
+            EducationLevel minimumEducation,
+            Set<String> exactMajors,
+            Set<Integer> acceptedGraduationYears,
+            Integer maximumAge,
+            LocalDate ageReferenceDate,
+            Integer minimumExperienceYears,
+            Set<String> requiredProfessionalTitles,
+            String duties,
+            String sourceUrl,
+            List<UUID> evidenceIds
+        ) {
+            this(
+                recruitmentEventId, organizationId, organizationName, externalJobCode, title,
+                jobFamily, employmentType, location, headcount, minimumEducation, exactMajors,
+                acceptedGraduationYears, maximumAge, ageReferenceDate, minimumExperienceYears,
+                requiredProfessionalTitles, duties, sourceUrl, sourceUrl, null, evidenceIds);
+        }
+
+        public NormalizedJob(
+            UUID recruitmentEventId,
+            UUID organizationId,
+            String organizationName,
+            String externalJobCode,
+            String title,
+            JobFamily jobFamily,
+            EmploymentType employmentType,
+            String location,
+            int headcount,
+            EducationLevel minimumEducation,
+            Set<String> exactMajors,
+            Set<Integer> acceptedGraduationYears,
+            Integer maximumAge,
+            LocalDate ageReferenceDate,
+            Integer minimumExperienceYears,
+            Set<String> requiredProfessionalTitles,
+            String duties,
+            String sourceUrl,
+            String stableSourceUrl,
+            List<UUID> evidenceIds
+        ) {
+            this(
+                recruitmentEventId, organizationId, organizationName, externalJobCode, title,
+                jobFamily, employmentType, location, headcount, minimumEducation, exactMajors,
+                acceptedGraduationYears, maximumAge, ageReferenceDate, minimumExperienceYears,
+                requiredProfessionalTitles, duties, sourceUrl, stableSourceUrl, null, evidenceIds);
+        }
+
         public NormalizedJob {
             Objects.requireNonNull(recruitmentEventId, "recruitmentEventId");
             Objects.requireNonNull(organizationId, "organizationId");
@@ -48,6 +107,7 @@ public interface JobUpsertService {
             acceptedGraduationYears = acceptedGraduationYears == null ? Set.of() : Set.copyOf(acceptedGraduationYears);
             requiredProfessionalTitles = requiredProfessionalTitles == null ? Set.of() : Set.copyOf(requiredProfessionalTitles);
             requireText(sourceUrl, "sourceUrl");
+            requireText(stableSourceUrl, "stableSourceUrl");
             evidenceIds = evidenceIds == null ? List.of() : List.copyOf(evidenceIds);
         }
     }
@@ -57,10 +117,24 @@ public interface JobUpsertService {
         String sourceUrl,
         List<NormalizedJob> jobs,
         boolean completeSnapshot,
-        List<String> validationErrors
+        List<String> validationErrors,
+        UUID legacyRecruitmentEventId
     ) {
+        public JobUpsertBatch(
+            UUID recruitmentEventId,
+            String sourceUrl,
+            List<NormalizedJob> jobs,
+            boolean completeSnapshot,
+            List<String> validationErrors
+        ) {
+            this(recruitmentEventId, sourceUrl, jobs, completeSnapshot, validationErrors, null);
+        }
+
         public JobUpsertBatch {
             Objects.requireNonNull(recruitmentEventId, "recruitmentEventId");
+            if (recruitmentEventId.equals(legacyRecruitmentEventId)) {
+                throw new IllegalArgumentException("legacy recruitment event must differ from the current event");
+            }
             requireText(sourceUrl, "sourceUrl");
             jobs = jobs == null ? List.of() : List.copyOf(jobs);
             validationErrors = validationErrors == null ? List.of() : List.copyOf(validationErrors);

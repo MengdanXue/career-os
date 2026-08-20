@@ -35,4 +35,7 @@ public interface JobAdmissionJpaRepository
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from JpaModels$JobAdmissionEntity a where a.jobPostingId = :id")
     Optional<JpaModels.JobAdmissionEntity> findByIdForDecision(@Param("id") UUID id);
+
+    List<JpaModels.JobAdmissionEntity> findByDataQualityStatusAndTargetScopeStatusNot(
+        DataQualityStatus dataQualityStatus, TargetScopeStatus targetScopeStatus);
 }

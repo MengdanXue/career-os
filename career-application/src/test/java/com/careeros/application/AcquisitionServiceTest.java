@@ -130,6 +130,19 @@ class AcquisitionServiceTest {
         assertThat(fixture.store.documents).containsKeys(DETAIL, ATTACHMENT);
     }
 
+    @Test
+    void attachmentProcessingKeepsTheParentAnnouncementTitle() {
+        Fixture fixture = new Fixture();
+        fixture.attachments.links = List.of(new DiscoveredLink(ATTACHMENT, "招聘计划表.xlsx"));
+
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        ProcessDocumentCommand attachment = fixture.processor.commands.stream()
+            .filter(command -> command.documentUri().equals(ATTACHMENT))
+            .findFirst().orElseThrow();
+        assertThat(attachment.announcementTitle()).isEqualTo("2026年公开招聘公告");
+    }
+
     private static final class Fixture {
         final InMemoryStore store = new InMemoryStore(source());
         final FakeFetcher fetcher = new FakeFetcher();
@@ -177,8 +190,10 @@ class AcquisitionServiceTest {
     private static final class FakeProcessor implements AcquiredDocumentProcessor {
         int calls;
         boolean failNext;
+        final List<ProcessDocumentCommand> commands = new ArrayList<>();
         @Override public ProcessingResult process(ProcessDocumentCommand command) {
             calls++;
+            commands.add(command);
             if (failNext) { failNext = false; return ProcessingResult.failed("TEST_FAILURE"); }
             return ProcessingResult.extracted(UUID.nameUUIDFromBytes(command.content()));
         }

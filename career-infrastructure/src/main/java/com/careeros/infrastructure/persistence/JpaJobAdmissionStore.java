@@ -42,6 +42,16 @@ public class JpaJobAdmissionStore implements JobAdmissions {
     }
 
     @Override
+    public java.util.List<JobAdmission> findCandidateMatches() {
+        return repository.findByDataQualityStatusAndTargetScopeStatusNot(
+            DataQualityStatus.VERIFIED, TargetScopeStatus.EXCLUDED).stream()
+            .map(JpaJobAdmissionStore::toDomain)
+            .filter(value -> value.reasonCodes().contains(
+                com.careeros.domain.DomainEnums.JobAdmissionReason.TARGET_TECHNICAL_ROLE))
+            .toList();
+    }
+
+    @Override
     public AdmissionSummary summarize() {
         var byQuality = new EnumMap<DataQualityStatus, Long>(DataQualityStatus.class);
         repository.countByQuality().forEach(row ->
