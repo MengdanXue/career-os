@@ -24,4 +24,12 @@ public final class DomainEnums {
         SCHEMA_INVALID, RESTRICTIVE_FACT_FROM_LLM
     }
     public enum LocatorType { HTML, PDF }
+    public enum AssessmentFactStatus { EXPLICIT, INTERPRETED, UNKNOWN }
+    public enum AssessmentDimensionType {
+        MAJOR_FIT, SKILL_FIT, EXPERIENCE_FIT, RESEARCH_FIT, PROFESSIONAL_TITLE_FIT, PREFERENCE_FIT,
+        EMPLOYMENT_SECURITY, FUNDING_STABILITY, ORGANIZATION_STABILITY, POLICY_STABILITY,
+        BUSINESS_VOLATILITY, LAYOFF_RISK, CONTRACT_RISK
+    }
+    public enum OpportunityTier { T1, T2, T3, EXCLUDED }
+    public enum RecommendationStatus { RECOMMENDED, REVIEW, NOT_RECOMMENDED, EXCLUDED }
 }
