@@ -89,6 +89,7 @@ final class AcquisitionJpaModels {
         @Column(name = "consecutive_gone_count", nullable = false) int consecutiveGoneCount;
         @Column(name = "last_http_status", nullable = false) int lastHttpStatus;
         @Column(name = "last_processed_fingerprint", length = 64) String lastProcessedFingerprint;
+        @Column(name = "last_processor_version") String lastProcessorVersion;
         @Version @Column(nullable = false) long version;
         protected AcquiredDocumentEntity() {}
     }

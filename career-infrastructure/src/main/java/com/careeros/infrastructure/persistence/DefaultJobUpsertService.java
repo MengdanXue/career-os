@@ -8,6 +8,8 @@ import com.careeros.application.ExtractionPorts.VerifiedProposalWriter;
 import com.careeros.application.JobUpsertService;
 import com.careeros.domain.ExtractedFact;
 import com.careeros.domain.RecruitmentExtractionProposal;
+import java.net.URI;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -15,6 +17,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -34,15 +37,17 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
     private final OrganizationJpaRepository organizations;
     private final Clock clock;
     private final PostgresEventSourceLock eventSourceLock;
+    private final JobAdmissionJpaRepository admissions;
 
     @Autowired
     public DefaultJobUpsertService(
         JobPostingJpaRepository jobs,
         RecruitmentEventJpaRepository events,
         OrganizationJpaRepository organizations,
-        PostgresEventSourceLock eventSourceLock
+        PostgresEventSourceLock eventSourceLock,
+        JobAdmissionJpaRepository admissions
     ) {
-        this(jobs, events, organizations, Clock.systemUTC(), eventSourceLock);
+        this(jobs, events, organizations, Clock.systemUTC(), eventSourceLock, admissions);
     }
 
     DefaultJobUpsertService(
@@ -51,7 +56,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         OrganizationJpaRepository organizations,
         Clock clock
     ) {
-        this(jobs, events, organizations, clock, null);
+        this(jobs, events, organizations, clock, null, null);
     }
 
     private DefaultJobUpsertService(
@@ -59,13 +64,15 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         RecruitmentEventJpaRepository events,
         OrganizationJpaRepository organizations,
         Clock clock,
-        PostgresEventSourceLock eventSourceLock
+        PostgresEventSourceLock eventSourceLock,
+        JobAdmissionJpaRepository admissions
     ) {
         this.jobs = Objects.requireNonNull(jobs);
         this.events = Objects.requireNonNull(events);
         this.organizations = Objects.requireNonNull(organizations);
         this.clock = Objects.requireNonNull(clock);
         this.eventSourceLock = eventSourceLock;
+        this.admissions = admissions;
     }
 
     @Override
@@ -79,6 +86,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         Instant now = clock.instant();
         Set<String> seen = new HashSet<>();
         List<UUID> ids = new ArrayList<>();
+        var eventSourceCache = new HashMap<UUID, String>();
 
         for (NormalizedJob job : batch.jobs()) {
             if (!batch.recruitmentEventId().equals(job.recruitmentEventId())) {
@@ -92,6 +100,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
             String fingerprint = contentFingerprint(job);
             var existing = jobs.findByStableJobKey(key);
             boolean adoptedLegacyKey = false;
+            boolean adoptedVolatileAlias = false;
             if (batch.legacyRecruitmentEventId() != null && existing.isEmpty()
                 && !blank(job.legacyStableSourceUrl())
                 && !job.stableSourceUrl().equals(job.legacyStableSourceUrl())) {
@@ -100,11 +109,37 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                         .equals(normalizeIdentity(job.title())));
                 adoptedLegacyKey = existing.isPresent();
             }
-            if (!adoptedLegacyKey && existing.isPresent()
+            if (existing.isEmpty() && !job.stableSourceUrl().equals(job.sourceUrl())) {
+                var aliases = jobs.findNaturalIdentityCandidates(
+                        job.sourceUrl(), job.organizationId(), emptyToNull(job.externalJobCode()), job.title())
+                    .stream()
+                    .filter(candidate -> sameAttachmentIdentity(candidate, job, eventSourceCache))
+                    .sorted(Comparator
+                        .comparing((JpaModels.JobPostingEntity candidate) -> !humanVerified(candidate.id))
+                        .thenComparing(candidate -> candidate.firstSeenAt,
+                            Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(candidate -> candidate.id))
+                    .toList();
+                if (!aliases.isEmpty()) {
+                    existing = java.util.Optional.of(aliases.getFirst());
+                    adoptedVolatileAlias = true;
+                    for (int index = 1; index < aliases.size(); index++) {
+                        var duplicate = aliases.get(index);
+                        if (duplicate.active) {
+                            duplicate.active = false;
+                            duplicate.lastSeenAt = now;
+                            jobs.save(duplicate);
+                            deactivated++;
+                        }
+                    }
+                }
+            }
+            if (!adoptedLegacyKey && !adoptedVolatileAlias && existing.isPresent()
                 && fingerprint.equals(existing.orElseThrow().contentFingerprint)) {
                 JpaModels.JobPostingEntity entity = existing.orElseThrow();
                 entity.active = true;
                 entity.lastSeenAt = now;
+                entity.evidenceIds = new ArrayList<>(job.evidenceIds());
                 jobs.save(entity);
                 ids.add(entity.id);
                 unchanged++;
@@ -141,6 +176,10 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         return new JobUpsertResult(inserted, updated, unchanged, deactivated, ids);
     }
 
+    private boolean humanVerified(UUID jobId) {
+        return admissions != null && admissions.existsByJobPostingIdAndHumanVerifiedTrue(jobId);
+    }
+
     @Override
     public String stableKey(NormalizedJob job) {
         Objects.requireNonNull(job, "job");
@@ -149,8 +188,26 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
 
     private String stableKey(NormalizedJob job, String stableSourceUrl) {
         String codeOrTitle = blank(job.externalJobCode()) ? job.title() : job.externalJobCode();
-        return sha256(stableSourceUrl + "|" + normalizeIdentity(job.organizationName())
+        String sourceIdentity = stableSourceUrl.equals(job.sourceUrl())
+            ? stableSourceUrl
+            : job.sourceUrl() + "|" + canonicalAttachmentIdentity(stableSourceUrl);
+        return sha256(sourceIdentity + "|" + normalizeIdentity(job.organizationName())
             + "|" + normalizeIdentity(codeOrTitle));
+    }
+
+    private boolean sameAttachmentIdentity(
+        JpaModels.JobPostingEntity candidate,
+        NormalizedJob incoming,
+        HashMap<UUID, String> eventSourceCache
+    ) {
+        String candidateSource = eventSourceCache.computeIfAbsent(candidate.recruitmentEventId,
+            eventId -> events.findById(eventId).map(event -> event.sourceUrl).orElse(""));
+        return canonicalAttachmentIdentity(candidateSource)
+            .equals(canonicalAttachmentIdentity(incoming.stableSourceUrl()));
+    }
+
+    private static String canonicalAttachmentIdentity(String sourceUrl) {
+        return OfficialWorkbookIdentity.of(sourceUrl);
     }
 
     @Override
@@ -256,6 +313,20 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         target.minimumExperienceYears = source.minimumExperienceYears();
         target.requiredProfessionalTitles = new LinkedHashSet<>(source.requiredProfessionalTitles());
         target.duties = source.duties();
+        target.supervisingDepartment = source.supervisingDepartment();
+        target.jobCategory = source.jobCategory();
+        target.jobGrade = source.jobGrade();
+        target.educationRequirementText = source.educationRequirementText();
+        target.degreeRequirement = source.degreeRequirement();
+        target.majorRequirementText = source.majorRequirementText();
+        target.ageRequirementText = source.ageRequirementText();
+        target.genderRequirement = source.genderRequirement();
+        target.candidateScope = source.candidateScope();
+        target.otherRequirements = source.otherRequirements();
+        target.originalRequirementText = source.originalRequirementText();
+        target.interviewRatio = source.interviewRatio();
+        target.professionalTestRequired = source.professionalTestRequired();
+        target.contactPhone = source.contactPhone();
         target.sourceUrl = source.sourceUrl();
         target.evidenceIds = new ArrayList<>(source.evidenceIds());
     }

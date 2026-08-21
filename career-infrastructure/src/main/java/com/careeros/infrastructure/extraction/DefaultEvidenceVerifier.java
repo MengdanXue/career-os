@@ -114,6 +114,7 @@ public final class DefaultEvidenceVerifier implements EvidenceVerifier {
         if (value instanceof EmploymentType employmentType) {
             return switch (employmentType) {
                 case ESTABLISHMENT -> containsAny(normalizedText, "事业编制", "事业编", "编内");
+                case PUBLIC_INSTITUTION_FORMAL -> containsAny(normalizedText, "事业单位公开招聘", "签订聘用合同", "岗位聘用");
                 case PERSONNEL_AGENCY -> containsAny(normalizedText, "人事代理");
                 case LABOR_DISPATCH -> containsAny(normalizedText, "劳务派遣", "派遣制");
                 case CONTRACT -> containsAny(normalizedText, "合同制", "合同聘用");

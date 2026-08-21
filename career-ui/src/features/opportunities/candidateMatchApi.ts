@@ -1,9 +1,10 @@
 import type { EligibilityStatus, PageResponse } from '../../api/contracts'
 import { requestJson } from '../../api/http'
 
-export type EmploymentType = 'ESTABLISHMENT' | 'PERSONNEL_AGENCY' | 'LABOR_DISPATCH' | 'CONTRACT' | 'PROJECT_BASED' | 'UNKNOWN'
+export type EmploymentType = 'ESTABLISHMENT' | 'PUBLIC_INSTITUTION_FORMAL' | 'PERSONNEL_AGENCY' | 'LABOR_DISPATCH' | 'CONTRACT' | 'PROJECT_BASED' | 'UNKNOWN'
 export type JobFamily = 'SOFTWARE' | 'DATA' | 'AI' | 'CYBERSECURITY' | 'INFORMATION_SYSTEMS' | 'DIGITALIZATION' | 'IT_OPERATIONS' | 'RESEARCH' | 'PRODUCT' | 'OTHER'
 export type EducationLevel = 'UNKNOWN' | 'HIGH_SCHOOL' | 'ASSOCIATE' | 'BACHELOR' | 'MASTER' | 'DOCTORATE'
+export type DataQualityStatus = 'RAW' | 'PARSED' | 'NORMALIZED' | 'REVIEW_REQUIRED' | 'VERIFIED' | 'REJECTED' | 'FAILED'
 
 export type CandidateMatch = {
   jobId: string
@@ -34,6 +35,49 @@ export type CandidateMatch = {
   publishedOn: string | null
   applicationStartsOn: string | null
   applicationEndsOn: string | null
+  dataQualityStatus: DataQualityStatus
+  supervisingDepartment: string | null
+  jobCategory: string | null
+  jobGrade: string | null
+  educationRequirementText: string | null
+  degreeRequirement: string | null
+  majorRequirementText: string | null
+  ageRequirementText: string | null
+  genderRequirement: string | null
+  candidateScope: string | null
+  otherRequirements: string | null
+  originalRequirementText: string | null
+  interviewRatio: string | null
+  professionalTestRequired: boolean | null
+  contactPhone: string | null
+  attachmentSourceUrl: string
+  applicationStartsAt: string | null
+  applicationEndsAt: string | null
+  registrationUrl: string | null
+  qualificationReviewEndsOn: string | null
+  paymentEndsOn: string | null
+  admissionTicketStartsOn: string | null
+  admissionTicketEndsOn: string | null
+  writtenExamOn: string | null
+  writtenExamSubjects: string[]
+  graduateRule: string | null
+  overseasDegreeRule: string | null
+  experienceEvidenceRule: string | null
+  employmentStatement: string | null
+  interviewRule: string | null
+  qualitySummary?: {
+    verifiedFieldCount: number
+    missingFields: string[]
+    conflictFields: string[]
+    evidenceReferences: Array<{
+      fieldName: string
+      factStatus: string
+      sourceTitle: string | null
+      sourceUrl: string | null
+      locator: string | null
+      excerpt: string | null
+    }>
+  }
 }
 
 export function listCandidateMatches(candidateId: string, page = 0) {

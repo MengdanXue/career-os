@@ -78,7 +78,7 @@ public record DocumentTransition(
             document.mediaType(), document.contentFingerprint(), document.etag(), document.lastModified(), storageUri,
             document.state(), document.firstSeenAt(), document.lastSeenAt(), document.lastChangedAt(),
             document.lastGoneAt(), document.consecutiveGoneCount(), document.lastHttpStatus(),
-            document.lastProcessedFingerprint(), document.version());
+            document.lastProcessedFingerprint(), document.lastProcessorVersion(), document.version());
     }
 
     private static AcquiredDocument copy(
@@ -88,7 +88,8 @@ public record DocumentTransition(
     ) {
         return new AcquiredDocument(value.id(), value.sourceId(), value.canonicalUri(), value.parentDocumentId(),
             value.kind(), mediaType, fingerprint, etag, lastModified, storageUri, state, value.firstSeenAt(), seen,
-            changed, gone, goneCount, status, value.lastProcessedFingerprint(), value.version());
+            changed, gone, goneCount, status, value.lastProcessedFingerprint(), value.lastProcessorVersion(),
+            value.version());
     }
 
     public enum TransitionType { ADDED, UPDATED, UNCHANGED, DEACTIVATED, NONE }

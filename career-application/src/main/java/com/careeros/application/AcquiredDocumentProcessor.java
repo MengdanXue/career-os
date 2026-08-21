@@ -10,6 +10,8 @@ import java.util.Objects;
 import java.util.UUID;
 
 public interface AcquiredDocumentProcessor {
+    default String version() { return "processor-v1"; }
+
     ProcessingResult process(ProcessDocumentCommand command);
 
     record ProcessDocumentCommand(

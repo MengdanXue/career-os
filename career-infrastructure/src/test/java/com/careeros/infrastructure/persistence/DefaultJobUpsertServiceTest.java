@@ -92,17 +92,47 @@ class DefaultJobUpsertServiceTest {
     }
 
     @Test
-    void evidenceAndOrganizationChangesInvalidateTheContentFingerprint() {
+    void volatileDownloadTokenDoesNotChangeWorkbookStableKey() {
+        NormalizedJob original = workbookJob(
+            "https://example.gov.cn/download?fileName=jobs-2026.xlsx&fileUrl=first-token");
+        NormalizedJob refreshed = workbookJob(
+            "https://example.gov.cn/download?fileName=jobs-2026.xlsx&fileUrl=second-token");
+
+        assertThat(service.stableKey(refreshed)).isEqualTo(service.stableKey(original));
+        assertThat(service.stableKey(workbookJob(
+            "https://example.gov.cn/download?fileName=another-2026.xlsx&fileUrl=first-token")))
+            .isNotEqualTo(service.stableKey(original));
+        assertThat(service.stableKey(workbookJob(
+            "https://example.gov.cn/download?fileName=jobs2026.xlsx&fileUrl=first-token")))
+            .isNotEqualTo(service.stableKey(original));
+    }
+
+    @Test
+    void evidenceRefreshDoesNotFakeAContentChangeButOrganizationChangeDoes() {
         NormalizedJob original = job(2);
         NormalizedJob evidenceChanged = copyWithAssociations(
             original, original.organizationId(), List.of(UUID.randomUUID()));
+        NormalizedJob evidenceRemoved = copyWithAssociations(
+            original, original.organizationId(), List.of());
         NormalizedJob organizationChanged = copyWithAssociations(
             original, UUID.randomUUID(), original.evidenceIds());
+        NormalizedJob eventAssociationChanged = copyWithEvent(original, UUID.randomUUID());
 
         assertThat(service.contentFingerprint(evidenceChanged))
+            .isEqualTo(service.contentFingerprint(original));
+        assertThat(service.contentFingerprint(evidenceRemoved))
             .isNotEqualTo(service.contentFingerprint(original));
         assertThat(service.contentFingerprint(organizationChanged))
             .isNotEqualTo(service.contentFingerprint(original));
+        assertThat(service.contentFingerprint(eventAssociationChanged))
+            .isEqualTo(service.contentFingerprint(original));
+
+        service.upsert(batch(List.of(original), true, List.of()));
+        var repeat = service.upsert(batch(List.of(evidenceChanged), true, List.of()));
+
+        assertThat(repeat.unchanged()).isEqualTo(1);
+        assertThat(stored.values().iterator().next().evidenceIds)
+            .containsExactlyElementsOf(evidenceChanged.evidenceIds());
     }
 
     @Test
@@ -240,6 +270,17 @@ class DefaultJobUpsertServiceTest {
             List.of(UUID.fromString("30000000-0000-0000-0000-000000000003")));
     }
 
+    private static NormalizedJob workbookJob(String workbookSourceUrl) {
+        NormalizedJob source = job(2);
+        return new NormalizedJob(
+            source.recruitmentEventId(), source.organizationId(), source.organizationName(),
+            source.externalJobCode(), source.title(), source.jobFamily(), source.employmentType(),
+            source.location(), source.headcount(), source.minimumEducation(), source.exactMajors(),
+            source.acceptedGraduationYears(), source.maximumAge(), source.ageReferenceDate(),
+            source.minimumExperienceYears(), source.requiredProfessionalTitles(), source.duties(),
+            source.sourceUrl(), workbookSourceUrl, source.sourceUrl(), source.evidenceIds());
+    }
+
     private static NormalizedJob copyWithAssociations(
         NormalizedJob job, UUID organizationId, List<UUID> evidenceIds
     ) {
@@ -249,6 +290,16 @@ class DefaultJobUpsertServiceTest {
             job.minimumEducation(), job.exactMajors(), job.acceptedGraduationYears(),
             job.maximumAge(), job.ageReferenceDate(), job.minimumExperienceYears(),
             job.requiredProfessionalTitles(), job.duties(), job.sourceUrl(), evidenceIds);
+    }
+
+    private static NormalizedJob copyWithEvent(NormalizedJob job, UUID recruitmentEventId) {
+        return new NormalizedJob(
+            recruitmentEventId, job.organizationId(), job.organizationName(), job.externalJobCode(),
+            job.title(), job.jobFamily(), job.employmentType(), job.location(), job.headcount(),
+            job.minimumEducation(), job.exactMajors(), job.acceptedGraduationYears(),
+            job.maximumAge(), job.ageReferenceDate(), job.minimumExperienceYears(),
+            job.requiredProfessionalTitles(), job.duties(), job.sourceUrl(), job.stableSourceUrl(),
+            job.legacyStableSourceUrl(), job.evidenceIds());
     }
 
     private static NormalizedJob copyWithContent(

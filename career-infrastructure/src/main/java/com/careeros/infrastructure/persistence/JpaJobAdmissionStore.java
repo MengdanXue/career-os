@@ -31,6 +31,13 @@ public class JpaJobAdmissionStore implements JobAdmissions {
     }
 
     @Override
+    public java.util.Map<UUID, JobAdmission> findByJobIds(java.util.Collection<UUID> jobIds) {
+        var result = new java.util.LinkedHashMap<UUID, JobAdmission>();
+        repository.findAllById(jobIds).forEach(value -> result.put(value.jobPostingId, toDomain(value)));
+        return java.util.Map.copyOf(result);
+    }
+
+    @Override
     public Optional<JobAdmission> findByJobIdForUpdate(UUID jobId) {
         return repository.findByIdForDecision(jobId).map(JpaJobAdmissionStore::toDomain);
     }
@@ -42,9 +49,18 @@ public class JpaJobAdmissionStore implements JobAdmissions {
     }
 
     @Override
+    @Transactional
+    public java.util.List<JobAdmission> saveAll(java.util.Collection<JobAdmission> values) {
+        return repository.saveAll(values.stream().map(JpaJobAdmissionStore::toEntity).toList())
+            .stream().map(JpaJobAdmissionStore::toDomain).toList();
+    }
+
+    @Override
     public java.util.List<JobAdmission> findCandidateMatches() {
-        return repository.findByDataQualityStatusAndTargetScopeStatusNot(
-            DataQualityStatus.VERIFIED, TargetScopeStatus.EXCLUDED).stream()
+        return repository.findByDataQualityStatusInAndTargetScopeStatusNot(
+            java.util.List.of(DataQualityStatus.VERIFIED, DataQualityStatus.NORMALIZED,
+                DataQualityStatus.REVIEW_REQUIRED),
+            TargetScopeStatus.EXCLUDED).stream()
             .map(JpaJobAdmissionStore::toDomain)
             .filter(value -> value.reasonCodes().contains(
                 com.careeros.domain.DomainEnums.JobAdmissionReason.TARGET_TECHNICAL_ROLE))

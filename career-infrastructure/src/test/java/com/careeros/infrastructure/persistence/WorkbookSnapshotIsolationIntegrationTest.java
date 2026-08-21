@@ -7,6 +7,7 @@ import com.careeros.application.JobUpsertService;
 import com.careeros.application.JobUpsertService.JobUpsertBatch;
 import com.careeros.application.JobUpsertService.NormalizedJob;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -36,6 +37,9 @@ class WorkbookSnapshotIsolationIntegrationTest {
     private static final String EMPTY_LEGACY_WORKBOOK = "https://example.gov.cn/files/legacy-empty.xlsx";
     private static final String AMBIGUOUS_ANNOUNCEMENT = "https://example.gov.cn/notices/legacy-ambiguous";
     private static final String AMBIGUOUS_WORKBOOK = "https://example.gov.cn/files/legacy-ambiguous-a.xlsx";
+    private static final String TOKEN_WORKBOOK_ONE = "https://example.gov.cn/download?fileName=jobs-2026.xlsx&fileUrl=token-one";
+    private static final String TOKEN_WORKBOOK_TWO = "https://example.gov.cn/download?fileName=jobs-2026.xlsx&fileUrl=token-two";
+    private static final String TOKEN_WORKBOOK_THREE = "https://example.gov.cn/download?fileName=jobs-2026.xlsx&fileUrl=token-three";
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -228,6 +232,48 @@ class WorkbookSnapshotIsolationIntegrationTest {
         });
     }
 
+    @Test
+    void volatileDownloadTokenMigrationAdoptsOneRowAndDeactivatesHistoricalDuplicate(
+        @Autowired JobUpsertService upserts,
+        @Autowired OrganizationJpaRepository organizations,
+        @Autowired RecruitmentEventJpaRepository events,
+        @Autowired JobPostingJpaRepository jobs,
+        @Autowired JobAdmissionJpaRepository admissions
+    ) {
+        var organization = new JpaModels.OrganizationEntity();
+        organization.id = UUID.randomUUID();
+        organization.name = "杭州市令牌升级测试单位";
+        organization.organizationType = OrganizationType.PUBLIC_INSTITUTION;
+        organizations.save(organization);
+        var oldEventOne = event("旧签名附件一", TOKEN_WORKBOOK_ONE);
+        var oldEventTwo = event("旧签名附件二", TOKEN_WORKBOOK_TWO);
+        var currentEvent = event("当前签名附件", TOKEN_WORKBOOK_THREE);
+        events.saveAll(List.of(oldEventOne, oldEventTwo, currentEvent));
+        var older = jobs.saveAndFlush(legacyStoredJob(oldEventOne.id, organization.id, "1".repeat(64),
+            Instant.parse("2026-08-01T00:00:00Z")));
+        var humanReviewed = jobs.saveAndFlush(legacyStoredJob(oldEventTwo.id, organization.id, "2".repeat(64),
+            Instant.parse("2026-08-02T00:00:00Z")));
+        var reviewedAdmission = admissions.findById(humanReviewed.id).orElseThrow();
+        reviewedAdmission.humanVerified = true;
+        admissions.saveAndFlush(reviewedAdmission);
+        var incoming = job(currentEvent.id, organization, TOKEN_WORKBOOK_THREE, "信息中心岗");
+
+        var result = upserts.upsert(batch(currentEvent.id, incoming));
+
+        assertThat(result.inserted()).isZero();
+        assertThat(result.updated()).isEqualTo(1);
+        assertThat(result.deactivated()).isEqualTo(1);
+        assertThat(jobs.findAll().stream()
+            .filter(candidate -> organization.id.equals(candidate.organizationId) && candidate.active))
+            .singleElement()
+            .satisfies(candidate -> {
+                assertThat(candidate.id).isEqualTo(humanReviewed.id);
+                assertThat(candidate.recruitmentEventId).isEqualTo(currentEvent.id);
+                assertThat(candidate.stableJobKey).isEqualTo(upserts.stableKey(incoming));
+            });
+        assertThat(jobs.findById(older.id).orElseThrow().active).isFalse();
+    }
+
     private static JpaModels.RecruitmentEventEntity event(String title, String workbookSourceUrl) {
         var event = new JpaModels.RecruitmentEventEntity();
         event.id = UUID.randomUUID();
@@ -257,6 +303,29 @@ class WorkbookSnapshotIsolationIntegrationTest {
 
     private static JobUpsertBatch batch(UUID eventId, NormalizedJob job) {
         return new JobUpsertBatch(eventId, ANNOUNCEMENT, List.of(job), true, List.of());
+    }
+
+    private static JpaModels.JobPostingEntity legacyStoredJob(
+        UUID eventId, UUID organizationId, String stableKey, Instant firstSeenAt
+    ) {
+        var job = new JpaModels.JobPostingEntity();
+        job.id = UUID.randomUUID();
+        job.recruitmentEventId = eventId;
+        job.organizationId = organizationId;
+        job.externalJobCode = "A01";
+        job.title = "信息中心岗";
+        job.jobFamily = JobFamily.INFORMATION_SYSTEMS;
+        job.employmentType = EmploymentType.UNKNOWN;
+        job.location = "杭州";
+        job.headcount = 1;
+        job.minimumEducation = EducationLevel.BACHELOR;
+        job.sourceUrl = ANNOUNCEMENT;
+        job.stableJobKey = stableKey;
+        job.contentFingerprint = "0".repeat(64);
+        job.active = true;
+        job.firstSeenAt = firstSeenAt;
+        job.lastSeenAt = firstSeenAt;
+        return job;
     }
 
     @SpringBootConfiguration

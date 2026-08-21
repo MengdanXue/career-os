@@ -4,6 +4,8 @@ import static com.careeros.domain.DomainEnums.*;
 
 import com.careeros.application.DecisionPorts.JobContexts;
 import com.careeros.application.JobAdmissionPorts.JobAdmissions;
+import com.careeros.application.JobAdmissionPorts.JobFieldEvidence;
+import com.careeros.application.JobAdmissionPorts.FieldEvidenceCoverage;
 import com.careeros.domain.JobAdmission;
 import com.careeros.domain.JobPosting;
 import java.time.Instant;
@@ -18,30 +20,45 @@ import java.util.UUID;
 public class OfficialJobAdmissionService {
     private final JobContexts jobs;
     private final JobAdmissions admissions;
+    private final JobFieldEvidence fieldEvidence;
 
-    public OfficialJobAdmissionService(JobContexts jobs, JobAdmissions admissions) {
+    public OfficialJobAdmissionService(JobContexts jobs, JobAdmissions admissions, JobFieldEvidence fieldEvidence) {
         this.jobs = Objects.requireNonNull(jobs);
         this.admissions = Objects.requireNonNull(admissions);
+        this.fieldEvidence = Objects.requireNonNull(fieldEvidence);
     }
 
     public List<JobAdmission> classify(List<UUID> jobIds, Instant now) {
         Objects.requireNonNull(jobIds, "jobIds");
         Objects.requireNonNull(now, "now");
         var result = new ArrayList<JobAdmission>();
-        for (UUID jobId : new LinkedHashSet<>(jobIds)) {
-            jobs.findByJobId(jobId).filter(DecisionPorts.JobContext::active).ifPresent(context -> {
-                var existing = admissions.findByJobId(jobId);
-                if (existing.filter(JobAdmission::humanVerified).isPresent()) {
-                    result.add(existing.orElseThrow());
-                } else {
-                    result.add(admissions.save(classify(context.job(), now)));
-                }
-            });
+        var distinctJobIds = new LinkedHashSet<>(jobIds);
+        var evidenceByJob = fieldEvidence.coverage(distinctJobIds);
+        var contextsByJob = new java.util.LinkedHashMap<UUID, DecisionPorts.JobContext>();
+        jobs.findActiveByJobIds(distinctJobIds).forEach(context ->
+            contextsByJob.put(context.job().id(), context));
+        var existingByJob = admissions.findByJobIds(distinctJobIds);
+        var classifiedByJob = new java.util.LinkedHashMap<UUID, JobAdmission>();
+        for (UUID jobId : distinctJobIds) {
+            var context = contextsByJob.get(jobId);
+            if (context == null) continue;
+            var existing = existingByJob.get(jobId);
+            if (existing != null && existing.humanVerified()) classifiedByJob.put(jobId, existing);
+            else classifiedByJob.put(jobId, classify(
+                context.job(), evidenceByJob.getOrDefault(context.job().id(),
+                    new FieldEvidenceCoverage(Set.of(), Set.of(), false, false, false)), now));
         }
+        var automated = classifiedByJob.values().stream().filter(value -> !value.humanVerified()).toList();
+        var savedAutomated = admissions.saveAll(automated).stream()
+            .collect(java.util.stream.Collectors.toMap(JobAdmission::jobPostingId, value -> value));
+        distinctJobIds.forEach(jobId -> {
+            var value = classifiedByJob.get(jobId);
+            if (value != null) result.add(value.humanVerified() ? value : savedAutomated.get(jobId));
+        });
         return List.copyOf(result);
     }
 
-    private static JobAdmission classify(JobPosting job, Instant now) {
+    private static JobAdmission classify(JobPosting job, FieldEvidenceCoverage evidence, Instant now) {
         Set<JobAdmissionReason> reasons = EnumSet.of(JobAdmissionReason.OFFICIAL_WORKBOOK_PARSED);
         TargetScopeStatus scope;
         JobAdmissionReason exclusion = exclusion(job);
@@ -58,8 +75,31 @@ public class OfficialJobAdmissionService {
         if (job.employmentType() == EmploymentType.UNKNOWN) {
             reasons.add(JobAdmissionReason.EMPLOYMENT_IDENTITY_UNKNOWN);
         }
-        return new JobAdmission(job.id(), DataQualityStatus.VERIFIED, scope, reasons,
-            "admission-v2-official-workbook", now, false);
+        boolean hasEvidence = evidence.officialAttachment();
+        boolean completeFieldEvidence = List.of("title", "organizationName", "headcount",
+            "educationRequirementText", "majorRequirementText", "ageRequirementText")
+            .stream().allMatch(evidence::explicit)
+            && evidence.applicationDeadlineExplicit()
+            && evidence.employmentIdentityExplicit()
+            && evidence.conflictFields().isEmpty();
+        boolean completeCriticalFacts = job.employmentType() != EmploymentType.UNKNOWN
+            && job.minimumEducation() != EducationLevel.UNKNOWN
+            && (!job.exactMajors().isEmpty() || evidence.notRequired("majorRequirementText"))
+            && (job.maximumAge() != null || evidence.notRequired("ageRequirementText"))
+            && completeFieldEvidence;
+        if (!hasEvidence || !completeFieldEvidence) {
+            reasons.add(JobAdmissionReason.MISSING_FIELD_EVIDENCE);
+        }
+        if (!completeCriticalFacts) {
+            reasons.add(JobAdmissionReason.OFFICIAL_FACTS_INCOMPLETE);
+        }
+        DataQualityStatus quality = !evidence.conflictFields().isEmpty()
+            ? DataQualityStatus.REVIEW_REQUIRED
+            : hasEvidence && completeCriticalFacts
+                ? DataQualityStatus.VERIFIED
+                : DataQualityStatus.NORMALIZED;
+        return new JobAdmission(job.id(), quality, scope, reasons,
+            "admission-v4-field-evidence", now, false);
     }
 
     private static JobAdmissionReason exclusion(JobPosting job) {

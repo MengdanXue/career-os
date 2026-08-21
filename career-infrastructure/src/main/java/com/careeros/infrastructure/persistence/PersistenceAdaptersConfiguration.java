@@ -85,14 +85,62 @@ public class PersistenceAdaptersConfiguration {
     private static final class AssessmentAdapter extends GenericAdapter<EligibilityAssessment,JpaModels.EligibilityAssessmentEntity> implements RepositoryPorts.EligibilityAssessments { AssessmentAdapter(EligibilityAssessmentJpaRepository r,Function<EligibilityAssessment,JpaModels.EligibilityAssessmentEntity>a,Function<JpaModels.EligibilityAssessmentEntity,EligibilityAssessment>b){super(r,a,b);} }
     private static final class OpportunityAdapter extends GenericAdapter<Opportunity,JpaModels.OpportunityEntity> implements RepositoryPorts.Opportunities { OpportunityAdapter(OpportunityJpaRepository r,Function<Opportunity,JpaModels.OpportunityEntity>a,Function<JpaModels.OpportunityEntity,Opportunity>b){super(r,a,b);} }
 
-    private JpaModels.RecruitmentEventEntity toEventEntity(RecruitmentEvent value) { var e=new JpaModels.RecruitmentEventEntity(); e.id=value.id(); e.title=value.title(); e.recruitmentYear=value.recruitmentYear(); e.eventType=value.eventType(); e.publishedOn=value.publishedOn(); e.applicationStartsOn=value.applicationStartsOn(); e.applicationEndsOn=value.applicationEndsOn(); e.sourceUrl=value.sourceUrl(); e.defaultEmploymentType=value.defaultEmploymentType(); e.evidenceIds=new ArrayList<>(value.evidenceIds()); return e; }
-    private RecruitmentEvent toEvent(JpaModels.RecruitmentEventEntity e) { return new RecruitmentEvent(e.id,e.title,e.recruitmentYear,e.eventType,e.publishedOn,e.applicationStartsOn,e.applicationEndsOn,e.sourceUrl,e.defaultEmploymentType,e.evidenceIds); }
+    private JpaModels.RecruitmentEventEntity toEventEntity(RecruitmentEvent value) {
+        var e = new JpaModels.RecruitmentEventEntity();
+        e.id=value.id(); e.title=value.title(); e.recruitmentYear=value.recruitmentYear();
+        e.eventType=value.eventType(); e.publishedOn=value.publishedOn();
+        e.applicationStartsOn=value.applicationStartsOn(); e.applicationEndsOn=value.applicationEndsOn();
+        e.applicationStartsAt=value.applicationStartsAt(); e.applicationEndsAt=value.applicationEndsAt();
+        e.ageReferenceDate=value.ageReferenceDate(); e.registrationUrl=value.registrationUrl();
+        e.qualificationReviewEndsOn=value.qualificationReviewEndsOn(); e.paymentEndsOn=value.paymentEndsOn();
+        e.admissionTicketStartsOn=value.admissionTicketStartsOn(); e.admissionTicketEndsOn=value.admissionTicketEndsOn();
+        e.writtenExamOn=value.writtenExamOn(); e.writtenExamSubjects=new ArrayList<>(value.writtenExamSubjects());
+        e.graduateRule=value.graduateRule(); e.overseasDegreeRule=value.overseasDegreeRule();
+        e.experienceEvidenceRule=value.experienceEvidenceRule(); e.employmentStatement=value.employmentStatement();
+        e.interviewRule=value.interviewRule(); e.sourceUrl=value.sourceUrl();
+        e.defaultEmploymentType=value.defaultEmploymentType(); e.evidenceIds=new ArrayList<>(value.evidenceIds());
+        return e;
+    }
+    private RecruitmentEvent toEvent(JpaModels.RecruitmentEventEntity e) {
+        return new RecruitmentEvent(e.id,e.title,e.recruitmentYear,e.eventType,e.publishedOn,
+            e.applicationStartsOn,e.applicationEndsOn,e.sourceUrl,e.defaultEmploymentType,e.evidenceIds,
+            e.applicationStartsAt,e.applicationEndsAt,e.ageReferenceDate,e.registrationUrl,
+            e.qualificationReviewEndsOn,e.paymentEndsOn,e.admissionTicketStartsOn,e.admissionTicketEndsOn,
+            e.writtenExamOn,e.writtenExamSubjects,e.graduateRule,e.overseasDegreeRule,
+            e.experienceEvidenceRule,e.employmentStatement,e.interviewRule);
+    }
 
     private JpaModels.OrganizationEntity toOrganizationEntity(Organization value) { var e=new JpaModels.OrganizationEntity(); e.id=value.id(); e.name=value.name(); e.organizationType=value.organizationType(); e.administrativeLevel=value.administrativeLevel(); e.province=value.province(); e.city=value.city(); e.district=value.district(); e.parentOrganizationId=value.parentOrganizationId(); e.officialWebsite=value.officialWebsite(); return e; }
     private Organization toOrganization(JpaModels.OrganizationEntity e) { return new Organization(e.id,e.name,e.organizationType,e.administrativeLevel,e.province,e.city,e.district,e.parentOrganizationId,e.officialWebsite); }
 
-    private JpaModels.JobPostingEntity toJobEntity(JobPosting value) { var e=new JpaModels.JobPostingEntity(); e.id=value.id(); e.recruitmentEventId=value.recruitmentEventId(); e.organizationId=value.organizationId(); e.externalJobCode=value.externalJobCode(); e.title=value.title(); e.jobFamily=value.jobFamily(); e.employmentType=value.employmentType(); e.location=value.location(); e.headcount=value.headcount(); e.minimumEducation=value.minimumEducation(); e.exactMajors=new LinkedHashSet<>(value.exactMajors()); e.acceptedGraduationYears=new LinkedHashSet<>(value.acceptedGraduationYears()); e.maximumAge=value.maximumAge(); e.ageReferenceDate=value.ageReferenceDate(); e.minimumExperienceYears=value.minimumExperienceYears(); e.requiredProfessionalTitles=new LinkedHashSet<>(value.requiredProfessionalTitles()); e.duties=value.duties(); e.sourceUrl=value.sourceUrl(); e.evidenceIds=new ArrayList<>(value.evidenceIds()); e.active=true; return e; }
-    private JobPosting toJob(JpaModels.JobPostingEntity e) { return new JobPosting(e.id,e.recruitmentEventId,e.organizationId,e.externalJobCode,e.title,e.jobFamily,e.employmentType,e.location,e.headcount,e.minimumEducation,e.exactMajors,e.acceptedGraduationYears,e.maximumAge,e.ageReferenceDate,e.minimumExperienceYears,e.requiredProfessionalTitles,e.duties,e.sourceUrl,e.evidenceIds); }
+    private JpaModels.JobPostingEntity toJobEntity(JobPosting value) {
+        var e=new JpaModels.JobPostingEntity();
+        e.id=value.id(); e.recruitmentEventId=value.recruitmentEventId(); e.organizationId=value.organizationId();
+        e.externalJobCode=value.externalJobCode(); e.title=value.title(); e.jobFamily=value.jobFamily();
+        e.employmentType=value.employmentType(); e.location=value.location(); e.headcount=value.headcount();
+        e.minimumEducation=value.minimumEducation(); e.exactMajors=new LinkedHashSet<>(value.exactMajors());
+        e.acceptedGraduationYears=new LinkedHashSet<>(value.acceptedGraduationYears());
+        e.maximumAge=value.maximumAge(); e.ageReferenceDate=value.ageReferenceDate();
+        e.minimumExperienceYears=value.minimumExperienceYears();
+        e.requiredProfessionalTitles=new LinkedHashSet<>(value.requiredProfessionalTitles()); e.duties=value.duties();
+        e.supervisingDepartment=value.supervisingDepartment(); e.jobCategory=value.jobCategory(); e.jobGrade=value.jobGrade();
+        e.educationRequirementText=value.educationRequirementText(); e.degreeRequirement=value.degreeRequirement();
+        e.majorRequirementText=value.majorRequirementText(); e.ageRequirementText=value.ageRequirementText();
+        e.genderRequirement=value.genderRequirement(); e.candidateScope=value.candidateScope();
+        e.otherRequirements=value.otherRequirements(); e.originalRequirementText=value.originalRequirementText();
+        e.interviewRatio=value.interviewRatio(); e.professionalTestRequired=value.professionalTestRequired();
+        e.contactPhone=value.contactPhone(); e.sourceUrl=value.sourceUrl();
+        e.evidenceIds=new ArrayList<>(value.evidenceIds()); e.active=true;
+        return e;
+    }
+    private JobPosting toJob(JpaModels.JobPostingEntity e) {
+        return new JobPosting(e.id,e.recruitmentEventId,e.organizationId,e.externalJobCode,e.title,e.jobFamily,
+            e.employmentType,e.location,e.headcount,e.minimumEducation,e.exactMajors,e.acceptedGraduationYears,
+            e.maximumAge,e.ageReferenceDate,e.minimumExperienceYears,e.requiredProfessionalTitles,e.duties,
+            e.sourceUrl,e.evidenceIds,e.supervisingDepartment,e.jobCategory,e.jobGrade,e.educationRequirementText,
+            e.degreeRequirement,e.majorRequirementText,e.ageRequirementText,e.genderRequirement,e.candidateScope,
+            e.otherRequirements,e.originalRequirementText,e.interviewRatio,e.professionalTestRequired,e.contactPhone);
+    }
 
     private JpaModels.CandidateProfileEntity toCandidateEntity(CandidateProfile value) { var e=new JpaModels.CandidateProfileEntity(); e.id=value.id(); e.displayName=value.displayName(); e.birthYear=value.birthDate().year(); e.birthMonth=value.birthDate().month(); e.birthDay=value.birthDate().day(); e.highestEducation=value.highestEducation(); e.majors=new LinkedHashSet<>(value.majors()); e.graduationYear=value.graduationYear(); e.experienceYears=value.experienceYears(); e.professionalTitles=new LinkedHashSet<>(value.professionalTitles()); e.preferredLocations=new ArrayList<>(value.preferredLocations()); e.acceptedEmploymentTypes=new LinkedHashSet<>(value.acceptedEmploymentTypes()); e.profileVersion=value.profileVersion(); e.skills=new LinkedHashSet<>(value.skills()); e.researchKeywords=new LinkedHashSet<>(value.researchKeywords()); e.targetJobFamilies=new LinkedHashSet<>(value.targetJobFamilies()); e.preferredOrganizationTypes=new LinkedHashSet<>(value.preferredOrganizationTypes()); return e; }
     private CandidateProfile toCandidate(JpaModels.CandidateProfileEntity e) { return new CandidateProfile(e.id,e.displayName,new PartialDate(e.birthYear,e.birthMonth,e.birthDay),e.highestEducation,e.majors,e.graduationYear,e.experienceYears,e.professionalTitles,e.preferredLocations,e.acceptedEmploymentTypes,e.profileVersion,e.skills,e.researchKeywords,e.targetJobFamilies,e.preferredOrganizationTypes); }

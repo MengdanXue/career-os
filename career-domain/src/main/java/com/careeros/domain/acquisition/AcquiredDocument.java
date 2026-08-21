@@ -25,6 +25,7 @@ public record AcquiredDocument(
     int consecutiveGoneCount,
     int lastHttpStatus,
     String lastProcessedFingerprint,
+    String lastProcessorVersion,
     long version
 ) {
     private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
@@ -40,15 +41,33 @@ public record AcquiredDocument(
         Objects.requireNonNull(lastChangedAt, "lastChangedAt");
         validateFingerprint(contentFingerprint, "contentFingerprint", true);
         validateFingerprint(lastProcessedFingerprint, "lastProcessedFingerprint", false);
+        if (lastProcessorVersion != null && lastProcessorVersion.isBlank()) {
+            throw new IllegalArgumentException("lastProcessorVersion must not be blank");
+        }
         if (consecutiveGoneCount < 0) throw new IllegalArgumentException("consecutiveGoneCount cannot be negative");
         if (version < 0) throw new IllegalArgumentException("version cannot be negative");
     }
 
-    public AcquiredDocument processed(String fingerprint) {
+    public AcquiredDocument(
+        UUID id, UUID sourceId, URI canonicalUri, UUID parentDocumentId, DocumentKind kind,
+        String mediaType, String contentFingerprint, String etag, String lastModified,
+        URI storageUri, DocumentState state, Instant firstSeenAt, Instant lastSeenAt,
+        Instant lastChangedAt, Instant lastGoneAt, int consecutiveGoneCount, int lastHttpStatus,
+        String lastProcessedFingerprint, long version
+    ) {
+        this(id, sourceId, canonicalUri, parentDocumentId, kind, mediaType, contentFingerprint,
+            etag, lastModified, storageUri, state, firstSeenAt, lastSeenAt, lastChangedAt,
+            lastGoneAt, consecutiveGoneCount, lastHttpStatus, lastProcessedFingerprint, null, version);
+    }
+
+    public AcquiredDocument processed(String fingerprint, String processorVersion) {
         validateFingerprint(fingerprint, "fingerprint", true);
+        if (processorVersion == null || processorVersion.isBlank()) {
+            throw new IllegalArgumentException("processorVersion is required");
+        }
         return new AcquiredDocument(id, sourceId, canonicalUri, parentDocumentId, kind, mediaType,
             contentFingerprint, etag, lastModified, storageUri, state, firstSeenAt, lastSeenAt,
-            lastChangedAt, lastGoneAt, consecutiveGoneCount, lastHttpStatus, fingerprint, version);
+            lastChangedAt, lastGoneAt, consecutiveGoneCount, lastHttpStatus, fingerprint, processorVersion, version);
     }
 
     private static void validateFingerprint(String value, String field, boolean required) {

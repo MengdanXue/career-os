@@ -50,6 +50,23 @@ class AcquisitionServiceTest {
     }
 
     @Test
+    void unchangedDocumentIsReprocessedOnceWhenProcessorVersionChanges() {
+        Fixture fixture = new Fixture();
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.processor.version = "official-facts-v2";
+
+        SourceCrawlRun reprocessed = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        SourceCrawlRun stable = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(reprocessed.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(fixture.processor.calls).isEqualTo(2);
+        assertThat(fixture.store.changes).hasSize(1);
+        assertThat(fixture.store.documents.values().iterator().next().lastProcessorVersion())
+            .isEqualTo("official-facts-v2");
+        assertThat(stable.unchangedCount()).isEqualTo(1);
+    }
+
+    @Test
     void changedBodyCreatesOneUpdateAndProcessesTheNewFingerprint() {
         Fixture fixture = new Fixture();
         fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
@@ -190,7 +207,9 @@ class AcquisitionServiceTest {
     private static final class FakeProcessor implements AcquiredDocumentProcessor {
         int calls;
         boolean failNext;
+        String version = "official-facts-v1";
         final List<ProcessDocumentCommand> commands = new ArrayList<>();
+        @Override public String version() { return version; }
         @Override public ProcessingResult process(ProcessDocumentCommand command) {
             calls++;
             commands.add(command);

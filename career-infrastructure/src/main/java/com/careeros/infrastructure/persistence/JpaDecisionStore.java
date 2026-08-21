@@ -15,6 +15,7 @@ public class JpaDecisionStore implements JobContexts, OrganizationStabilityFacts
     private final JobPostingJpaRepository jobs;
     private final OrganizationJpaRepository organizations;
     private final RecruitmentEventJpaRepository events;
+    private final EvidenceJpaRepository evidence;
     private final EligibilityAssessmentJpaRepository eligibility;
     private final FitAssessmentJpaRepository fits;
     private final StabilityAssessmentJpaRepository stabilities;
@@ -24,28 +25,40 @@ public class JpaDecisionStore implements JobContexts, OrganizationStabilityFacts
 
     public JpaDecisionStore(
         JobPostingJpaRepository jobs, OrganizationJpaRepository organizations, RecruitmentEventJpaRepository events,
+        EvidenceJpaRepository evidence,
         EligibilityAssessmentJpaRepository eligibility, FitAssessmentJpaRepository fits,
         StabilityAssessmentJpaRepository stabilities, DecisionAssessmentJpaRepository decisions,
         AssessmentDimensionJpaRepository dimensions, OrganizationStabilityFactJpaRepository facts
     ) {
-        this.jobs=jobs; this.organizations=organizations; this.events=events; this.eligibility=eligibility;
+        this.jobs=jobs; this.organizations=organizations; this.events=events; this.evidence=evidence; this.eligibility=eligibility;
         this.fits=fits; this.stabilities=stabilities; this.decisions=decisions; this.dimensions=dimensions; this.facts=facts;
     }
 
     @Override public Optional<JobContext> findByJobId(UUID id) { return jobs.findById(id).map(this::context); }
     @Override public Optional<JobContext> findByJobIdForUpdate(UUID id) { return jobs.findByIdForDecision(id).map(this::context); }
-    @Override public List<JobContext> findActive() { return jobs.findByActiveTrue().stream().map(this::context).toList(); }
+    @Override public List<JobContext> findActive() { return contexts(jobs.findByActiveTrue()); }
     @Override public List<JobContext> findActiveByJobIds(Set<UUID> ids) {
         if (ids.isEmpty()) return List.of();
         var jobValues = jobs.findAllById(ids).stream().filter(value -> value.active).toList();
+        return contexts(jobValues);
+    }
+
+    private List<JobContext> contexts(Collection<JpaModels.JobPostingEntity> jobValues) {
+        if (jobValues.isEmpty()) return List.of();
         var organizationValues = new HashMap<UUID,JpaModels.OrganizationEntity>();
         organizations.findAllById(jobValues.stream().map(value -> value.organizationId).collect(java.util.stream.Collectors.toSet()))
             .forEach(value -> organizationValues.put(value.id, value));
         var eventValues = new HashMap<UUID,JpaModels.RecruitmentEventEntity>();
         events.findAllById(jobValues.stream().map(value -> value.recruitmentEventId).collect(java.util.stream.Collectors.toSet()))
             .forEach(value -> eventValues.put(value.id, value));
+        var announcementValues = new HashMap<String,JpaModels.RecruitmentEventEntity>();
+        events.findBySourceUrlIn(jobValues.stream().map(value -> value.sourceUrl).filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet()))
+            .forEach(value -> announcementValues.put(value.sourceUrl, value));
+        var attachmentUrls = latestAttachmentUrls(jobValues);
         return jobValues.stream().map(value -> context(value,
-            organizationValues.get(value.organizationId), eventValues.get(value.recruitmentEventId))).toList();
+            organizationValues.get(value.organizationId), eventValues.get(value.recruitmentEventId),
+            announcementValues.get(value.sourceUrl), attachmentUrls.get(value.id))).toList();
     }
 
     @Override public List<OrganizationStabilityFact> findByOrganizationId(UUID organizationId) {
@@ -100,18 +113,52 @@ public class JpaDecisionStore implements JobContexts, OrganizationStabilityFacts
     private JobContext context(JpaModels.JobPostingEntity job) {
         var organization = organizations.findById(job.organizationId).orElseThrow();
         var event = events.findById(job.recruitmentEventId).orElseThrow();
-        return context(job, organization, event);
+        var announcement = events.findFirstBySourceUrl(job.sourceUrl).orElse(null);
+        return context(job, organization, event, announcement,
+            latestAttachmentUrls(List.of(job)).get(job.id));
     }
 
     private JobContext context(JpaModels.JobPostingEntity job, JpaModels.OrganizationEntity organization,
-                               JpaModels.RecruitmentEventEntity event) {
+                               JpaModels.RecruitmentEventEntity event,
+                               JpaModels.RecruitmentEventEntity announcement,
+                               String latestAttachmentUrl) {
         String fingerprint = job.contentFingerprint == null || job.contentFingerprint.isBlank() ? "legacy-" + job.id : job.contentFingerprint;
+        var facts = announcement == null ? event : announcement;
+        var eventEvidence = new LinkedHashSet<UUID>();
+        if (event.evidenceIds != null) eventEvidence.addAll(event.evidenceIds);
+        if (facts.evidenceIds != null) eventEvidence.addAll(facts.evidenceIds);
         return new JobContext(
-            new JobPosting(job.id,job.recruitmentEventId,job.organizationId,job.externalJobCode,job.title,job.jobFamily,job.employmentType,job.location,job.headcount,job.minimumEducation,job.exactMajors,job.acceptedGraduationYears,job.maximumAge,job.ageReferenceDate,job.minimumExperienceYears,job.requiredProfessionalTitles,job.duties,job.sourceUrl,job.evidenceIds),
+            new JobPosting(job.id,job.recruitmentEventId,job.organizationId,job.externalJobCode,job.title,job.jobFamily,job.employmentType,job.location,job.headcount,job.minimumEducation,job.exactMajors,job.acceptedGraduationYears,job.maximumAge,job.ageReferenceDate,job.minimumExperienceYears,job.requiredProfessionalTitles,job.duties,job.sourceUrl,job.evidenceIds,job.supervisingDepartment,job.jobCategory,job.jobGrade,job.educationRequirementText,job.degreeRequirement,job.majorRequirementText,job.ageRequirementText,job.genderRequirement,job.candidateScope,job.otherRequirements,job.originalRequirementText,job.interviewRatio,job.professionalTestRequired,job.contactPhone),
             new Organization(organization.id,organization.name,organization.organizationType,organization.administrativeLevel,organization.province,organization.city,organization.district,organization.parentOrganizationId,organization.officialWebsite),
-            new RecruitmentEvent(event.id,event.title,event.recruitmentYear,event.eventType,event.publishedOn,event.applicationStartsOn,event.applicationEndsOn,event.sourceUrl,event.defaultEmploymentType,event.evidenceIds),
+            new RecruitmentEvent(event.id,facts.title,facts.recruitmentYear,facts.eventType,facts.publishedOn,
+                facts.applicationStartsOn,facts.applicationEndsOn,
+                latestAttachmentUrl == null ? event.sourceUrl : latestAttachmentUrl,facts.defaultEmploymentType,
+                List.copyOf(eventEvidence),facts.applicationStartsAt,facts.applicationEndsAt,facts.ageReferenceDate,
+                facts.registrationUrl,facts.qualificationReviewEndsOn,facts.paymentEndsOn,
+                facts.admissionTicketStartsOn,facts.admissionTicketEndsOn,facts.writtenExamOn,
+                facts.writtenExamSubjects,facts.graduateRule,facts.overseasDegreeRule,
+                facts.experienceEvidenceRule,facts.employmentStatement,facts.interviewRule),
             fingerprint, job.active
         );
+    }
+
+    private Map<UUID,String> latestAttachmentUrls(Collection<JpaModels.JobPostingEntity> jobValues) {
+        var evidenceIds = jobValues.stream()
+            .flatMap(value -> value.evidenceIds == null ? java.util.stream.Stream.<UUID>empty() : value.evidenceIds.stream())
+            .collect(java.util.stream.Collectors.toSet());
+        if (evidenceIds.isEmpty()) return Map.of();
+        var evidenceById = new HashMap<UUID,JpaModels.EvidenceEntity>();
+        evidence.findAllById(evidenceIds).forEach(value -> evidenceById.put(value.id, value));
+        var result = new HashMap<UUID,String>();
+        for (var job : jobValues) {
+            if (job.evidenceIds == null) continue;
+            job.evidenceIds.stream().map(evidenceById::get).filter(Objects::nonNull)
+                .filter(value -> value.evidenceType == EvidenceType.OFFICIAL_ATTACHMENT)
+                .max(Comparator.comparing(value -> value.capturedAt))
+                .map(value -> value.sourceUrl)
+                .ifPresent(value -> result.put(job.id, value));
+        }
+        return result;
     }
 
     private EligibilityAssessment eligibility(JpaModels.EligibilityAssessmentEntity value) {

@@ -203,14 +203,15 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         entity.storageUri=value.storageUri().toString(); entity.state=value.state(); entity.firstSeenAt=value.firstSeenAt();
         entity.lastSeenAt=value.lastSeenAt(); entity.lastChangedAt=value.lastChangedAt(); entity.lastGoneAt=value.lastGoneAt();
         entity.consecutiveGoneCount=value.consecutiveGoneCount(); entity.lastHttpStatus=value.lastHttpStatus();
-        entity.lastProcessedFingerprint=value.lastProcessedFingerprint(); entity.version=value.version(); return entity;
+        entity.lastProcessedFingerprint=value.lastProcessedFingerprint();
+        entity.lastProcessorVersion=value.lastProcessorVersion(); entity.version=value.version(); return entity;
     }
 
     private static AcquiredDocument toDomain(AcquisitionJpaModels.AcquiredDocumentEntity value) {
         return new AcquiredDocument(value.id,value.sourceId,URI.create(value.canonicalUri),value.parentDocumentId,
             value.kind,value.mediaType,value.contentFingerprint,value.etag,value.lastModified,URI.create(value.storageUri),
             value.state,value.firstSeenAt,value.lastSeenAt,value.lastChangedAt,value.lastGoneAt,value.consecutiveGoneCount,
-            value.lastHttpStatus,value.lastProcessedFingerprint,value.version);
+            value.lastHttpStatus,value.lastProcessedFingerprint,value.lastProcessorVersion,value.version);
     }
 
     private static AcquisitionJpaModels.AcquisitionChangeEntity toEntity(AcquisitionChange value) {

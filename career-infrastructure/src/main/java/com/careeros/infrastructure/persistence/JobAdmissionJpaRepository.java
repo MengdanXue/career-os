@@ -4,6 +4,7 @@ import com.careeros.domain.DomainEnums.DataQualityStatus;
 import com.careeros.domain.DomainEnums.TargetScopeStatus;
 import com.careeros.domain.DomainEnums.EmploymentType;
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 import jakarta.persistence.LockModeType;
@@ -38,4 +39,9 @@ public interface JobAdmissionJpaRepository
 
     List<JpaModels.JobAdmissionEntity> findByDataQualityStatusAndTargetScopeStatusNot(
         DataQualityStatus dataQualityStatus, TargetScopeStatus targetScopeStatus);
+
+    List<JpaModels.JobAdmissionEntity> findByDataQualityStatusInAndTargetScopeStatusNot(
+        Collection<DataQualityStatus> dataQualityStatuses, TargetScopeStatus targetScopeStatus);
+
+    boolean existsByJobPostingIdAndHumanVerifiedTrue(UUID jobPostingId);
 }

@@ -9,6 +9,7 @@ import com.careeros.application.JobAdmissionPorts.JobAdmissions;
 import com.careeros.domain.*;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +21,7 @@ class CandidateMatchServiceTest {
     void listsProfileMatchesEvenWhenEmploymentIdentityStillNeedsConfirmation() {
         CandidateProfile candidate = candidate();
         JobContext context = context();
-        JobAdmission admission = new JobAdmission(context.job().id(), DataQualityStatus.VERIFIED,
+        JobAdmission admission = new JobAdmission(context.job().id(), DataQualityStatus.NORMALIZED,
             TargetScopeStatus.NEEDS_REVIEW, Set.of(JobAdmissionReason.TARGET_TECHNICAL_ROLE,
             JobAdmissionReason.EMPLOYMENT_IDENTITY_UNKNOWN), "admission-v2", NOW, false);
         var service = new CandidateMatchService(
@@ -50,6 +51,25 @@ class CandidateMatchServiceTest {
         assertThat(match.publishedOn()).isEqualTo(LocalDate.of(2026, 7, 1));
         assertThat(match.applicationStartsOn()).isNull();
         assertThat(match.applicationEndsOn()).isNull();
+        assertThat(match.jobCategory()).isEqualTo("专业技术");
+        assertThat(match.jobGrade()).isEqualTo("十级以下");
+        assertThat(match.educationRequirementText()).isEqualTo("硕士研究生及以上");
+        assertThat(match.degreeRequirement()).isEqualTo("硕士及以上");
+        assertThat(match.majorRequirementText()).isEqualTo("计算机科学与技术、软件工程");
+        assertThat(match.ageRequirementText()).isEqualTo("38周岁及以下");
+        assertThat(match.genderRequirement()).isEqualTo("不限");
+        assertThat(match.interviewRatio()).isEqualTo("1:4");
+        assertThat(match.professionalTestRequired()).isTrue();
+        assertThat(match.contactPhone()).isEqualTo("0571-12345678");
+        assertThat(match.attachmentSourceUrl()).endsWith("jobs.xlsx");
+        assertThat(match.applicationStartsAt()).isEqualTo(OffsetDateTime.parse("2026-03-19T09:00:00+08:00"));
+        assertThat(match.applicationEndsAt()).isEqualTo(OffsetDateTime.parse("2026-03-25T16:00:00+08:00"));
+        assertThat(match.registrationUrl()).isEqualTo("https://qssy.zjks.com");
+        assertThat(match.writtenExamOn()).isEqualTo(LocalDate.of(2026, 4, 25));
+        assertThat(match.writtenExamSubjects()).containsExactly("职业能力倾向测验", "综合应用能力");
+        assertThat(match.graduateRule()).contains("2024年、2025年、2026年");
+        assertThat(match.employmentStatement()).contains("签订聘用合同");
+        assertThat(match.dataQualityStatus()).isEqualTo(DataQualityStatus.NORMALIZED);
     }
 
     private static RepositoryPorts.CandidateProfiles candidates(CandidateProfile candidate) {
@@ -108,11 +128,22 @@ class CandidateMatchServiceTest {
             JobFamily.INFORMATION_SYSTEMS, EmploymentType.UNKNOWN, "杭州", 1, EducationLevel.MASTER,
             Set.of("计算机科学与技术"), Set.of(), 38, LocalDate.of(2026, 8, 1), null,
             Set.of(), "医院信息系统建设和数据库管理",
-            "https://hrss.hangzhou.gov.cn/art/2026/notice.html", List.of());
+            "https://hrss.hangzhou.gov.cn/art/2026/notice.html", List.of(),
+            "杭州市卫生健康委员会", "专业技术", "十级以下", "硕士研究生及以上",
+            "硕士及以上", "计算机科学与技术、软件工程", "38周岁及以下", "不限",
+            "不限", "需进行专业知识测试", "岗位原始条件", "1:4", true, "0571-12345678");
         var organization = new Organization(organizationId, "杭州市西溪医院", OrganizationType.HOSPITAL,
             null, "浙江", "杭州", null, null, null);
         var event = new RecruitmentEvent(eventId, "2026年公开招聘", 2026, EventType.PUBLIC_INSTITUTION,
-            LocalDate.of(2026, 7, 1), null, null, job.sourceUrl(), EmploymentType.UNKNOWN, List.of());
+            LocalDate.of(2026, 7, 1), null, null,
+            "https://hrss.hangzhou.gov.cn/jobs.xlsx", EmploymentType.UNKNOWN, List.of(),
+            OffsetDateTime.parse("2026-03-19T09:00:00+08:00"),
+            OffsetDateTime.parse("2026-03-25T16:00:00+08:00"), LocalDate.of(2026, 3, 19),
+            "https://qssy.zjks.com", OffsetDateTime.parse("2026-03-26T17:00:00+08:00"),
+            OffsetDateTime.parse("2026-03-28T00:00:00+08:00"), LocalDate.of(2026, 4, 20),
+            LocalDate.of(2026, 4, 25), LocalDate.of(2026, 4, 25),
+            List.of("职业能力倾向测验", "综合应用能力"), "2024年、2025年、2026年毕业生可报考",
+            "境外学历须完成认证", "工作经历须提供证明", "公示后签订聘用合同", "按笔试成绩确定面试人选");
         return new JobContext(job, organization, event, "b".repeat(64), true);
     }
 }

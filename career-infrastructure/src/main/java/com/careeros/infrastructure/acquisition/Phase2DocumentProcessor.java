@@ -5,23 +5,40 @@ import com.careeros.application.ExtractionPorts.SubmitExtractionCommand;
 import com.careeros.application.ExtractionService;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService.ImportCommand;
+import com.careeros.infrastructure.persistence.OfficialAnnouncementFactService;
 import java.io.ByteArrayInputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor {
+    private static final Logger LOG = LoggerFactory.getLogger(Phase2DocumentProcessor.class);
+    public static final String PROCESSOR_VERSION = "official-fact-fusion-v5";
     private static final Pattern ANNOUNCEMENT_YEAR = Pattern.compile("20\\d{2}年");
     private static final Pattern ORGANIZATION_SUFFIX = Pattern.compile(
-        ".*(中心|医院|大学|学院|学校|研究院|研究所|集团|公司|协会|图书馆|博物馆|艺术馆|乐团|运动队)$");
+        ".*(中心|医院|大学|学院|学校|中学|研究院|研究所|集团|公司|协会|图书馆|博物馆|艺术馆|乐团|运动队|厅|局|委员会)$");
     private final ExtractionService extractions;
     private final OfficialExcelImportService workbooks;
+    private final OfficialAnnouncementFactService announcementFacts;
+    private final OfficialAnnouncementFactParser announcementParser = new OfficialAnnouncementFactParser();
 
-    public Phase2DocumentProcessor(ExtractionService extractions, OfficialExcelImportService workbooks) {
+    public Phase2DocumentProcessor(
+        ExtractionService extractions,
+        OfficialExcelImportService workbooks,
+        OfficialAnnouncementFactService announcementFacts
+    ) {
         this.extractions = java.util.Objects.requireNonNull(extractions);
         this.workbooks = java.util.Objects.requireNonNull(workbooks);
+        this.announcementFacts = java.util.Objects.requireNonNull(announcementFacts);
+    }
+
+    @Override
+    public String version() {
+        return PROCESSOR_VERSION;
     }
 
     @Override
@@ -33,8 +50,12 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
                 default -> ProcessingResult.unsupported();
             };
         } catch (RuntimeException exception) {
+            LOG.warn("Document processing failed uri={} mediaType={}",
+                command.documentUri(), command.mediaType(), exception);
             return ProcessingResult.failed(exception.getClass().getSimpleName());
         } catch (Exception exception) {
+            LOG.warn("Document processing failed uri={} mediaType={}",
+                command.documentUri(), command.mediaType(), exception);
             return ProcessingResult.failed(exception.getClass().getSimpleName());
         }
     }
@@ -43,6 +64,13 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
         var result = extractions.submit(new SubmitExtractionCommand(
             command.content(), command.mediaType(), command.documentUri().toString(),
             command.announcementTitle(), command.capturedAt(), null, null, false));
+        if (MediaTypeDetector.HTML.equals(command.mediaType()) || "application/xhtml+xml".equals(command.mediaType())) {
+            var parsed = announcementParser.parse(
+                new String(command.content(), StandardCharsets.UTF_8), command.parentAnnouncementUri().toString());
+            announcementFacts.upsert(
+                command.announcementTitle(), command.parentAnnouncementUri().toString(), command.recruitmentYear(),
+                command.eventType(), parsed, result.run().evidenceId());
+        }
         return ProcessingResult.extracted(result.run().id());
     }
 
@@ -53,10 +81,15 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
         if (isNonTargetWorkbook(command.documentUri())) {
             return ProcessingResult.ignored("NON_TARGET_WORKBOOK");
         }
+        String parentOrganization = defaultOrganizationName(command.announcementTitle());
+        String attachmentOrganization = defaultOrganizationName(fileName(command.documentUri()));
+        if (differentOrganizations(parentOrganization, attachmentOrganization)) {
+            return ProcessingResult.ignored("ATTACHMENT_PARENT_MISMATCH");
+        }
         var result = workbooks.importWorkbook(new ByteArrayInputStream(command.content()), new ImportCommand(
             command.announcementTitle(), command.parentAnnouncementUri().toString(), command.recruitmentYear(),
-            command.publishedOn(), command.publishedOn(), command.defaultLocation(), command.eventType(),
-            defaultOrganizationName(command.announcementTitle()), command.documentUri().toString()));
+            command.publishedOn(), null, command.defaultLocation(), command.eventType(),
+            parentOrganization, command.documentUri().toString()));
         return ProcessingResult.imported(result.recruitmentEventId(), result.inserted(), result.updated(),
             result.unchanged(), result.deactivated());
     }
@@ -89,7 +122,8 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
             .replaceAll("^[《〈『「]", "")
             .replaceFirst("^20\\d{2}年", "");
         var year = ANNOUNCEMENT_YEAR.matcher(title);
-        int end = year.find() ? year.start() : firstMarker(title, "公开招聘", "人才引进", "招聘");
+        int marker = firstMarker(title, "公开招聘", "人才引进", "招聘");
+        int end = year.find() && (marker < 0 || year.start() < marker) ? year.start() : marker;
         if (end <= 0) return null;
         String candidate = title.substring(0, end)
             .replaceFirst("^关于", "")
@@ -97,12 +131,22 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
             .replaceAll("[（(]?招聘[）)]?$", "")
             .replaceFirst("关于$", "")
             .strip();
+        int about = candidate.indexOf("关于");
+        if (about > 0) {
+            String principal = candidate.substring(0, about).strip();
+            if (ORGANIZATION_SUFFIX.matcher(principal).matches()) candidate = principal;
+        }
         int alternateName = Math.min(
             positiveOrLength(candidate.indexOf('（'), candidate.length()),
             positiveOrLength(candidate.indexOf('('), candidate.length()));
         candidate = candidate.substring(0, alternateName).strip();
         return candidate.length() >= 2 && candidate.length() <= 180
             && ORGANIZATION_SUFFIX.matcher(candidate).matches() ? candidate : null;
+    }
+
+    private static boolean differentOrganizations(String parent, String attachment) {
+        return parent != null && attachment != null
+            && !parent.contains(attachment) && !attachment.contains(parent);
     }
 
     private static int firstMarker(String value, String... markers) {

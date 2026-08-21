@@ -22,7 +22,10 @@ public final class JobContentFingerprint {
             job.location(), job.headcount(), job.minimumEducation().name(), job.exactMajors(),
             job.acceptedGraduationYears(), job.maximumAge(), job.ageReferenceDate(),
             job.minimumExperienceYears(), job.requiredProfessionalTitles(), job.duties(),
-            job.sourceUrl(), job.evidenceIds());
+            job.sourceUrl(), job.evidenceIds(), job.supervisingDepartment(), job.jobCategory(), job.jobGrade(),
+            job.educationRequirementText(), job.degreeRequirement(), job.majorRequirementText(),
+            job.ageRequirementText(), job.genderRequirement(), job.candidateScope(), job.otherRequirements(),
+            job.originalRequirementText(), job.interviewRatio(), job.professionalTestRequired(), job.contactPhone());
     }
 
     public static String of(NormalizedJob job) {
@@ -32,7 +35,10 @@ public final class JobContentFingerprint {
             job.location(), job.headcount(), job.minimumEducation().name(), job.exactMajors(),
             job.acceptedGraduationYears(), job.maximumAge(), job.ageReferenceDate(),
             job.minimumExperienceYears(), job.requiredProfessionalTitles(), job.duties(),
-            job.sourceUrl(), job.evidenceIds());
+            job.sourceUrl(), job.evidenceIds(), job.supervisingDepartment(), job.jobCategory(), job.jobGrade(),
+            job.educationRequirementText(), job.degreeRequirement(), job.majorRequirementText(),
+            job.ageRequirementText(), job.genderRequirement(), job.candidateScope(), job.otherRequirements(),
+            job.originalRequirementText(), job.interviewRatio(), job.professionalTestRequired(), job.contactPhone());
     }
 
     private static String fingerprint(
@@ -41,10 +47,13 @@ public final class JobContentFingerprint {
         String location, int headcount, String minimumEducation, Set<?> exactMajors,
         Set<?> acceptedGraduationYears, Object maximumAge, Object ageReferenceDate,
         Object minimumExperienceYears, Set<?> requiredProfessionalTitles, String duties,
-        String sourceUrl, Collection<?> evidenceIds
+        String sourceUrl, Collection<?> evidenceIds,
+        Object supervisingDepartment, Object jobCategory, Object jobGrade, Object educationRequirementText,
+        Object degreeRequirement, Object majorRequirementText, Object ageRequirementText, Object genderRequirement,
+        Object candidateScope, Object otherRequirements, Object originalRequirementText, Object interviewRatio,
+        Object professionalTestRequired, Object contactPhone
     ) {
         MessageDigest digest = sha256();
-        put(digest, value(recruitmentEventId));
         put(digest, value(organizationId));
         put(digest, normalizeIdentity(externalJobCode));
         put(digest, normalizeContent(title));
@@ -61,7 +70,21 @@ public final class JobContentFingerprint {
         putCollection(digest, requiredProfessionalTitles);
         put(digest, normalizeContent(duties));
         put(digest, normalizeUrl(sourceUrl));
-        putCollection(digest, evidenceIds);
+        put(digest, Boolean.toString(evidenceIds != null && !evidenceIds.isEmpty()));
+        put(digest, normalizeContent(value(supervisingDepartment)));
+        put(digest, normalizeContent(value(jobCategory)));
+        put(digest, normalizeContent(value(jobGrade)));
+        put(digest, normalizeContent(value(educationRequirementText)));
+        put(digest, normalizeContent(value(degreeRequirement)));
+        put(digest, normalizeContent(value(majorRequirementText)));
+        put(digest, normalizeContent(value(ageRequirementText)));
+        put(digest, normalizeContent(value(genderRequirement)));
+        put(digest, normalizeContent(value(candidateScope)));
+        put(digest, normalizeContent(value(otherRequirements)));
+        put(digest, normalizeContent(value(originalRequirementText)));
+        put(digest, normalizeContent(value(interviewRatio)));
+        put(digest, value(professionalTestRequired));
+        put(digest, normalizeContent(value(contactPhone)));
         return HexFormat.of().formatHex(digest.digest());
     }
 

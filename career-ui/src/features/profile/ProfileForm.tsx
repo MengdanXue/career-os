@@ -101,7 +101,12 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
         <legend>稳定岗位偏好</legend>
         <label>目标地点<input aria-label="目标地点" required value={fields.preferredLocations} onChange={event => set('preferredLocations', event.target.value)} /></label>
         <div className="check-row" aria-label="接受的用工形式">
-          {['ESTABLISHMENT', 'CONTRACT', 'DISPATCH'].map(type => <label key={type}><input type="checkbox" checked={fields.acceptedEmploymentTypes.includes(type)} onChange={event => set('acceptedEmploymentTypes', event.target.checked ? [...fields.acceptedEmploymentTypes, type] : fields.acceptedEmploymentTypes.filter(value => value !== type))} />{{ ESTABLISHMENT: '事业编制', CONTRACT: '单位合同', DISPATCH: '劳务派遣' }[type]}</label>)}
+          {([
+            ['ESTABLISHMENT', '事业编制'],
+            ['PUBLIC_INSTITUTION_FORMAL', '事业单位正式聘用'],
+            ['CONTRACT', '单位合同'],
+            ['LABOR_DISPATCH', '劳务派遣'],
+          ] as const).map(([type, label]) => <label key={type}><input type="checkbox" checked={fields.acceptedEmploymentTypes.includes(type)} onChange={event => set('acceptedEmploymentTypes', event.target.checked ? [...fields.acceptedEmploymentTypes, type] : fields.acceptedEmploymentTypes.filter(value => value !== type))} />{label}</label>)}
         </div>
       </fieldset>
       {errorMessage && <div className="form-error" role="alert">{errorMessage}</div>}

@@ -178,12 +178,15 @@ public final class AcquisitionService {
                 URI.create(artifact.storageUri()));
         }
         ProcessingResult processing = null;
-        if (transition.shouldProcess()) {
+        boolean processorChanged = !Objects.equals(document.lastProcessorVersion(), processor.version());
+        if (transition.shouldProcess() || processorChanged) {
             try {
                 byte[] content = response.content().length > 0 ? response.content() : readStored(document);
                 processing = processor.process(processCommand(
                     source, link, parent, document, content, announcementTitle));
-                if (processing.successful()) document = document.processed(document.contentFingerprint());
+                if (processing.successful()) {
+                    document = document.processed(document.contentFingerprint(), processor.version());
+                }
                 else {
                     counts.failed++;
                     observer.processingFailure(source.code(), document.mediaType());
