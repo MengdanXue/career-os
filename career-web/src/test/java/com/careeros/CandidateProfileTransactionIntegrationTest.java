@@ -66,4 +66,18 @@ class CandidateProfileTransactionIntegrationTest {
         assertThat(candidates.findById(CANDIDATE_ID).orElseThrow().profileVersion())
             .isEqualTo(originalVersion);
     }
+
+    @Test
+    void seededCandidateLoadsCompletedBachelorAndExpectedMaster(
+        @Autowired RepositoryPorts.CandidateProfiles candidates
+    ) {
+        var candidate = candidates.findById(CANDIDATE_ID).orElseThrow();
+
+        assertThat(candidate.educationRecords()).hasSize(2);
+        assertThat(candidate.educationRecords().get(0).majorName()).isEqualTo("计算机科学与技术");
+        assertThat(candidate.educationRecords().get(0).completionStatus().name()).isEqualTo("COMPLETED");
+        assertThat(candidate.educationRecords().get(1).institutionName()).isEqualTo("示例海外大学");
+        assertThat(candidate.educationRecords().get(1).graduationYear()).isEqualTo(2027);
+        assertThat(candidate.educationRecords().get(1).completionStatus().name()).isEqualTo("EXPECTED");
+    }
 }

@@ -2,6 +2,9 @@ package com.careeros.infrastructure.persistence;
 
 import com.careeros.domain.DomainEnums.*;
 import com.careeros.domain.CandidateFacts;
+import com.careeros.domain.EducationRecord;
+import com.careeros.domain.EducationRecord.CompletionStatus;
+import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -116,6 +119,19 @@ public final class JpaModels {
         protected JobAdmissionEntity() {}
     }
 
+    @Embeddable
+    public static class CandidateEducationValue {
+        @Column(name = "institution_name") String institutionName;
+        @Column(name = "country_or_region") String countryOrRegion;
+        @Enumerated(EnumType.STRING) @Column(name = "education_level", nullable = false) EducationLevel educationLevel;
+        @Column(name = "major_name", nullable = false) String majorName;
+        @Column(name = "graduation_year") Integer graduationYear;
+        @Column(name = "graduation_month") Integer graduationMonth;
+        @Enumerated(EnumType.STRING) @Column(name = "completion_status", nullable = false) CompletionStatus completionStatus;
+        @Enumerated(EnumType.STRING) @Column(name = "credential_verification_status", nullable = false) CredentialVerificationStatus credentialVerificationStatus;
+        protected CandidateEducationValue() {}
+    }
+
     @Entity @Table(name = "candidate_profile")
     public static class CandidateProfileEntity extends UuidEntity {
         @Column(name = "display_name", nullable = false) String displayName;
@@ -134,6 +150,10 @@ public final class JpaModels {
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "research_keywords", columnDefinition = "jsonb", nullable = false) Set<String> researchKeywords = new LinkedHashSet<>();
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "target_job_families", columnDefinition = "jsonb", nullable = false) Set<JobFamily> targetJobFamilies = new LinkedHashSet<>();
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "preferred_organization_types", columnDefinition = "jsonb", nullable = false) Set<OrganizationType> preferredOrganizationTypes = new LinkedHashSet<>();
+        @ElementCollection(fetch = FetchType.EAGER)
+        @CollectionTable(name = "candidate_education_record", joinColumns = @JoinColumn(name = "candidate_profile_id"))
+        @OrderColumn(name = "record_order")
+        List<CandidateEducationValue> educationRecords = new ArrayList<>();
         protected CandidateProfileEntity() {}
     }
 

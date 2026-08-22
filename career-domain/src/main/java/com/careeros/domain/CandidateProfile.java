@@ -10,7 +10,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
-public record CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion, Set<String> skills, Set<String> researchKeywords, Set<JobFamily> targetJobFamilies, Set<OrganizationType> preferredOrganizationTypes) {
+public record CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion, Set<String> skills, Set<String> researchKeywords, Set<JobFamily> targetJobFamilies, Set<OrganizationType> preferredOrganizationTypes, List<EducationRecord> educationRecords) {
     public CandidateProfile {
         Objects.requireNonNull(id); require(displayName, "displayName"); Objects.requireNonNull(birthDate); Objects.requireNonNull(highestEducation);
         if (experienceYears != null && experienceYears < 0) throw new IllegalArgumentException("experienceYears is invalid");
@@ -21,6 +21,7 @@ public record CandidateProfile(UUID id, String displayName, PartialDate birthDat
         researchKeywords = researchKeywords == null ? Set.of() : Set.copyOf(researchKeywords);
         targetJobFamilies = targetJobFamilies == null ? Set.of() : Set.copyOf(targetJobFamilies);
         preferredOrganizationTypes = preferredOrganizationTypes == null ? Set.of() : Set.copyOf(preferredOrganizationTypes);
+        educationRecords = educationRecords == null ? List.of() : List.copyOf(educationRecords);
         requireTokens(majors, "majors");
         requireTokens(professionalTitles, "professionalTitles");
         requireTokens(preferredLocations, "preferredLocations");
@@ -30,7 +31,12 @@ public record CandidateProfile(UUID id, String displayName, PartialDate birthDat
     public CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion) {
         this(id, displayName, birthDate, highestEducation, majors, graduationYear, experienceYears,
             professionalTitles, preferredLocations, acceptedEmploymentTypes, profileVersion,
-            Set.of(), Set.of(), Set.of(), Set.of());
+            Set.of(), Set.of(), Set.of(), Set.of(), List.of());
+    }
+    public CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion, Set<String> skills, Set<String> researchKeywords, Set<JobFamily> targetJobFamilies, Set<OrganizationType> preferredOrganizationTypes) {
+        this(id, displayName, birthDate, highestEducation, majors, graduationYear, experienceYears,
+            professionalTitles, preferredLocations, acceptedEmploymentTypes, profileVersion,
+            skills, researchKeywords, targetJobFamilies, preferredOrganizationTypes, List.of());
     }
     private static void require(String value, String field) { if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required"); }
     private static void requireTokens(Collection<String> values, String field) {

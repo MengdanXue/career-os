@@ -12,6 +12,8 @@ import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.SourceCrawlRun;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
+import com.careeros.domain.acquisition.SourceYearCoverage;
+import com.careeros.domain.acquisition.SourceYearCoverage.CoverageStatus;
 import java.net.URI;
 import java.time.Instant;
 import java.util.Map;
@@ -59,6 +61,26 @@ class JpaAcquisitionStoreTest {
         assertThat(store.findSources()).extracting(source -> source.code())
             .containsExactlyInAnyOrder("ZJ_HRSS_INSTITUTION", "HZ_HRSS_INSTITUTION");
         assertThat(store.findDueSources(Instant.now().plusSeconds(60), 10)).hasSize(2);
+    }
+
+    @Test
+    void readsSeededCoverageAndPersistsProgressWithoutClaimingFalseAbsence(@Autowired AcquisitionStore store) {
+        assertThat(store.findSourceYearCoverage(SOURCE_ID, null))
+            .extracting(SourceYearCoverage::recruitmentYear, SourceYearCoverage::status)
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple(2024, CoverageStatus.NOT_DISCOVERED),
+                org.assertj.core.groups.Tuple.tuple(2025, CoverageStatus.NOT_DISCOVERED),
+                org.assertj.core.groups.Tuple.tuple(2026, CoverageStatus.NOT_DISCOVERED));
+
+        SourceYearCoverage failed = new SourceYearCoverage(SOURCE_ID, 2025, CoverageStatus.ACCESS_FAILED,
+            12, 0, 0, 0, null, null, NOW);
+
+        assertThat(store.saveSourceYearCoverage(failed)).isEqualTo(failed);
+        assertThat(store.findSourceYearCoverage(SOURCE_ID, 2025)).singleElement()
+            .satisfies(value -> {
+                assertThat(value.status()).isEqualTo(CoverageStatus.ACCESS_FAILED);
+                assertThat(value.supportsAbsenceConclusion()).isFalse();
+            });
     }
 
     @Test

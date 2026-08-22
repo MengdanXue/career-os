@@ -8,6 +8,9 @@ import com.careeros.domain.CandidateFacts.CandidateFactConfirmation;
 import com.careeros.domain.CandidateFacts;
 import com.careeros.domain.CandidateProfile;
 import com.careeros.domain.DomainEnums.*;
+import com.careeros.domain.EducationRecord;
+import com.careeros.domain.EducationRecord.CompletionStatus;
+import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
 import com.careeros.domain.PartialDate;
 import java.time.Clock;
 import java.time.Instant;
@@ -78,17 +81,45 @@ class CandidateProfileServiceTest {
         assertThat(profiles.lockedReads).isEqualTo(1);
     }
 
+    @Test
+    void editingExpectedEducationPreservesBothRecordsAndInvalidatesOnlyEducationFacts() {
+        var original = candidate("seed-v1", Set.of("Java"), CompletionStatus.EXPECTED);
+        var profiles = new Profiles(original);
+        var confirmations = new Confirmations();
+        var service = service(profiles, confirmations);
+        service.confirm(original.id(), EnumSet.allOf(CandidateFacts.CandidateFactKey.class));
+
+        var saved = service.saveDraft(
+            original.id(), candidate("client-version", Set.of("Java"), CompletionStatus.COMPLETED));
+        var facts = service.facts(original.id());
+
+        assertThat(saved.educationRecords()).hasSize(2);
+        assertThat(saved.educationRecords().get(1).completionStatus()).isEqualTo(CompletionStatus.COMPLETED);
+        assertThat(facts.statuses()).containsEntry(EDUCATION_RECORDS, UNCONFIRMED);
+        assertThat(facts.statuses()).containsEntry(SKILLS, CONFIRMED);
+    }
+
     private static CandidateProfileService service(Profiles profiles, Confirmations confirmations) {
         return new CandidateProfileService(profiles, confirmations, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static CandidateProfile candidate(String version, Set<String> skills) {
+        return candidate(version, skills, CompletionStatus.EXPECTED);
+    }
+
+    private static CandidateProfile candidate(String version, Set<String> skills, CompletionStatus masterStatus) {
         return new CandidateProfile(
             UUID.fromString("01992f09-0000-7000-8000-000000000001"), "候选人",
             new PartialDate(1992, 12, null), EducationLevel.MASTER, Set.of("计算机科学与技术"),
             2018, 6, Set.of("中级：计算机应用"), List.of("杭州"),
             Set.of(EmploymentType.ESTABLISHMENT), version, skills, Set.of("数据治理"),
-            Set.of(JobFamily.INFORMATION_SYSTEMS), Set.of(OrganizationType.PUBLIC_INSTITUTION)
+            Set.of(JobFamily.INFORMATION_SYSTEMS), Set.of(OrganizationType.PUBLIC_INSTITUTION),
+            List.of(
+                new EducationRecord(null, null, EducationLevel.BACHELOR, "计算机科学与技术", 2014,
+                    null, CompletionStatus.COMPLETED, CredentialVerificationStatus.UNKNOWN),
+                new EducationRecord("示例海外大学", "示例国", EducationLevel.MASTER, "计算机科学", 2027,
+                    null, masterStatus, CredentialVerificationStatus.PLANNED)
+            )
         );
     }
 

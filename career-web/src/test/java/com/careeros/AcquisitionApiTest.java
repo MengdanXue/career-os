@@ -16,6 +16,8 @@ import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
 import com.careeros.domain.acquisition.SourceCrawlRun;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
+import com.careeros.domain.acquisition.SourceYearCoverage;
+import com.careeros.domain.acquisition.SourceYearCoverage.CoverageStatus;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -60,6 +62,20 @@ class AcquisitionApiTest {
             .andExpect(status().isAccepted())
             .andExpect(header().string("Location", "/api/acquisition/runs/" + RUN_ID))
             .andExpect(jsonPath("$.status").value("SUCCEEDED"));
+    }
+
+    @Test void coverageMakesUnknownCollectionStateExplicit() throws Exception {
+        when(store.findSourceYearCoverage(SOURCE_ID, 2025)).thenReturn(List.of(
+            new SourceYearCoverage(SOURCE_ID, 2025, CoverageStatus.ACCESS_FAILED,
+                12, 0, 0, 0, null, null, NOW)));
+
+        mvc.perform(get("/api/acquisition/coverage")
+                .param("sourceId", SOURCE_ID.toString()).param("year", "2025"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].year").value(2025))
+            .andExpect(jsonPath("$[0].status").value("ACCESS_FAILED"))
+            .andExpect(jsonPath("$[0].supportsAbsenceConclusion").value(false))
+            .andExpect(jsonPath("$[0].completionBasis").value(nullValue()));
     }
 
     @Test void changeFeedReturnsStableNextCursor() throws Exception {

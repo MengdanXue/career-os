@@ -214,7 +214,11 @@ class CareerOsApplicationTest {
                       "skills":["Java","PostgreSQL"],
                       "researchKeywords":["数据治理"],
                       "targetJobFamilies":["INFORMATION_SYSTEMS"],
-                      "preferredOrganizationTypes":["PUBLIC_INSTITUTION"]
+                      "preferredOrganizationTypes":["PUBLIC_INSTITUTION"],
+                      "educationRecords":[
+                        {"institutionName":null,"countryOrRegion":null,"educationLevel":"BACHELOR","majorName":"计算机科学与技术","graduationYear":2014,"graduationMonth":null,"completionStatus":"COMPLETED","credentialVerificationStatus":"UNKNOWN"},
+                        {"institutionName":"测试大学","countryOrRegion":"中国","educationLevel":"MASTER","majorName":"计算机科学","graduationYear":2018,"graduationMonth":null,"completionStatus":"COMPLETED","credentialVerificationStatus":"NOT_REQUIRED"}
+                      ]
                     }
                     """))
             .andExpect(status().isOk())
@@ -232,11 +236,12 @@ class CareerOsApplicationTest {
                     {"factKeys":["BIRTH_DATE","HIGHEST_EDUCATION","MAJORS","GRADUATION_YEAR",
                     "EXPERIENCE_YEARS","PROFESSIONAL_TITLES","PREFERRED_LOCATIONS",
                     "ACCEPTED_EMPLOYMENT_TYPES","SKILLS","RESEARCH_KEYWORDS","TARGET_JOB_FAMILIES",
-                    "PREFERRED_ORGANIZATION_TYPES"]}
+                    "PREFERRED_ORGANIZATION_TYPES","EDUCATION_RECORDS"]}
                     """))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.profile.profileVersion").value(startsWith("profile-")))
             .andExpect(jsonPath("$.statuses.SKILLS").value("CONFIRMED"))
+            .andExpect(jsonPath("$.statuses.EDUCATION_RECORDS").value("CONFIRMED"))
             .andExpect(jsonPath("$.decisionReady").value(true));
 
         mvc.perform(get("/api/v1/candidates/{id}/facts", "01992f09-0000-7000-8000-000000000001"))

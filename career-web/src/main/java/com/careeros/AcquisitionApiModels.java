@@ -6,6 +6,7 @@ import com.careeros.application.AcquisitionPorts.RunPage;
 import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.SourceCrawlRun;
+import com.careeros.domain.acquisition.SourceYearCoverage;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -65,6 +66,18 @@ final class AcquisitionApiModels {
         static ChangePageResponse from(ChangePage value) {
             return new ChangePageResponse(value.items().stream().map(ChangeResponse::from).toList(),
                 CursorCodec.encode(value.nextCursor()));
+        }
+    }
+
+    record CoverageResponse(
+        UUID sourceId, int year, String status, int discoveredCount, int fetchedCount,
+        int parsedCount, int targetJobCount, String completionBasis, Instant completedAt,
+        Instant updatedAt, boolean supportsAbsenceConclusion
+    ) {
+        static CoverageResponse from(SourceYearCoverage value) {
+            return new CoverageResponse(value.sourceId(), value.recruitmentYear(), value.status().name(),
+                value.discoveredCount(), value.fetchedCount(), value.parsedCount(), value.targetJobCount(),
+                value.completionBasis(), value.completedAt(), value.updatedAt(), value.supportsAbsenceConclusion());
         }
     }
 

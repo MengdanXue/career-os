@@ -255,6 +255,12 @@ class AcquisitionServiceTest {
         @Override public ChangePage findChanges(ChangeCursor cursor, UUID sourceId, Set<ChangeType> types, int size) {
             return new ChangePage(List.copyOf(changes), null);
         }
+        @Override public List<com.careeros.domain.acquisition.SourceYearCoverage> findSourceYearCoverage(
+            UUID sourceId, Integer recruitmentYear
+        ) { return List.of(); }
+        @Override public com.careeros.domain.acquisition.SourceYearCoverage saveSourceYearCoverage(
+            com.careeros.domain.acquisition.SourceYearCoverage coverage
+        ) { return coverage; }
     }
 
     private static String sha256(byte[] value) {

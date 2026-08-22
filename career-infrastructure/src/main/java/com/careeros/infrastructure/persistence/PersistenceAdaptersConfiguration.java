@@ -142,8 +142,22 @@ public class PersistenceAdaptersConfiguration {
             e.otherRequirements,e.originalRequirementText,e.interviewRatio,e.professionalTestRequired,e.contactPhone);
     }
 
-    private JpaModels.CandidateProfileEntity toCandidateEntity(CandidateProfile value) { var e=new JpaModels.CandidateProfileEntity(); e.id=value.id(); e.displayName=value.displayName(); e.birthYear=value.birthDate().year(); e.birthMonth=value.birthDate().month(); e.birthDay=value.birthDate().day(); e.highestEducation=value.highestEducation(); e.majors=new LinkedHashSet<>(value.majors()); e.graduationYear=value.graduationYear(); e.experienceYears=value.experienceYears(); e.professionalTitles=new LinkedHashSet<>(value.professionalTitles()); e.preferredLocations=new ArrayList<>(value.preferredLocations()); e.acceptedEmploymentTypes=new LinkedHashSet<>(value.acceptedEmploymentTypes()); e.profileVersion=value.profileVersion(); e.skills=new LinkedHashSet<>(value.skills()); e.researchKeywords=new LinkedHashSet<>(value.researchKeywords()); e.targetJobFamilies=new LinkedHashSet<>(value.targetJobFamilies()); e.preferredOrganizationTypes=new LinkedHashSet<>(value.preferredOrganizationTypes()); return e; }
-    private CandidateProfile toCandidate(JpaModels.CandidateProfileEntity e) { return new CandidateProfile(e.id,e.displayName,new PartialDate(e.birthYear,e.birthMonth,e.birthDay),e.highestEducation,e.majors,e.graduationYear,e.experienceYears,e.professionalTitles,e.preferredLocations,e.acceptedEmploymentTypes,e.profileVersion,e.skills,e.researchKeywords,e.targetJobFamilies,e.preferredOrganizationTypes); }
+    private JpaModels.CandidateProfileEntity toCandidateEntity(CandidateProfile value) { var e=new JpaModels.CandidateProfileEntity(); e.id=value.id(); e.displayName=value.displayName(); e.birthYear=value.birthDate().year(); e.birthMonth=value.birthDate().month(); e.birthDay=value.birthDate().day(); e.highestEducation=value.highestEducation(); e.majors=new LinkedHashSet<>(value.majors()); e.graduationYear=value.graduationYear(); e.experienceYears=value.experienceYears(); e.professionalTitles=new LinkedHashSet<>(value.professionalTitles()); e.preferredLocations=new ArrayList<>(value.preferredLocations()); e.acceptedEmploymentTypes=new LinkedHashSet<>(value.acceptedEmploymentTypes()); e.profileVersion=value.profileVersion(); e.skills=new LinkedHashSet<>(value.skills()); e.researchKeywords=new LinkedHashSet<>(value.researchKeywords()); e.targetJobFamilies=new LinkedHashSet<>(value.targetJobFamilies()); e.preferredOrganizationTypes=new LinkedHashSet<>(value.preferredOrganizationTypes()); e.educationRecords=new ArrayList<>(value.educationRecords().stream().map(this::toEducationValue).toList()); return e; }
+    private CandidateProfile toCandidate(JpaModels.CandidateProfileEntity e) { return new CandidateProfile(e.id,e.displayName,new PartialDate(e.birthYear,e.birthMonth,e.birthDay),e.highestEducation,e.majors,e.graduationYear,e.experienceYears,e.professionalTitles,e.preferredLocations,e.acceptedEmploymentTypes,e.profileVersion,e.skills,e.researchKeywords,e.targetJobFamilies,e.preferredOrganizationTypes,e.educationRecords.stream().map(this::toEducationRecord).toList()); }
+
+    private JpaModels.CandidateEducationValue toEducationValue(EducationRecord value) {
+        var entity = new JpaModels.CandidateEducationValue();
+        entity.institutionName=value.institutionName(); entity.countryOrRegion=value.countryOrRegion();
+        entity.educationLevel=value.educationLevel(); entity.majorName=value.majorName();
+        entity.graduationYear=value.graduationYear(); entity.graduationMonth=value.graduationMonth();
+        entity.completionStatus=value.completionStatus();
+        entity.credentialVerificationStatus=value.credentialVerificationStatus();
+        return entity;
+    }
+    private EducationRecord toEducationRecord(JpaModels.CandidateEducationValue value) {
+        return new EducationRecord(value.institutionName,value.countryOrRegion,value.educationLevel,value.majorName,
+            value.graduationYear,value.graduationMonth,value.completionStatus,value.credentialVerificationStatus);
+    }
 
     private JpaModels.CandidateFactConfirmationEntity toCandidateFactEntity(CandidateFactConfirmation value) {
         var entity = new JpaModels.CandidateFactConfirmationEntity();

@@ -26,7 +26,8 @@ public final class CandidateFacts {
         SKILLS,
         RESEARCH_KEYWORDS,
         TARGET_JOB_FAMILIES,
-        PREFERRED_ORGANIZATION_TYPES
+        PREFERRED_ORGANIZATION_TYPES,
+        EDUCATION_RECORDS
     }
 
     public enum CandidateFactStatus { UNCONFIRMED, CONFIRMED, UNKNOWN }
@@ -67,7 +68,8 @@ public final class CandidateFacts {
         CandidateFactKey.MAJORS,
         CandidateFactKey.GRADUATION_YEAR,
         CandidateFactKey.EXPERIENCE_YEARS,
-        CandidateFactKey.PROFESSIONAL_TITLES
+        CandidateFactKey.PROFESSIONAL_TITLES,
+        CandidateFactKey.EDUCATION_RECORDS
     );
 
     private final CandidateProfile candidate;
@@ -132,6 +134,7 @@ public final class CandidateFacts {
             case RESEARCH_KEYWORDS -> canonical(candidate.researchKeywords());
             case TARGET_JOB_FAMILIES -> canonical(candidate.targetJobFamilies());
             case PREFERRED_ORGANIZATION_TYPES -> canonical(candidate.preferredOrganizationTypes());
+            case EDUCATION_RECORDS -> canonicalEducation(candidate.educationRecords());
         };
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -155,16 +158,37 @@ public final class CandidateFacts {
             case RESEARCH_KEYWORDS -> !candidate.researchKeywords().isEmpty();
             case TARGET_JOB_FAMILIES -> !candidate.targetJobFamilies().isEmpty();
             case PREFERRED_ORGANIZATION_TYPES -> !candidate.preferredOrganizationTypes().isEmpty();
+            case EDUCATION_RECORDS -> !candidate.educationRecords().isEmpty();
         };
     }
 
     private static String canonical(Collection<?> values) {
         var normalized = new ArrayList<String>();
         values.stream().map(String::valueOf).map(CandidateFacts::normalize).sorted().forEach(normalized::add);
+        return encodeOrdered(normalized);
+    }
+
+    private static String encodeOrdered(Collection<String> normalized) {
         var encoded = new StringBuilder().append(normalized.size()).append(':');
         for (var value : normalized) encoded.append(value.length()).append(':').append(value);
         return encoded.toString();
     }
+
+    private static String canonicalEducation(Collection<EducationRecord> values) {
+        var encodedRecords = new ArrayList<String>();
+        for (var value : values) {
+            encodedRecords.add(encodeOrdered(java.util.List.of(
+                nullable(value.institutionName()), nullable(value.countryOrRegion()), value.educationLevel().name(),
+                value.majorName(), nullable(value.graduationYear()), nullable(value.graduationMonth()),
+                value.completionStatus().name(), value.credentialVerificationStatus().name()
+            )));
+        }
+        encodedRecords.replaceAll(CandidateFacts::normalize);
+        encodedRecords.sort(String::compareTo);
+        return encodeOrdered(encodedRecords);
+    }
+
+    private static String nullable(Object value) { return value == null ? "<null>" : String.valueOf(value); }
 
     private static String normalize(String value) {
         return Normalizer.normalize(value == null ? "" : value.trim(), Normalizer.Form.NFKC);

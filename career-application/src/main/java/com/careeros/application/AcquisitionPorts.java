@@ -5,6 +5,7 @@ import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.SourceCrawlRun;
+import com.careeros.domain.acquisition.SourceYearCoverage;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
 import java.net.URI;
 import java.time.Instant;
@@ -33,6 +34,8 @@ public final class AcquisitionPorts {
         AcquisitionChange appendChange(AcquisitionChange change);
         PersistedDocumentChange saveDocumentAndChange(AcquiredDocument document, AcquisitionChange change);
         ChangePage findChanges(ChangeCursor cursor, UUID sourceId, Set<ChangeType> types, int size);
+        List<SourceYearCoverage> findSourceYearCoverage(UUID sourceId, Integer recruitmentYear);
+        SourceYearCoverage saveSourceYearCoverage(SourceYearCoverage coverage);
     }
 
     public interface SourceRunLock {

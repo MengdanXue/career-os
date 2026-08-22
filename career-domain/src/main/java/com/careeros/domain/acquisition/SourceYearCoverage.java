@@ -1,0 +1,65 @@
+package com.careeros.domain.acquisition;
+
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
+
+public record SourceYearCoverage(
+    UUID sourceId,
+    int recruitmentYear,
+    CoverageStatus status,
+    int discoveredCount,
+    int fetchedCount,
+    int parsedCount,
+    int targetJobCount,
+    String completionBasis,
+    Instant completedAt,
+    Instant updatedAt
+) {
+    public enum CoverageStatus {
+        NOT_DISCOVERED,
+        DISCOVERED_NOT_FETCHED,
+        ACCESS_FAILED,
+        FETCHED_NOT_PARSED,
+        PARTIAL,
+        COMPLETE,
+        NO_TARGET_RECORDS
+    }
+
+    public SourceYearCoverage {
+        Objects.requireNonNull(sourceId, "sourceId");
+        if (recruitmentYear < 2000 || recruitmentYear > 2100) {
+            throw new IllegalArgumentException("recruitmentYear is invalid");
+        }
+        Objects.requireNonNull(status, "status");
+        requireNonNegative(discoveredCount, "discoveredCount");
+        requireNonNegative(fetchedCount, "fetchedCount");
+        requireNonNegative(parsedCount, "parsedCount");
+        requireNonNegative(targetJobCount, "targetJobCount");
+        completionBasis = optional(completionBasis);
+        Objects.requireNonNull(updatedAt, "updatedAt");
+        if (supportsAbsenceConclusion(status)) {
+            if (completionBasis == null) throw new IllegalArgumentException("completionBasis is required");
+            if (completedAt == null) throw new IllegalArgumentException("completedAt is required");
+        } else if (completedAt != null) {
+            throw new IllegalArgumentException("completedAt requires completed coverage");
+        }
+        if (status == CoverageStatus.NO_TARGET_RECORDS && targetJobCount != 0) {
+            throw new IllegalArgumentException("targetJobCount must be zero for NO_TARGET_RECORDS");
+        }
+    }
+
+    public boolean supportsAbsenceConclusion() { return supportsAbsenceConclusion(status); }
+
+    private static boolean supportsAbsenceConclusion(CoverageStatus value) {
+        return value == CoverageStatus.COMPLETE || value == CoverageStatus.NO_TARGET_RECORDS;
+    }
+
+    private static void requireNonNegative(int value, String field) {
+        if (value < 0) throw new IllegalArgumentException(field + " cannot be negative");
+    }
+
+    private static String optional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+}

@@ -11,6 +11,7 @@ import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.SourceCrawlRun;
+import com.careeros.domain.acquisition.SourceYearCoverage;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.net.URI;
@@ -30,18 +31,21 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     private final SourceCrawlRunJpaRepository runs;
     private final AcquiredDocumentJpaRepository documents;
     private final AcquisitionChangeJpaRepository changes;
+    private final SourceYearCoverageJpaRepository coverage;
     @PersistenceContext private EntityManager entityManager;
 
     public JpaAcquisitionStore(
         RecruitmentSourceJpaRepository sources,
         SourceCrawlRunJpaRepository runs,
         AcquiredDocumentJpaRepository documents,
-        AcquisitionChangeJpaRepository changes
+        AcquisitionChangeJpaRepository changes,
+        SourceYearCoverageJpaRepository coverage
     ) {
         this.sources = sources;
         this.runs = runs;
         this.documents = documents;
         this.changes = changes;
+        this.coverage = coverage;
     }
 
     @Override @Transactional(readOnly = true)
@@ -145,6 +149,30 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         return new ChangePage(items, next);
     }
 
+    @Override @Transactional(readOnly = true)
+    public List<SourceYearCoverage> findSourceYearCoverage(UUID sourceId, Integer recruitmentYear) {
+        if (sourceId != null && recruitmentYear != null) {
+            return coverage.findByIdSourceIdAndIdRecruitmentYear(sourceId, recruitmentYear).stream()
+                .map(JpaAcquisitionStore::toDomain).toList();
+        }
+        if (sourceId != null) {
+            return coverage.findByIdSourceIdOrderByIdRecruitmentYearAsc(sourceId).stream()
+                .map(JpaAcquisitionStore::toDomain).toList();
+        }
+        if (recruitmentYear != null) {
+            return coverage.findByIdRecruitmentYearOrderByIdSourceIdAsc(recruitmentYear).stream()
+                .map(JpaAcquisitionStore::toDomain).toList();
+        }
+        return coverage.findAll().stream().map(JpaAcquisitionStore::toDomain)
+            .sorted(java.util.Comparator.comparingInt(SourceYearCoverage::recruitmentYear)
+                .thenComparing(SourceYearCoverage::sourceId)).toList();
+    }
+
+    @Override @Transactional
+    public SourceYearCoverage saveSourceYearCoverage(SourceYearCoverage value) {
+        return toDomain(coverage.saveAndFlush(toEntity(value)));
+    }
+
     private static void appendRunFilters(StringBuilder jpql, RunQuery query) {
         if (query == null) return;
         if (query.sourceId() != null) jpql.append(" and r.sourceId = :sourceId");
@@ -225,5 +253,21 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     private static AcquisitionChange toDomain(AcquisitionJpaModels.AcquisitionChangeEntity value) {
         return new AcquisitionChange(value.id,value.runId,value.sourceId,value.documentId,value.changeType,
             value.previousFingerprint,value.currentFingerprint,URI.create(value.canonicalUri),value.jobDeltaSummary,value.occurredAt);
+    }
+
+    private static AcquisitionJpaModels.SourceYearCoverageEntity toEntity(SourceYearCoverage value) {
+        var entity = new AcquisitionJpaModels.SourceYearCoverageEntity();
+        entity.id = new AcquisitionJpaModels.SourceYearCoverageId(value.sourceId(), value.recruitmentYear());
+        entity.status = value.status(); entity.discoveredCount = value.discoveredCount();
+        entity.fetchedCount = value.fetchedCount(); entity.parsedCount = value.parsedCount();
+        entity.targetJobCount = value.targetJobCount(); entity.completionBasis = value.completionBasis();
+        entity.completedAt = value.completedAt(); entity.updatedAt = value.updatedAt();
+        return entity;
+    }
+
+    private static SourceYearCoverage toDomain(AcquisitionJpaModels.SourceYearCoverageEntity value) {
+        return new SourceYearCoverage(value.id.sourceId, value.id.recruitmentYear, value.status,
+            value.discoveredCount, value.fetchedCount, value.parsedCount, value.targetJobCount,
+            value.completionBasis, value.completedAt, value.updatedAt);
     }
 }

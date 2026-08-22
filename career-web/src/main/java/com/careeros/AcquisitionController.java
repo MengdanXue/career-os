@@ -65,4 +65,15 @@ final class AcquisitionController {
         return ChangePageResponse.from(store.findChanges(CursorCodec.decode(cursor), sourceId,
             types == null ? Set.of() : Set.copyOf(types), size));
     }
+
+    @GetMapping("/coverage")
+    List<CoverageResponse> coverage(
+        @RequestParam(name="sourceId", required=false) UUID sourceId,
+        @RequestParam(name="year", required=false) Integer year
+    ) {
+        if (year != null && (year < 2000 || year > 2100)) {
+            throw new IllegalArgumentException("year must be between 2000 and 2100");
+        }
+        return store.findSourceYearCoverage(sourceId, year).stream().map(CoverageResponse::from).toList();
+    }
 }

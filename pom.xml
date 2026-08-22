@@ -26,6 +26,7 @@
         <wiremock.version>3.13.2</wiremock.version>
         <springdoc.version>2.8.17</springdoc.version>
         <archunit.version>1.4.2</archunit.version>
+        <mockito.version>5.17.0</mockito.version>
         <surefire.excludedGroups>llm-integration,acquisition-live</surefire.excludedGroups>
     </properties>
 
@@ -63,7 +64,10 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.5.4</version>
-                    <configuration><excludedGroups>${surefire.excludedGroups}</excludedGroups></configuration>
+                    <configuration>
+                        <excludedGroups>${surefire.excludedGroups}</excludedGroups>
+                        <argLine>-javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar</argLine>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.springframework.boot</groupId>

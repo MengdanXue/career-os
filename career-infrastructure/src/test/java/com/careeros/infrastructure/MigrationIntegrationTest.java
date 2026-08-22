@@ -27,10 +27,10 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(17);
+        assertThat(result.migrationsExecuted).isEqualTo(18);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
-             var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='master-spec-v1'");
+             var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
              var pendingIndex = connection.prepareStatement("select indexdef from pg_indexes where schemaname='public' and indexname='idx_review_pending'");
              var nullablePayload = connection.prepareStatement("select is_nullable from information_schema.columns where table_schema='public' and table_name='extraction_run' and column_name='proposed_payload'");
              var eventConstraint = connection.prepareStatement("""
@@ -102,6 +102,29 @@ class MigrationIntegrationTest {
             try (var rows = eventFieldEvidenceTable.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = fieldEvidenceIndex.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = processorVersion.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+        }
+
+        try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var foundationTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('candidate_education_record','source_year_coverage')");
+             var educationRows = connection.prepareStatement("select completion_status from candidate_education_record where candidate_profile_id='01992f09-0000-7000-8000-000000000001' order by record_order");
+             var coverageRows = connection.prepareStatement("select count(*) from source_year_coverage where recruitment_year between 2024 and 2026 and status='NOT_DISCOVERED'");
+             var educationFactConstraint = connection.prepareStatement("select pg_get_constraintdef(oid) from pg_constraint where conrelid='candidate_fact_confirmation'::regclass and contype='c' and pg_get_constraintdef(oid) like '%fact_key%'");
+             var candidateSummary = connection.prepareStatement("select highest_education, graduation_year from candidate_profile where id='01992f09-0000-7000-8000-000000000001'")) {
+            try (var rows = foundationTables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
+            try (var rows = educationRows.executeQuery()) {
+                assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("COMPLETED");
+                assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("EXPECTED");
+                assertThat(rows.next()).isFalse();
+            }
+            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(6); }
+            try (var rows = educationFactConstraint.executeQuery()) {
+                assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).contains("EDUCATION_RECORDS");
+            }
+            try (var rows = candidateSummary.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("highest_education")).isEqualTo("BACHELOR");
+                assertThat(rows.getInt("graduation_year")).isEqualTo(2014);
+            }
         }
     }
 

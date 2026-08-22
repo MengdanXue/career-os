@@ -7,6 +7,9 @@ import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
+import com.careeros.domain.acquisition.SourceYearCoverage.CoverageStatus;
+import jakarta.persistence.Embeddable;
+import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -15,6 +18,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -108,5 +112,35 @@ final class AcquisitionJpaModels {
         Map<String, Object> jobDeltaSummary = new LinkedHashMap<>();
         @Column(name = "occurred_at", nullable = false) Instant occurredAt;
         protected AcquisitionChangeEntity() {}
+    }
+
+    @Embeddable
+    static class SourceYearCoverageId implements Serializable {
+        @Column(name = "source_id", nullable = false) UUID sourceId;
+        @Column(name = "recruitment_year", nullable = false) int recruitmentYear;
+        protected SourceYearCoverageId() {}
+        SourceYearCoverageId(UUID sourceId, int recruitmentYear) {
+            this.sourceId = sourceId;
+            this.recruitmentYear = recruitmentYear;
+        }
+        @Override public boolean equals(Object other) {
+            return this == other || other instanceof SourceYearCoverageId value
+                && recruitmentYear == value.recruitmentYear && java.util.Objects.equals(sourceId, value.sourceId);
+        }
+        @Override public int hashCode() { return java.util.Objects.hash(sourceId, recruitmentYear); }
+    }
+
+    @Entity(name = "SourceYearCoverageEntity") @Table(name = "source_year_coverage")
+    static class SourceYearCoverageEntity {
+        @EmbeddedId SourceYearCoverageId id;
+        @Enumerated(EnumType.STRING) @Column(nullable = false) CoverageStatus status;
+        @Column(name = "discovered_count", nullable = false) int discoveredCount;
+        @Column(name = "fetched_count", nullable = false) int fetchedCount;
+        @Column(name = "parsed_count", nullable = false) int parsedCount;
+        @Column(name = "target_job_count", nullable = false) int targetJobCount;
+        @Column(name = "completion_basis") String completionBasis;
+        @Column(name = "completed_at") Instant completedAt;
+        @Column(name = "updated_at", nullable = false) Instant updatedAt;
+        protected SourceYearCoverageEntity() {}
     }
 }

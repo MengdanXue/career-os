@@ -128,7 +128,7 @@ public final class CandidateProfileService {
             value.id(), value.displayName(), value.birthDate(), value.highestEducation(), value.majors(),
             value.graduationYear(), value.experienceYears(), value.professionalTitles(), value.preferredLocations(),
             value.acceptedEmploymentTypes(), version, value.skills(), value.researchKeywords(), value.targetJobFamilies(),
-            value.preferredOrganizationTypes()
+            value.preferredOrganizationTypes(), value.educationRecords()
         );
     }
 

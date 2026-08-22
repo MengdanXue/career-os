@@ -5,6 +5,16 @@ import { confirmCandidateFacts, getCandidateFacts, listCandidates, profileKeys, 
 import type { CandidateProfile, CandidateProfileFacts, CandidateProfileUpdate } from './profileSchema'
 import { ProfileForm } from './ProfileForm'
 
+const educationLabels: Record<string, string> = { HIGH_SCHOOL: '高中', ASSOCIATE: '专科', BACHELOR: '本科', MASTER: '硕士', DOCTORATE: '博士' }
+
+function EducationSummary({ candidate }: { candidate: CandidateProfile }) {
+  return <div className="education-summary" aria-label="教育经历">
+    {(candidate.educationRecords ?? []).map((record, index) => <p key={`${record.educationLevel}-${index}`}>
+      {[record.institutionName, educationLabels[record.educationLevel] ?? record.educationLevel, record.majorName, record.graduationYear, record.completionStatus === 'COMPLETED' ? '已毕业' : '预计毕业'].filter(value => value !== null && value !== '').join(' · ')}
+    </p>)}
+  </div>
+}
+
 function Readiness({ facts }: { facts: CandidateProfileFacts }) {
   return <div className="fact-readiness" aria-label="资料确认状态">
     <span className="fact-count fact-confirmed">已确认 {facts.confirmedCount}</span>
@@ -75,7 +85,8 @@ export function ProfilePage() {
           <p className="eyebrow">PROFILE READY · 可用于决策</p>
           <h1>资料已确认</h1>
           <Readiness facts={facts} />
-          <p>{candidate.displayName} · {candidate.highestEducation === 'MASTER' ? '硕士' : candidate.highestEducation} · {candidate.majors.join('、')}</p>
+          <p>{candidate.displayName} · {educationLabels[candidate.highestEducation] ?? candidate.highestEducation} · {candidate.majors.join('、')}</p>
+          <EducationSummary candidate={candidate} />
           <dl><div><dt>目标地点</dt><dd>{candidate.preferredLocations.join('、') || '明确不限'}</dd></div><div><dt>技能证据</dt><dd>{candidate.skills.join('、') || '明确未填写'}</dd></div><div><dt>资料版本</dt><dd>{candidate.profileVersion}</dd></div></dl>
           <button className="secondary-action" type="button" onClick={beginEdit}>修改资料</button>
         </section> : null}
