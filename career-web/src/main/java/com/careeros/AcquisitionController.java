@@ -38,6 +38,26 @@ final class AcquisitionController {
         return ResponseEntity.accepted().location(URI.create("/api/acquisition/runs/" + response.id())).body(response);
     }
 
+    @PostMapping("/sources/{sourceId}/historical-runs")
+    ResponseEntity<HistoricalRunResponse> triggerHistorical(
+        @PathVariable("sourceId") UUID sourceId,
+        @RequestParam(name="fromYear") int fromYear,
+        @RequestParam(name="toYear") int toYear
+    ) {
+        if (fromYear < 2000 || toYear > 2100 || fromYear > toYear) {
+            throw new IllegalArgumentException("historical year range must be between 2000 and 2100");
+        }
+        Set<Integer> years = java.util.stream.IntStream.rangeClosed(fromYear, toYear)
+            .boxed().collect(java.util.stream.Collectors.toUnmodifiableSet());
+        RunResponse run = RunResponse.from(service.backfill(sourceId, years));
+        List<CoverageResponse> coverage = store.findSourceYearCoverage(sourceId, null).stream()
+            .filter(value -> years.contains(value.recruitmentYear()))
+            .sorted(java.util.Comparator.comparingInt(com.careeros.domain.acquisition.SourceYearCoverage::recruitmentYear))
+            .map(CoverageResponse::from).toList();
+        return ResponseEntity.accepted().location(URI.create("/api/acquisition/runs/" + run.id()))
+            .body(new HistoricalRunResponse(run, coverage));
+    }
+
     @GetMapping("/runs/{runId}")
     RunResponse findRun(@PathVariable("runId") UUID runId) { return RunResponse.from(store.findRun(runId)); }
 

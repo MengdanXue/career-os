@@ -36,6 +36,7 @@ public final class AcquisitionPorts {
         ChangePage findChanges(ChangeCursor cursor, UUID sourceId, Set<ChangeType> types, int size);
         List<SourceYearCoverage> findSourceYearCoverage(UUID sourceId, Integer recruitmentYear);
         SourceYearCoverage saveSourceYearCoverage(SourceYearCoverage coverage);
+        long countActiveTargetJobs(UUID sourceId, int recruitmentYear);
     }
 
     public interface SourceRunLock {

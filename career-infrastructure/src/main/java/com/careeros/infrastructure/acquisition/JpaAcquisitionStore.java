@@ -173,6 +173,26 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         return toDomain(coverage.saveAndFlush(toEntity(value)));
     }
 
+    @Override @Transactional(readOnly = true)
+    public long countActiveTargetJobs(UUID sourceId, int recruitmentYear) {
+        Number result = (Number) entityManager.createNativeQuery("""
+            select count(distinct job.id)
+            from job_posting job
+            join recruitment_event event on event.id = job.recruitment_event_id
+            join acquired_document announcement
+              on announcement.source_id = :sourceId
+             and announcement.document_kind = 'ANNOUNCEMENT'
+             and announcement.canonical_uri = job.source_url
+            where job.active = true
+              and job.job_family <> 'OTHER'
+              and event.recruitment_year = :recruitmentYear
+            """)
+            .setParameter("sourceId", sourceId)
+            .setParameter("recruitmentYear", recruitmentYear)
+            .getSingleResult();
+        return result.longValue();
+    }
+
     private static void appendRunFilters(StringBuilder jpql, RunQuery query) {
         if (query == null) return;
         if (query.sourceId() != null) jpql.append(" and r.sourceId = :sourceId");

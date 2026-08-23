@@ -81,6 +81,8 @@ final class AcquisitionApiModels {
         }
     }
 
+    record HistoricalRunResponse(RunResponse run, List<CoverageResponse> coverage) {}
+
     static final class CursorCodec {
         private CursorCodec() {}
         static String encode(ChangeCursor cursor) {

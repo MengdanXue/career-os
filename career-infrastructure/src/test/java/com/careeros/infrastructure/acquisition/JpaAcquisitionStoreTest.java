@@ -27,6 +27,7 @@ import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -81,6 +82,38 @@ class JpaAcquisitionStoreTest {
                 assertThat(value.status()).isEqualTo(CoverageStatus.ACCESS_FAILED);
                 assertThat(value.supportsAbsenceConclusion()).isFalse();
             });
+    }
+
+    @Test
+    void countsOnlyActiveTechnicalJobsBackedByThisSourcesAnnouncements(
+        @Autowired AcquisitionStore store, @Autowired JdbcTemplate jdbc
+    ) {
+        AcquiredDocument announcement = store.saveDocument(document(UUID.randomUUID()));
+        UUID eventId = UUID.randomUUID();
+        UUID organizationId = UUID.randomUUID();
+        jdbc.update("insert into recruitment_event(id,title,recruitment_year,event_type,source_url) values (?,?,?,?,?)",
+            eventId, "2025年公开招聘", 2025, "PUBLIC_INSTITUTION", announcement.canonicalUri().toString());
+        jdbc.update("insert into organization(id,name,organization_type) values (?,?,?)",
+            organizationId, "测试单位", "PUBLIC_INSTITUTION");
+        insertJob(jdbc, eventId, organizationId, announcement.canonicalUri().toString(), "SOFTWARE", true);
+        insertJob(jdbc, eventId, organizationId, announcement.canonicalUri().toString(), "OTHER", true);
+        insertJob(jdbc, eventId, organizationId, announcement.canonicalUri().toString(), "DATA", false);
+
+        assertThat(store.countActiveTargetJobs(SOURCE_ID, 2025)).isEqualTo(1);
+        assertThat(store.countActiveTargetJobs(SOURCE_ID, 2024)).isZero();
+    }
+
+    private static void insertJob(
+        JdbcTemplate jdbc, UUID eventId, UUID organizationId, String sourceUrl,
+        String family, boolean active
+    ) {
+        jdbc.update("""
+            insert into job_posting(
+                id,recruitment_event_id,organization_id,title,job_family,minimum_education,
+                source_url,active
+            ) values (?,?,?,?,?,?,?,?)
+            """, UUID.randomUUID(), eventId, organizationId, family + "岗位", family,
+            "BACHELOR", sourceUrl, active);
     }
 
     @Test

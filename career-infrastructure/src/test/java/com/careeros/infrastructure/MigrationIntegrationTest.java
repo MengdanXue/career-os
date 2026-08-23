@@ -27,7 +27,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(18);
+        assertThat(result.migrationsExecuted).isEqualTo(19);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -41,6 +41,13 @@ class MigrationIntegrationTest {
                  """);
              var acquisitionTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_source','source_crawl_run','acquired_document','acquisition_change')");
              var sourceSeeds = connection.prepareStatement("select count(*) from recruitment_source where enabled and code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION')");
+             var historicalPagination = connection.prepareStatement("""
+                 select count(*) from recruitment_source
+                 where code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION')
+                   and configuration ->> 'historicalPaginationMode' = 'JCMS_PARAM_JSON'
+                   and (configuration ->> 'historicalPageSize')::int = 100
+                   and (configuration ->> 'historicalMaxPages')::int = 20
+                 """);
              var officialAttachmentHosts = connection.prepareStatement("select count(*) from recruitment_source where code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION') and configuration -> 'allowedHosts' @> '[\"zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn\"]'::jsonb");
              var decisionTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('fit_assessment','stability_assessment','decision_assessment','assessment_dimension','organization_stability_fact')");
              var candidateInputs = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='candidate_profile' and column_name in ('skills','research_keywords','target_job_families','preferred_organization_types')");
@@ -83,6 +90,10 @@ class MigrationIntegrationTest {
                 assertThat(rows.getInt(1)).isEqualTo(4);
             }
             try (var rows = sourceSeeds.executeQuery()) {
+                rows.next();
+                assertThat(rows.getInt(1)).isEqualTo(2);
+            }
+            try (var rows = historicalPagination.executeQuery()) {
                 rows.next();
                 assertThat(rows.getInt(1)).isEqualTo(2);
             }

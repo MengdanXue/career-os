@@ -64,6 +64,36 @@ class AcquisitionApiTest {
             .andExpect(jsonPath("$.status").value("SUCCEEDED"));
     }
 
+    @Test void historicalTriggerReturnsRunAndCoverageForRequestedRange() throws Exception {
+        when(service.backfill(SOURCE_ID, Set.of(2024, 2025, 2026))).thenReturn(run());
+        when(store.findSourceYearCoverage(SOURCE_ID, null)).thenReturn(List.of(
+            new SourceYearCoverage(SOURCE_ID, 2024, CoverageStatus.COMPLETE,
+                12, 12, 12, 3, "official listing total=12", NOW, NOW),
+            new SourceYearCoverage(SOURCE_ID, 2025, CoverageStatus.NO_TARGET_RECORDS,
+                8, 8, 8, 0, "official listing total=8", NOW, NOW),
+            new SourceYearCoverage(SOURCE_ID, 2026, CoverageStatus.PARTIAL,
+                10, 9, 8, 2, null, null, NOW)));
+
+        mvc.perform(post("/api/acquisition/sources/{id}/historical-runs", SOURCE_ID)
+                .param("fromYear", "2024").param("toYear", "2026"))
+            .andExpect(status().isAccepted())
+            .andExpect(header().string("Location", "/api/acquisition/runs/" + RUN_ID))
+            .andExpect(jsonPath("$.run.status").value("SUCCEEDED"))
+            .andExpect(jsonPath("$.coverage", hasSize(3)))
+            .andExpect(jsonPath("$.coverage[0].year").value(2024))
+            .andExpect(jsonPath("$.coverage[2].status").value("PARTIAL"));
+    }
+
+    @Test void historicalTriggerRejectsReversedOrOutOfRangeYears() throws Exception {
+        mvc.perform(post("/api/acquisition/sources/{id}/historical-runs", SOURCE_ID)
+                .param("fromYear", "2026").param("toYear", "2024"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        mvc.perform(post("/api/acquisition/sources/{id}/historical-runs", SOURCE_ID)
+                .param("fromYear", "1999").param("toYear", "2024"))
+            .andExpect(status().isBadRequest());
+    }
+
     @Test void coverageMakesUnknownCollectionStateExplicit() throws Exception {
         when(store.findSourceYearCoverage(SOURCE_ID, 2025)).thenReturn(List.of(
             new SourceYearCoverage(SOURCE_ID, 2025, CoverageStatus.ACCESS_FAILED,

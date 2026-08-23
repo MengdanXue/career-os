@@ -16,6 +16,7 @@ import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.*;
@@ -24,7 +25,9 @@ import java.util.regex.Pattern;
 
 public final class AcquisitionService {
     private static final Pattern URL_DATE = Pattern.compile("/(20\\d{2})/(\\d{1,2})/(\\d{1,2})/");
+    private static final Pattern URL_ARTICLE_YEAR = Pattern.compile("/art/(20\\d{2})(?:/|$)");
     private static final Pattern TITLE_YEAR = Pattern.compile("(20\\d{2})");
+    private static final Pattern LISTING_TOTAL = Pattern.compile("\\bcount\\s*=\\s*\"(\\d+)\"");
     private final AcquisitionStore store;
     private final SourceRunLock lock;
     private final SourceDiscoverer discoverer;
@@ -102,6 +105,183 @@ public final class AcquisitionService {
         return saved;
     }
 
+    public SourceCrawlRun backfill(UUID sourceId, Set<Integer> recruitmentYears) {
+        Objects.requireNonNull(sourceId, "sourceId");
+        if (recruitmentYears == null || recruitmentYears.isEmpty()) {
+            throw new IllegalArgumentException("recruitmentYears is required");
+        }
+        Set<Integer> years = new TreeSet<>(recruitmentYears);
+        if (years.stream().anyMatch(year -> year < 2000 || year > 2100)) {
+            throw new IllegalArgumentException("recruitmentYears must be between 2000 and 2100");
+        }
+        RecruitmentSource source = store.findSource(sourceId);
+        Instant started = clock.instant();
+        UUID runId = UUID.randomUUID();
+        Optional<SourceCrawlRun> executed;
+        try {
+            executed = lock.tryExecute(source.code(), Duration.ofSeconds(2),
+                () -> executeHistoricalLocked(source, runId, started, years));
+        } catch (RuntimeException failure) {
+            saveCoverage(source.id(), years, SourceYearCoverage.CoverageStatus.ACCESS_FAILED,
+                Map.of(), null, null);
+            return failedBeforeDiscovery(source, runId, RunTrigger.MANUAL, started, failure);
+        }
+        if (executed.isPresent()) {
+            SourceCrawlRun result = executed.orElseThrow();
+            observer.runCompleted(source.code(), result);
+            return result;
+        }
+        SourceCrawlRun skipped = terminal(runId, sourceId, RunTrigger.MANUAL, RunStatus.SKIPPED_LOCKED,
+            started, new Counts(), "SOURCE_LOCKED", "Another instance is acquiring this source");
+        SourceCrawlRun saved = store.saveRun(skipped);
+        observer.lockSkipped(source.code());
+        observer.runCompleted(source.code(), saved);
+        return saved;
+    }
+
+    private SourceCrawlRun executeHistoricalLocked(
+        RecruitmentSource source, UUID runId, Instant started, Set<Integer> recruitmentYears
+    ) {
+        store.saveRun(SourceCrawlRun.running(runId, source.id(), RunTrigger.MANUAL, started));
+        Counts counts = new Counts();
+        Map<Integer, YearCounts> byYear = new LinkedHashMap<>();
+        recruitmentYears.forEach(year -> byYear.put(year, new YearCounts()));
+        saveCoverage(source.id(), recruitmentYears, SourceYearCoverage.CoverageStatus.NOT_DISCOVERED,
+            byYear, null, null);
+        try {
+            HistoricalListing listing = historicalDetails(source);
+            List<DiscoveredLink> details = listing.details().stream()
+                .filter(link -> linkYear(link).filter(recruitmentYears::contains).isPresent())
+                .toList();
+            counts.discovered = details.size();
+            for (DiscoveredLink detail : details) {
+                linkYear(detail).map(byYear::get).ifPresent(value -> value.discovered++);
+            }
+            saveCoverage(source.id(), recruitmentYears,
+                SourceYearCoverage.CoverageStatus.DISCOVERED_NOT_FETCHED, byYear, null, null);
+            for (DiscoveredLink detail : details) {
+                YearCounts yearCounts = byYear.get(linkYear(detail).orElseThrow());
+                int failuresBefore = counts.failed;
+                DocumentOutcome outcome = acquire(source, runId, detail, null, DocumentKind.ANNOUNCEMENT,
+                    detail.title(), counts);
+                yearCounts.record(outcome, counts.failed - failuresBefore);
+                if (outcome.document == null) continue;
+                List<DiscoveredLink> attachmentLinks = discoverAttachments(source, detail, outcome);
+                counts.discovered += attachmentLinks.size();
+                yearCounts.discovered += attachmentLinks.size();
+                for (DiscoveredLink attachment : attachmentLinks) {
+                    failuresBefore = counts.failed;
+                    DocumentOutcome attachmentOutcome = acquire(source, runId, attachment, outcome.document,
+                        DocumentKind.ATTACHMENT,
+                        detail.title(), counts);
+                    yearCounts.record(attachmentOutcome, counts.failed - failuresBefore);
+                }
+            }
+            String completionBasis = "official listing total=" + listing.total()
+                + "; traversed pages=" + listing.pages() + "; pageSize=" + listing.pageSize();
+            for (var entry : byYear.entrySet()) {
+                int year = entry.getKey();
+                YearCounts values = entry.getValue();
+                values.targetJobs = Math.toIntExact(store.countActiveTargetJobs(source.id(), year));
+                SourceYearCoverage.CoverageStatus coverageStatus = values.failed > 0
+                    ? SourceYearCoverage.CoverageStatus.PARTIAL
+                    : values.targetJobs > 0
+                        ? SourceYearCoverage.CoverageStatus.COMPLETE
+                        : values.discovered == 0
+                            ? SourceYearCoverage.CoverageStatus.NO_TARGET_RECORDS
+                            : SourceYearCoverage.CoverageStatus.PARTIAL;
+                saveCoverage(source.id(), Set.of(year), coverageStatus, byYear,
+                    coverageStatus == SourceYearCoverage.CoverageStatus.PARTIAL ? null : completionBasis,
+                    coverageStatus == SourceYearCoverage.CoverageStatus.PARTIAL ? null : clock.instant());
+            }
+            RunStatus status = counts.failed == 0 ? RunStatus.SUCCEEDED
+                : counts.hasSuccess() ? RunStatus.PARTIALLY_SUCCEEDED : RunStatus.FAILED;
+            SourceCrawlRun completed = terminal(runId, source.id(), RunTrigger.MANUAL, status, started, counts,
+                counts.failed == 0 ? null : "DOCUMENT_FAILURE",
+                counts.failed == 0 ? null : counts.failed + " document(s) failed");
+            updateSourceHealth(source, RunTrigger.MANUAL, status);
+            return store.saveRun(completed);
+        } catch (RuntimeException failure) {
+            counts.failed++;
+            saveCoverage(source.id(), recruitmentYears, SourceYearCoverage.CoverageStatus.ACCESS_FAILED,
+                byYear, null, null);
+            SourceCrawlRun failed = terminal(runId, source.id(), RunTrigger.MANUAL, RunStatus.FAILED,
+                started, counts, failure.getClass().getSimpleName(), safeMessage(failure));
+            updateSourceHealth(source, RunTrigger.MANUAL, RunStatus.FAILED);
+            return store.saveRun(failed);
+        }
+    }
+
+    private HistoricalListing historicalDetails(RecruitmentSource source) {
+        if (!"JCMS_PARAM_JSON".equals(source.configuration().get("historicalPaginationMode"))) {
+            throw new IllegalArgumentException("Source does not declare verifiable historical pagination");
+        }
+        int pageSize = positiveConfiguration(source, "historicalPageSize");
+        int maxPages = positiveConfiguration(source, "historicalMaxPages");
+        LinkedHashMap<URI, DiscoveredLink> distinct = new LinkedHashMap<>();
+        Integer total = null;
+        for (int page = 1; page <= maxPages; page++) {
+            URI pageUri = listingPageUri(source, page, pageSize);
+            FetchedDocument listing = fetchTimed(source, request(source, pageUri, null));
+            if (listing.status() != 200 || listing.content().length == 0) {
+                throw new FetchFailedException("Historical list page did not return content: " + listing.status());
+            }
+            for (DiscoveredLink link : discoverer.discover(source, listing.finalUri(), listing.content())) {
+                distinct.putIfAbsent(link.uri(), link);
+            }
+            int reported = listingTotal(listing.content());
+            if (total == null) total = reported;
+            else if (total != reported) throw new FetchFailedException("Historical listing total changed during traversal");
+            if ((long) page * pageSize >= total) {
+                return new HistoricalListing(List.copyOf(distinct.values()), total, page, pageSize);
+            }
+        }
+        throw new FetchFailedException("Historical listing exceeded configured page limit");
+    }
+
+    private static int positiveConfiguration(RecruitmentSource source, String key) {
+        Object value = source.configuration().get(key);
+        int parsed = value instanceof Number number ? number.intValue()
+            : value == null ? -1 : Integer.parseInt(value.toString());
+        if (parsed < 1) throw new IllegalArgumentException(key + " must be positive");
+        return parsed;
+    }
+
+    private static URI listingPageUri(RecruitmentSource source, int page, int pageSize) {
+        URI base = listingUri(source);
+        String param = URLEncoder.encode(
+            "{\"pageNo\":" + page + ",\"pageSize\":" + pageSize + "}", StandardCharsets.UTF_8);
+        return URI.create(base + (base.getRawQuery() == null ? "?" : "&") + "paramJson=" + param);
+    }
+
+    private static int listingTotal(byte[] content) {
+        String normalized = new String(content, StandardCharsets.UTF_8).replace("\\\"", "\"");
+        var matcher = LISTING_TOTAL.matcher(normalized);
+        if (!matcher.find()) throw new FetchFailedException("Historical listing does not report a total count");
+        return Integer.parseInt(matcher.group(1));
+    }
+
+    private static Optional<Integer> linkYear(DiscoveredLink link) {
+        LocalDate date = publishedDate(link.uri());
+        if (date != null) return Optional.of(date.getYear());
+        var pathYear = URL_ARTICLE_YEAR.matcher(link.uri().getPath());
+        if (pathYear.find()) return Optional.of(Integer.parseInt(pathYear.group(1)));
+        return titleYear(link.title());
+    }
+
+    private void saveCoverage(
+        UUID sourceId, Set<Integer> years, SourceYearCoverage.CoverageStatus status,
+        Map<Integer, YearCounts> values, String completionBasis, Instant completedAt
+    ) {
+        Instant now = clock.instant();
+        for (int year : years) {
+            YearCounts counts = values.getOrDefault(year, new YearCounts());
+            store.saveSourceYearCoverage(new SourceYearCoverage(sourceId, year, status,
+                counts.discovered, counts.fetched, counts.parsed, counts.targetJobs,
+                completionBasis, completedAt, now));
+        }
+    }
+
     private SourceCrawlRun executeLocked(
         RecruitmentSource source, UUID runId, RunTrigger trigger, Instant started
     ) {
@@ -157,11 +337,11 @@ public final class AcquisitionService {
         } catch (RuntimeException failure) {
             counts.failed++;
             observer.document(source.code(), "FETCH_FAILED");
-            return new DocumentOutcome(prior.orElse(null), null);
+            return new DocumentOutcome(prior.orElse(null), null, null, false);
         }
         if (prior.isEmpty() && response.gone()) {
             counts.failed++;
-            return new DocumentOutcome(null, response);
+            return new DocumentOutcome(null, response, null, false);
         }
         FetchObservation observation = observation(response, link.uri());
         DocumentTransition transition;
@@ -169,7 +349,7 @@ public final class AcquisitionService {
             transition = DocumentTransition.decide(prior.orElse(null), observation, clock.instant());
         } catch (RuntimeException failure) {
             counts.failed++;
-            return new DocumentOutcome(prior.orElse(null), response);
+            return new DocumentOutcome(prior.orElse(null), response, null, false);
         }
         AcquiredDocument document = transition.document();
         if (response.content().length > 0) {
@@ -216,7 +396,9 @@ public final class AcquisitionService {
         }
         counts.fetched++;
         observer.document(source.code(), transition.type().name());
-        return new DocumentOutcome(document, response);
+        boolean parsed = document.lastProcessedFingerprint() != null
+            && document.lastProcessedFingerprint().equals(document.contentFingerprint());
+        return new DocumentOutcome(document, response, processing, parsed);
     }
 
     private FetchedDocument fetchTimed(RecruitmentSource source, FetchRequest request) {
@@ -349,7 +531,18 @@ public final class AcquisitionService {
         return value.getMessage() == null ? value.getClass().getName() : value.getMessage();
     }
 
-    private record DocumentOutcome(AcquiredDocument document, FetchedDocument response) {}
+    private record HistoricalListing(List<DiscoveredLink> details, int total, int pages, int pageSize) {}
+    private record DocumentOutcome(
+        AcquiredDocument document, FetchedDocument response, ProcessingResult processing, boolean parsed
+    ) {}
+    private static final class YearCounts {
+        int discovered, fetched, parsed, targetJobs, failed;
+        void record(DocumentOutcome outcome, int newFailures) {
+            failed += newFailures;
+            if (outcome.response != null && outcome.document != null) fetched++;
+            if (outcome.parsed) parsed++;
+        }
+    }
     private static final class Counts {
         int discovered, fetched, unchanged, added, updated, deactivated, failed;
         boolean hasSuccess() { return fetched + unchanged + added + updated + deactivated > 0; }

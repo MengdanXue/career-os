@@ -160,15 +160,115 @@ class AcquisitionServiceTest {
         assertThat(attachment.announcementTitle()).isEqualTo("2026年公开招聘公告");
     }
 
+    @Test
+    void historicalBackfillTraversesReportedPagesAndSelectsOnlyRequestedYears() {
+        Fixture fixture = new Fixture();
+        URI detail2024 = URI.create("https://official.example/art/2024/notice-a.html");
+        URI detail2025 = URI.create("https://official.example/art/2025/notice-b.html");
+        URI detail2026 = URI.create("https://official.example/art/2026/notice-c.html");
+        URI detail2023 = URI.create("https://official.example/art/2023/notice-d.html");
+        fixture.fetcher.historicalListing = true;
+        fixture.discoverer.pages.put("page-1", List.of(
+            new DiscoveredLink(detail2026, "2026年公开招聘公告"),
+            new DiscoveredLink(detail2025, "2025年公开招聘公告")));
+        fixture.discoverer.pages.put("page-2", List.of(
+            new DiscoveredLink(detail2024, "公开招聘公告"),
+            new DiscoveredLink(detail2023, "2023年公开招聘公告")));
+
+        SourceCrawlRun run = fixture.service.backfill(SOURCE_ID, Set.of(2024, 2025, 2026));
+
+        assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(fixture.fetcher.requested.stream().filter(uri -> uri.getPath().equals("/api/list")))
+            .hasSize(2);
+        assertThat(fixture.store.documents).containsKeys(detail2024, detail2025, detail2026)
+            .doesNotContainKey(detail2023);
+    }
+
+    @Test
+    void historicalBackfillDoesNotTreatDiscoveredButUnmatchedDocumentsAsNoTargetRecords() {
+        Fixture fixture = historicalFixture();
+        fixture.store.targetJobs.put(2024, 3L);
+        fixture.store.targetJobs.put(2025, 0L);
+        fixture.store.targetJobs.put(2026, 2L);
+
+        fixture.service.backfill(SOURCE_ID, Set.of(2024, 2025, 2026));
+
+        assertThat(fixture.store.coverages.values())
+            .extracting(SourceYearCoverage::recruitmentYear, SourceYearCoverage::status,
+                SourceYearCoverage::targetJobCount, SourceYearCoverage::supportsAbsenceConclusion)
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple(2024, SourceYearCoverage.CoverageStatus.COMPLETE, 3, true),
+                org.assertj.core.groups.Tuple.tuple(2025, SourceYearCoverage.CoverageStatus.PARTIAL, 0, false),
+                org.assertj.core.groups.Tuple.tuple(2026, SourceYearCoverage.CoverageStatus.COMPLETE, 2, true));
+        assertThat(fixture.store.coverages.get(2025).completionBasis()).isNull();
+        assertThat(fixture.store.coverages.get(2025).completedAt()).isNull();
+        assertThat(fixture.store.coverages.get(2024).completionBasis()).contains("official listing total=3");
+        assertThat(fixture.store.coverages.get(2026).completedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void historicalBackfillUsesNoTargetRecordsOnlyWhenTheCompleteIndexHasNoCandidateAnnouncement() {
+        Fixture fixture = historicalFixture();
+
+        fixture.service.backfill(SOURCE_ID, Set.of(2023));
+
+        SourceYearCoverage coverage = fixture.store.coverages.get(2023);
+        assertThat(coverage.status()).isEqualTo(SourceYearCoverage.CoverageStatus.NO_TARGET_RECORDS);
+        assertThat(coverage.discoveredCount()).isZero();
+        assertThat(coverage.supportsAbsenceConclusion()).isTrue();
+    }
+
+    @Test
+    void historicalBackfillKeepsDocumentFailureAsPartialInsteadOfZeroJobs() {
+        Fixture fixture = historicalFixture();
+        URI failed = URI.create("https://official.example/art/2025/notice-b.html");
+        fixture.fetcher.failedUris.add(failed);
+
+        fixture.service.backfill(SOURCE_ID, Set.of(2025));
+
+        SourceYearCoverage coverage = fixture.store.coverages.get(2025);
+        assertThat(coverage.status()).isEqualTo(SourceYearCoverage.CoverageStatus.PARTIAL);
+        assertThat(coverage.completedAt()).isNull();
+        assertThat(coverage.supportsAbsenceConclusion()).isFalse();
+    }
+
+    @Test
+    void historicalBackfillRecordsListingFailureAsAccessFailed() {
+        Fixture fixture = historicalFixture();
+        fixture.fetcher.historicalListingStatus = 503;
+
+        fixture.service.backfill(SOURCE_ID, Set.of(2024, 2025));
+
+        assertThat(fixture.store.coverages.values())
+            .extracting(SourceYearCoverage::recruitmentYear, SourceYearCoverage::status)
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple(2024, SourceYearCoverage.CoverageStatus.ACCESS_FAILED),
+                org.assertj.core.groups.Tuple.tuple(2025, SourceYearCoverage.CoverageStatus.ACCESS_FAILED));
+        assertThat(fixture.store.coverages.values()).allSatisfy(coverage ->
+            assertThat(coverage.supportsAbsenceConclusion()).isFalse());
+    }
+
+    private static Fixture historicalFixture() {
+        Fixture fixture = new Fixture();
+        fixture.fetcher.historicalListing = true;
+        fixture.discoverer.pages.put("page-1", List.of(
+            new DiscoveredLink(URI.create("https://official.example/art/2026/notice-c.html"), "2026年公开招聘公告"),
+            new DiscoveredLink(URI.create("https://official.example/art/2025/notice-b.html"), "2025年公开招聘公告")));
+        fixture.discoverer.pages.put("page-2", List.of(
+            new DiscoveredLink(URI.create("https://official.example/art/2024/notice-a.html"), "2024年公开招聘公告")));
+        return fixture;
+    }
+
     private static final class Fixture {
         final InMemoryStore store = new InMemoryStore(source());
         final FakeFetcher fetcher = new FakeFetcher();
+        final FakeDiscoverer discoverer = new FakeDiscoverer();
         final FakeAttachmentDiscoverer attachments = new FakeAttachmentDiscoverer();
         final FakeProcessor processor = new FakeProcessor();
         final MemoryArtifacts artifacts = new MemoryArtifacts();
         final AcquisitionService service = new AcquisitionService(store,
             (code, wait, work) -> Optional.of(work.get()),
-            (source, page, html) -> List.of(new DiscoveredLink(DETAIL, "2026年公开招聘公告")),
+            discoverer,
             fetcher,
             attachments, processor, artifacts,
             (source, after) -> after.plus(Duration.ofDays(1)), Clock.fixed(NOW, ZoneOffset.UTC),
@@ -179,7 +279,21 @@ class AcquisitionServiceTest {
         return new RecruitmentSource(SOURCE_ID, "OFFICIAL", "官方事业单位招聘",
             URI.create("https://official.example/"), LIST, SourceType.OFFICIAL_GOVERNMENT,
             "杭州", CrawlMode.STATIC_HTML, true, "0 0 8 * * *", "Asia/Shanghai",
-            Duration.ZERO, Map.of("listingApiUri", LIST_API.toString()), null, null, NOW, 0, NOW, NOW);
+            Duration.ZERO, Map.of(
+                "listingApiUri", LIST_API.toString(),
+                "historicalPaginationMode", "JCMS_PARAM_JSON",
+                "historicalPageSize", 2,
+                "historicalMaxPages", 10), null, null, NOW, 0, NOW, NOW);
+    }
+
+    private static final class FakeDiscoverer implements AcquisitionHttpPorts.SourceDiscoverer {
+        final Map<String, List<DiscoveredLink>> pages = new HashMap<>();
+        @Override public List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html) {
+            String marker = new String(html, StandardCharsets.UTF_8);
+            return pages.entrySet().stream().filter(entry -> marker.startsWith(entry.getKey()))
+                .map(Map.Entry::getValue).findFirst()
+                .orElse(List.of(new DiscoveredLink(DETAIL, "2026年公开招聘公告")));
+        }
     }
 
     private static final class FakeFetcher implements AcquisitionHttpPorts.DocumentFetcher {
@@ -188,8 +302,20 @@ class AcquisitionServiceTest {
         byte[] detail = "<html>第一版招聘公告</html>".getBytes(StandardCharsets.UTF_8);
         String detailMediaType = "text/html";
         boolean detailNotModified;
+        boolean historicalListing;
+        int historicalListingStatus = 200;
+        final Set<URI> failedUris = new HashSet<>();
         @Override public FetchedDocument fetch(FetchRequest request) {
             requested.add(request.uri());
+            if (historicalListing && request.uri().getPath().equals("/api/list")) {
+                int page = request.uri().getRawQuery().contains("pageNo%22%3A2") ? 2 : 1;
+                byte[] content = historicalListingStatus == 200
+                    ? ("page-" + page + " count=\\\"3\\\"").getBytes(StandardCharsets.UTF_8)
+                    : new byte[0];
+                return new FetchedDocument(request.uri(), historicalListingStatus, "application/json",
+                    content, null, null);
+            }
+            if (failedUris.contains(request.uri())) throw new AcquisitionHttpPorts.FetchFailedException("test failure");
             if (request.uri().equals(LIST) || request.uri().equals(LIST_API)) return new FetchedDocument(request.uri(), 200, "text/html",
                 "<html>list</html>".getBytes(StandardCharsets.UTF_8), null, null);
             if (request.uri().equals(DETAIL) && detailNotModified) return new FetchedDocument(DETAIL, 304, null, new byte[0], null, null);
@@ -237,6 +363,8 @@ class AcquisitionServiceTest {
         final Map<URI, AcquiredDocument> documents = new LinkedHashMap<>();
         final Map<UUID, SourceCrawlRun> runs = new LinkedHashMap<>();
         final List<AcquisitionChange> changes = new ArrayList<>();
+        final Map<Integer, SourceYearCoverage> coverages = new LinkedHashMap<>();
+        final Map<Integer, Long> targetJobs = new HashMap<>();
         InMemoryStore(RecruitmentSource source) { this.source = source; }
         @Override public List<RecruitmentSource> findDueSources(Instant now, int limit) { return List.of(source); }
         @Override public List<RecruitmentSource> findSources() { return List.of(source); }
@@ -257,10 +385,16 @@ class AcquisitionServiceTest {
         }
         @Override public List<com.careeros.domain.acquisition.SourceYearCoverage> findSourceYearCoverage(
             UUID sourceId, Integer recruitmentYear
-        ) { return List.of(); }
+        ) {
+            return coverages.values().stream()
+                .filter(value -> recruitmentYear == null || value.recruitmentYear() == recruitmentYear).toList();
+        }
         @Override public com.careeros.domain.acquisition.SourceYearCoverage saveSourceYearCoverage(
             com.careeros.domain.acquisition.SourceYearCoverage coverage
-        ) { return coverage; }
+        ) { coverages.put(coverage.recruitmentYear(), coverage); return coverage; }
+        @Override public long countActiveTargetJobs(UUID sourceId, int recruitmentYear) {
+            return targetJobs.getOrDefault(recruitmentYear, 0L);
+        }
     }
 
     private static String sha256(byte[] value) {
