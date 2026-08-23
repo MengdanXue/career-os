@@ -27,7 +27,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(19);
+        assertThat(result.migrationsExecuted).isEqualTo(20);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -116,12 +116,13 @@ class MigrationIntegrationTest {
         }
 
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
-             var foundationTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('candidate_education_record','source_year_coverage')");
+             var foundationTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('candidate_education_record','candidate_employment_record','source_year_coverage')");
              var educationRows = connection.prepareStatement("select completion_status from candidate_education_record where candidate_profile_id='01992f09-0000-7000-8000-000000000001' order by record_order");
              var coverageRows = connection.prepareStatement("select count(*) from source_year_coverage where recruitment_year between 2024 and 2026 and status='NOT_DISCOVERED'");
              var educationFactConstraint = connection.prepareStatement("select pg_get_constraintdef(oid) from pg_constraint where conrelid='candidate_fact_confirmation'::regclass and contype='c' and pg_get_constraintdef(oid) like '%fact_key%'");
-             var candidateSummary = connection.prepareStatement("select highest_education, graduation_year from candidate_profile where id='01992f09-0000-7000-8000-000000000001'")) {
-            try (var rows = foundationTables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
+             var candidateSummary = connection.prepareStatement("select highest_education, graduation_year, birth_day, gender, political_affiliation from candidate_profile where id='01992f09-0000-7000-8000-000000000001'");
+             var planningFacts = connection.prepareStatement("select fact_key, status from candidate_fact_confirmation where candidate_profile_id='01992f09-0000-7000-8000-000000000001' and fact_key in ('BIRTH_DATE','GENDER') order by fact_key")) {
+            try (var rows = foundationTables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(3); }
             try (var rows = educationRows.executeQuery()) {
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("COMPLETED");
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("EXPECTED");
@@ -129,12 +130,21 @@ class MigrationIntegrationTest {
             }
             try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(6); }
             try (var rows = educationFactConstraint.executeQuery()) {
-                assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).contains("EDUCATION_RECORDS");
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).contains("EDUCATION_RECORDS", "GENDER", "POLITICAL_AFFILIATION", "EMPLOYMENT_HISTORY");
             }
             try (var rows = candidateSummary.executeQuery()) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString("highest_education")).isEqualTo("BACHELOR");
                 assertThat(rows.getInt("graduation_year")).isEqualTo(2014);
+                assertThat(rows.getInt("birth_day")).isEqualTo(29);
+                assertThat(rows.getString("gender")).isEqualTo("FEMALE");
+                assertThat(rows.getString("political_affiliation")).isEqualTo("UNKNOWN");
+            }
+            try (var rows = planningFacts.executeQuery()) {
+                assertThat(rows.next()).isTrue(); assertThat(rows.getString("fact_key")).isEqualTo("BIRTH_DATE"); assertThat(rows.getString("status")).isEqualTo("CONFIRMED");
+                assertThat(rows.next()).isTrue(); assertThat(rows.getString("fact_key")).isEqualTo("GENDER"); assertThat(rows.getString("status")).isEqualTo("CONFIRMED");
+                assertThat(rows.next()).isFalse();
             }
         }
     }

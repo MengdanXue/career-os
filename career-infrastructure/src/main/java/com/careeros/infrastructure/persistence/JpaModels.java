@@ -2,6 +2,9 @@ package com.careeros.infrastructure.persistence;
 
 import com.careeros.domain.DomainEnums.*;
 import com.careeros.domain.CandidateFacts;
+import com.careeros.domain.CandidateEmploymentRecord;
+import com.careeros.domain.CandidateEmploymentRecord.EmploymentMode;
+import com.careeros.domain.CandidateEmploymentRecord.VerificationStatus;
 import com.careeros.domain.EducationRecord;
 import com.careeros.domain.EducationRecord.CompletionStatus;
 import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
@@ -132,12 +135,26 @@ public final class JpaModels {
         protected CandidateEducationValue() {}
     }
 
+    @Embeddable
+    public static class CandidateEmploymentValue {
+        @Column(name = "employer_name", nullable = false) String employerName;
+        @Column(name = "role_title", nullable = false) String roleTitle;
+        @Column(name = "starts_on", nullable = false) LocalDate startsOn;
+        @Column(name = "ends_on") LocalDate endsOn;
+        @Enumerated(EnumType.STRING) @Column(name = "employment_mode", nullable = false) EmploymentMode employmentMode;
+        @Enumerated(EnumType.STRING) @Column(name = "verification_status", nullable = false) VerificationStatus verificationStatus;
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "evidence_types", columnDefinition = "jsonb", nullable = false) Set<String> evidenceTypes = new LinkedHashSet<>();
+        protected CandidateEmploymentValue() {}
+    }
+
     @Entity @Table(name = "candidate_profile")
     public static class CandidateProfileEntity extends UuidEntity {
         @Column(name = "display_name", nullable = false) String displayName;
         @Column(name = "birth_year", nullable = false) int birthYear;
         @Column(name = "birth_month", nullable = false) int birthMonth;
         @Column(name = "birth_day") Integer birthDay;
+        @Enumerated(EnumType.STRING) @Column(name = "gender", nullable = false) Gender gender = Gender.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "political_affiliation", nullable = false) PoliticalAffiliation politicalAffiliation = PoliticalAffiliation.UNKNOWN;
         @Enumerated(EnumType.STRING) @Column(name = "highest_education", nullable = false) EducationLevel highestEducation;
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "majors", columnDefinition = "jsonb", nullable = false) Set<String> majors = new LinkedHashSet<>();
         @Column(name = "graduation_year") Integer graduationYear;
@@ -154,6 +171,10 @@ public final class JpaModels {
         @CollectionTable(name = "candidate_education_record", joinColumns = @JoinColumn(name = "candidate_profile_id"))
         @OrderColumn(name = "record_order")
         List<CandidateEducationValue> educationRecords = new ArrayList<>();
+        @ElementCollection(fetch = FetchType.EAGER)
+        @CollectionTable(name = "candidate_employment_record", joinColumns = @JoinColumn(name = "candidate_profile_id"))
+        @OrderColumn(name = "record_order")
+        List<CandidateEmploymentValue> employmentRecords = new ArrayList<>();
         protected CandidateProfileEntity() {}
     }
 

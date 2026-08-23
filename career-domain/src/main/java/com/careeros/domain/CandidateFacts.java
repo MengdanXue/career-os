@@ -27,7 +27,10 @@ public final class CandidateFacts {
         RESEARCH_KEYWORDS,
         TARGET_JOB_FAMILIES,
         PREFERRED_ORGANIZATION_TYPES,
-        EDUCATION_RECORDS
+        EDUCATION_RECORDS,
+        GENDER,
+        POLITICAL_AFFILIATION,
+        EMPLOYMENT_HISTORY
     }
 
     public enum CandidateFactStatus { UNCONFIRMED, CONFIRMED, UNKNOWN }
@@ -135,6 +138,9 @@ public final class CandidateFacts {
             case TARGET_JOB_FAMILIES -> canonical(candidate.targetJobFamilies());
             case PREFERRED_ORGANIZATION_TYPES -> canonical(candidate.preferredOrganizationTypes());
             case EDUCATION_RECORDS -> canonicalEducation(candidate.educationRecords());
+            case GENDER -> candidate.gender().name();
+            case POLITICAL_AFFILIATION -> candidate.politicalAffiliation().name();
+            case EMPLOYMENT_HISTORY -> canonicalEmployment(candidate.employmentRecords());
         };
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -159,6 +165,9 @@ public final class CandidateFacts {
             case TARGET_JOB_FAMILIES -> !candidate.targetJobFamilies().isEmpty();
             case PREFERRED_ORGANIZATION_TYPES -> !candidate.preferredOrganizationTypes().isEmpty();
             case EDUCATION_RECORDS -> !candidate.educationRecords().isEmpty();
+            case GENDER -> candidate.gender() != DomainEnums.Gender.UNKNOWN;
+            case POLITICAL_AFFILIATION -> candidate.politicalAffiliation() != DomainEnums.PoliticalAffiliation.UNKNOWN;
+            case EMPLOYMENT_HISTORY -> !candidate.employmentRecords().isEmpty();
         };
     }
 
@@ -181,6 +190,19 @@ public final class CandidateFacts {
                 nullable(value.institutionName()), nullable(value.countryOrRegion()), value.educationLevel().name(),
                 value.majorName(), nullable(value.graduationYear()), nullable(value.graduationMonth()),
                 value.completionStatus().name(), value.credentialVerificationStatus().name()
+            )));
+        }
+        encodedRecords.replaceAll(CandidateFacts::normalize);
+        encodedRecords.sort(String::compareTo);
+        return encodeOrdered(encodedRecords);
+    }
+
+    private static String canonicalEmployment(Collection<CandidateEmploymentRecord> values) {
+        var encodedRecords = new ArrayList<String>();
+        for (var value : values) {
+            encodedRecords.add(encodeOrdered(java.util.List.of(
+                value.employerName(), value.roleTitle(), value.startsOn().toString(), nullable(value.endsOn()),
+                value.employmentMode().name(), value.verificationStatus().name(), canonical(value.evidenceTypes())
             )));
         }
         encodedRecords.replaceAll(CandidateFacts::normalize);
