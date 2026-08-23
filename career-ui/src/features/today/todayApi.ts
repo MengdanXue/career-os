@@ -1,4 +1,7 @@
 import { requestJson } from '../../api/http'
+import type { PersonalActions } from '../personal/personalTypes'
+
+export type { EvidenceStrength, PersonalAction, PersonalActionKind, PersonalActions } from '../personal/personalTypes'
 
 export type WorkbenchSummary = {
   candidateId: string
@@ -12,4 +15,8 @@ export type WorkbenchSummary = {
 
 export function getWorkbenchSummary(candidateId: string) {
   return requestJson<WorkbenchSummary>(`/api/v1/candidates/${candidateId}/workbench-summary`)
+}
+
+export function getPersonalActions(candidateId: string, asOf: string) {
+  return requestJson<PersonalActions>(`/api/v1/candidates/${candidateId}/personal-actions?asOf=${encodeURIComponent(asOf)}`)
 }

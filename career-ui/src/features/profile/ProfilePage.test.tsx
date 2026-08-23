@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProviders } from '../../app/AppProviders'
@@ -39,6 +39,10 @@ function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
+function evidenceTasks(items: unknown[] = []) {
+  return { candidateId: candidate.id, asOf: '2026-08-23', available: true, message: null, items }
+}
+
 describe('ProfilePage', () => {
   beforeEach(() => localStorage.clear())
   afterEach(() => vi.unstubAllGlobals())
@@ -49,6 +53,7 @@ describe('ProfilePage', () => {
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/v1/candidates')) return json([candidate])
+      if (url.includes('/evidence-tasks')) return json(evidenceTasks())
       if (url.endsWith('/facts') && !init?.method) return json(facts(candidate))
       if (init?.method === 'PUT') return json(saved)
       if (url.endsWith('/facts/confirm')) return json(facts(confirmed, 'CONFIRMED'))
@@ -88,6 +93,7 @@ describe('ProfilePage', () => {
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/v1/candidates')) return json([candidate])
+      if (url.includes('/evidence-tasks')) return json(evidenceTasks())
       if (url.endsWith('/facts') && !init?.method) return json(facts(candidate, 'CONFIRMED'))
       if (init?.method === 'PUT') return json({ ...candidate, ...JSON.parse(String(init.body)), profileVersion: `profile-server-${confirmationAttempts}` })
       if (url.endsWith('/facts/confirm')) {
@@ -118,6 +124,7 @@ describe('ProfilePage', () => {
     const fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/api/v1/candidates')) return json([candidate, selected])
+      if (url.includes('/evidence-tasks')) return json({ ...evidenceTasks(), candidateId: selected.id })
       if (url.endsWith(`/${selected.id}/facts`)) return json(facts(selected, 'CONFIRMED'))
       if (url.endsWith(`/${candidate.id}/facts`)) return json(facts(candidate, 'CONFIRMED'))
       throw new Error(`Unexpected request: ${url}`)
@@ -128,5 +135,56 @@ describe('ProfilePage', () => {
 
     expect(await screen.findByText(/候选人 B ·/)).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining(`/${selected.id}/facts`), expect.anything())
+  })
+
+  it('puts the highest-impact evidence gaps first and never presents legacy years as verified', async () => {
+    const incompleteCandidate = {
+      ...candidate, experienceYears: 7, politicalAffiliation: 'NON_MEMBER', skills: [], researchKeywords: [],
+    }
+    const mixedFacts = {
+      ...facts(incompleteCandidate, 'CONFIRMED'),
+      statuses: {
+        ...facts(incompleteCandidate, 'CONFIRMED').statuses,
+        EXPERIENCE_YEARS: 'UNKNOWN', EMPLOYMENT_HISTORY: 'UNKNOWN', POLITICAL_AFFILIATION: 'UNKNOWN',
+        SKILLS: 'UNKNOWN', RESEARCH_KEYWORDS: 'UNKNOWN',
+      },
+      confirmedCount: 11, unknownCount: 5, decisionReady: true,
+    }
+    const tasks = evidenceTasks([
+      {
+        code: 'VERIFY_EMPLOYMENT_HISTORY', kind: 'EMPLOYMENT', factKey: 'EMPLOYMENT_HISTORY',
+        title: '补齐可核验工作经历', reason: '旧资料记录 7 年，但硬资格只能使用逐段核验的工作经历。',
+        affectedJobCount: 12, evidenceStrength: 'NONE', deepLink: '/profile#employment-history',
+      },
+      {
+        code: 'CONFIRM_POLITICAL_AFFILIATION', kind: 'POLITICAL_AFFILIATION', factKey: 'POLITICAL_AFFILIATION',
+        title: '确认政治面貌', reason: '当前值没有被证据状态确认。',
+        affectedJobCount: 2, evidenceStrength: 'SELF_REPORTED', deepLink: '/profile#political-affiliation',
+      },
+    ])
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/candidates')) return json([incompleteCandidate])
+      if (url.includes('/evidence-tasks')) return json(tasks)
+      if (url.endsWith('/facts')) return json(mixedFacts)
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    render(<AppProviders><ProfilePage /></AppProviders>)
+
+    expect(await screen.findByRole('heading', { name: '最影响资格的缺口' })).toBeInTheDocument()
+    const taskList = screen.getByLabelText('资格证据任务')
+    expect(within(taskList).getAllByRole('article')[0]).toHaveTextContent('补齐可核验工作经历')
+    expect(within(taskList).getAllByRole('article')[0]).toHaveTextContent('影响 12 个岗位')
+    expect(screen.getByText('旧资料记录 7 年；硬资格仍需逐段核验')).toBeInTheDocument()
+    expect(screen.getByText('待确认（旧值：非中共党员）')).toBeInTheDocument()
+    expect(screen.getByText('尚未提供')).toBeInTheDocument()
+
+    await userEvent.click(within(taskList).getAllByRole('button', { name: '处理这项' })[0])
+
+    expect(await screen.findByRole('heading', { name: '修改你的决策资料' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '可核验工作经历' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '添加一段经历' })).toHaveFocus()
   })
 })

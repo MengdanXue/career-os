@@ -1,31 +1,70 @@
-.today-heading { display: flex; justify-content: space-between; gap: 40px; align-items: end; }
+.today-heading { display: flex; justify-content: space-between; gap: 42px; align-items: end; }
+.today-heading > div { max-width: 790px; }
 .today-heading time { flex: 0 0 auto; margin-bottom: 42px; color: var(--muted); font: 11px ui-monospace, monospace; }
-.tier-ledger { display: grid; grid-template-columns: repeat(4, 1fr); margin: 12px 0 32px; border-block: 1px solid var(--line); }
-.tier-ledger a { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; padding: 20px; border-right: 1px solid var(--line); text-decoration: none; }
-.tier-ledger a:last-child { border-right: 0; }
-.tier-ledger span { align-self: center; color: var(--caution); font: 700 12px ui-monospace, monospace; }
-.tier-ledger strong { grid-row: 1 / 3; grid-column: 2; justify-self: end; font: 500 38px Georgia, serif; }
-.tier-ledger small { color: var(--muted); }
-.attention-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-.attention-card { min-height: 260px; padding: 24px; border-top: 4px solid var(--evidence); background: var(--paper); box-shadow: var(--shadow); }
-.attention-card.urgent { border-color: var(--blocker); }
-.attention-card.warning { border-color: var(--caution); }
-.attention-card header { display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); }
-.attention-card header > span { color: var(--muted); font-size: 12px; }
-.attention-card h2 { margin: 20px 0 14px; font: 500 26px Georgia, "Songti SC", serif; }
-.attention-card > p { color: var(--muted); line-height: 1.7; }
-.attention-card ul { margin: 0 0 22px; padding: 0; list-style: none; }
-.attention-card li { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #ded9cc; }
-.attention-card li strong, .attention-card li small { display: block; }
-.attention-card li small { margin-top: 3px; color: var(--muted); }
-.attention-card li span b { font-size: 22px; }
-.attention-card > a { color: var(--tide); font-weight: 700; }
-.calm-state { padding: clamp(36px, 6vw, 70px); border-top: 4px solid var(--eligible); background: var(--paper); box-shadow: var(--shadow); text-align: center; }
+
+.personal-action-list { margin-top: 30px; border-top: 5px solid var(--tide); background: var(--paper); box-shadow: var(--shadow); }
+.personal-action { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; min-height: 190px; border-bottom: 1px solid var(--line); }
+.personal-action:last-child { border-bottom: 0; }
+.action-order { display: grid; place-items: start center; padding-top: 28px; border-right: 1px solid var(--line); color: var(--tide); font: 500 32px/1 Georgia, "Songti SC", serif; }
+.personal-action[data-kind="current_job_deadline"] .action-order { background: #f7e6df; color: var(--blocker); }
+.personal-action[data-kind="candidate_evidence"] .action-order { background: #e7f0eb; color: var(--evidence); }
+.personal-action[data-kind="target_job_change"] .action-order { background: #f7eddf; color: #9a5a25; }
+.action-body { min-width: 0; padding: 26px 30px 24px; }
+.action-body header { display: flex; flex-wrap: wrap; gap: 8px; }
+.action-body header span { padding: 5px 8px; border: 1px solid var(--line); color: var(--muted); font: 700 10px ui-monospace, monospace; letter-spacing: .04em; }
+.action-body header span:first-child { border-color: #8aa69e; color: var(--tide); }
+.action-body h2 { margin: 17px 0 8px; font: 550 clamp(23px, 3vw, 31px)/1.18 Georgia, "Songti SC", serif; }
+.action-body > p { max-width: 740px; margin: 0; color: var(--muted); line-height: 1.7; }
+.action-facts { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; color: #3f514d; font-size: 12px; font-weight: 700; }
+.action-facts time { color: var(--blocker); }
+.action-link { align-self: center; margin-right: 28px; padding: 11px 15px; border: 1px solid var(--tide); color: var(--tide); font-size: 13px; font-weight: 750; text-decoration: none; }
+.action-link:hover { background: var(--tide); color: #fffaf0; }
+.action-link:focus-visible { outline: 3px solid rgba(42,128,107,.28); outline-offset: 4px; }
+
+.calm-state { margin-top: 30px; padding: clamp(36px, 6vw, 70px); border-top: 4px solid var(--eligible); background: var(--paper); box-shadow: var(--shadow); text-align: center; }
 .calm-state h2 { margin: 10px 0; font: 500 32px Georgia, "Songti SC", serif; }
 .calm-state > p:not(.section-number) { max-width: 630px; margin: 0 auto 24px; color: var(--muted); line-height: 1.7; }
 .calm-state div { display: flex; justify-content: center; gap: 18px; }
 .calm-state a { color: var(--tide); font-weight: 700; }
-.partial-warning { margin-top: 18px; padding: 16px 18px; border-left: 4px solid var(--caution); background: #fbf0df; }
+
+.partial-warning { margin: 22px 0 0; padding: 16px 18px; border-left: 4px solid var(--caution); background: #fbf0df; }
 .partial-warning p { margin: 5px 0 0; color: #78532e; }
-@media (max-width: 760px) { .today-heading { display: block; } .today-heading time { display: block; margin: -25px 0 32px; } .tier-ledger, .attention-grid { grid-template-columns: 1fr 1fr; } .tier-ledger a:nth-child(2) { border-right: 0; } }
-@media (max-width: 480px) { .tier-ledger, .attention-grid { grid-template-columns: 1fr; } .tier-ledger a { border-right: 0; border-bottom: 1px solid var(--line); } }
+
+.today-secondary { margin-top: 58px; padding-top: 24px; border-top: 1px solid var(--line); }
+.today-secondary > header { display: flex; justify-content: space-between; gap: 24px; align-items: end; }
+.today-secondary h2 { margin: 4px 0 0; font: 500 29px Georgia, "Songti SC", serif; }
+.today-secondary > header > a { margin-bottom: 4px; color: var(--tide); font-size: 13px; font-weight: 700; }
+.tier-ledger { display: grid; grid-template-columns: repeat(4, 1fr); margin: 18px 0 0; border-block: 1px solid var(--line); }
+.tier-ledger a { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; padding: 18px 20px; border-right: 1px solid var(--line); text-decoration: none; }
+.tier-ledger a:last-child { border-right: 0; }
+.tier-ledger span { align-self: center; color: var(--caution); font: 700 11px ui-monospace, monospace; }
+.tier-ledger strong { grid-row: 1 / 3; grid-column: 2; justify-self: end; font: 500 32px Georgia, serif; }
+.tier-ledger small, .secondary-loading, .secondary-unavailable { color: var(--muted); }
+
+.data-management-entry { display: flex; justify-content: space-between; gap: 28px; align-items: center; margin-top: 34px; padding: 18px 0; border-top: 1px dashed #aaa79d; }
+.data-management-entry strong { font-size: 13px; }
+.data-management-entry p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+.data-management-entry a { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 760px) {
+  .today-heading { display: block; }
+  .today-heading time { display: block; margin: -25px 0 30px; }
+  .personal-action { grid-template-columns: 54px minmax(0, 1fr); }
+  .action-order { padding-top: 23px; font-size: 24px; }
+  .action-body { padding: 22px 20px; }
+  .action-link { grid-column: 2; justify-self: start; margin: 0 0 22px 20px; }
+  .tier-ledger { grid-template-columns: 1fr 1fr; }
+  .tier-ledger a:nth-child(2) { border-right: 0; }
+  .data-management-entry { align-items: start; }
+}
+
+@media (max-width: 480px) {
+  .personal-action { grid-template-columns: 46px minmax(0, 1fr); }
+  .action-order { font-size: 20px; }
+  .action-body { padding: 20px 16px; }
+  .action-body h2 { font-size: 23px; }
+  .action-link { grid-column: 1 / -1; justify-self: stretch; margin: 0 16px 18px; text-align: center; }
+  .tier-ledger { grid-template-columns: 1fr; }
+  .tier-ledger a { border-right: 0; border-bottom: 1px solid var(--line); }
+  .today-secondary > header, .data-management-entry { display: grid; }
+}

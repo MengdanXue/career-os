@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AsyncState } from '../../components/AsyncState'
-import { confirmCandidateFacts, getCandidateFacts, listCandidates, profileKeys, updateCandidate } from './profileApi'
+import type { CandidateEvidenceTask, CandidateEvidenceTasks } from '../personal/personalTypes'
+import { confirmCandidateFacts, getCandidateEvidenceTasks, getCandidateFacts, listCandidates, profileKeys, updateCandidate } from './profileApi'
 import type { CandidateProfile, CandidateProfileFacts, CandidateProfileUpdate } from './profileSchema'
 import { ProfileForm } from './ProfileForm'
 
 const educationLabels: Record<string, string> = { HIGH_SCHOOL: '高中', ASSOCIATE: '专科', BACHELOR: '本科', MASTER: '硕士', DOCTORATE: '博士' }
+const politicalLabels: Record<string, string> = { CPC_MEMBER: '中共党员', CPC_PROBATIONARY: '中共预备党员', NON_MEMBER: '非中共党员', UNKNOWN: '待确认' }
 
 function EducationSummary({ candidate }: { candidate: CandidateProfile }) {
   return <div className="education-summary" aria-label="教育经历">
@@ -23,6 +25,41 @@ function Readiness({ facts }: { facts: CandidateProfileFacts }) {
   </div>
 }
 
+function EvidenceTaskPanel({ data, onSelect }: { data: CandidateEvidenceTasks; onSelect: (task: CandidateEvidenceTask) => void }) {
+  if (data.items.length === 0 && data.available) return null
+  return <section className="profile-evidence-priorities" aria-label="资格证据任务">
+    <header><div><p className="eyebrow">QUALIFICATION GAPS</p><h2>最影响资格的缺口</h2></div><p>这里只列需要你本人补充或确认的事实，按影响岗位数量排序。</p></header>
+    {!data.available && data.message && <p className="profile-task-warning" role="status">{data.message}</p>}
+    <div>{data.items.slice(0, 3).map(task => <article key={task.code}>
+      <span>{task.affectedJobCount > 0 ? `影响 ${task.affectedJobCount} 个岗位` : '影响范围待更新'}</span>
+      <h3>{task.title}</h3><p>{task.reason}</p>
+      <button type="button" onClick={() => onSelect(task)}>处理这项</button>
+    </article>)}</div>
+  </section>
+}
+
+function employmentSummary(candidate: CandidateProfile) {
+  const verified = candidate.employmentRecords.filter(record => record.verificationStatus === 'VERIFIED')
+  if (verified.length > 0) return `${verified.length} 段经历已核验；年限按起止日期合并计算`
+  if (candidate.experienceYears !== null) return `旧资料记录 ${candidate.experienceYears} 年；硬资格仍需逐段核验`
+  return '尚未核验'
+}
+
+function politicalSummary(candidate: CandidateProfile, facts: CandidateProfileFacts) {
+  if (facts.statuses.POLITICAL_AFFILIATION === 'CONFIRMED') return politicalLabels[candidate.politicalAffiliation]
+  return candidate.politicalAffiliation === 'UNKNOWN'
+    ? '待确认'
+    : `待确认（旧值：${politicalLabels[candidate.politicalAffiliation]}）`
+}
+
+function skillSummary(candidate: CandidateProfile, facts: CandidateProfileFacts) {
+  if (candidate.skills.length > 0) {
+    const suffix = facts.statuses.SKILLS === 'CONFIRMED' ? '' : '（待确认）'
+    return `${candidate.skills.join('、')}${suffix}`
+  }
+  return facts.statuses.SKILLS === 'CONFIRMED' ? '明确没有' : '尚未提供'
+}
+
 export function ProfilePage() {
   const client = useQueryClient()
   const candidates = useQuery({ queryKey: profileKeys.list, queryFn: listCandidates })
@@ -33,12 +70,28 @@ export function ProfilePage() {
     queryFn: () => getCandidateFacts(listedCandidate!.id),
     enabled: Boolean(listedCandidate),
   })
+  const evidenceTasks = useQuery({
+    queryKey: profileKeys.evidenceTasks(listedCandidate?.id ?? 'pending'),
+    queryFn: () => getCandidateEvidenceTasks(listedCandidate!.id),
+    enabled: Boolean(listedCandidate),
+  })
   const [savedCandidate, setSavedCandidate] = useState<CandidateProfile | null>(null)
   const [savedFacts, setSavedFacts] = useState<CandidateProfileFacts | null>(null)
   const candidate = savedFacts?.profile ?? savedCandidate ?? candidateFacts.data?.profile ?? listedCandidate
   const facts = savedFacts ?? candidateFacts.data ?? null
   const isConfirmed = facts?.decisionReady === true
   const [editing, setEditing] = useState(false)
+  const [requestedAnchor, setRequestedAnchor] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!editing || !requestedAnchor) return
+    const target = document.getElementById(requestedAnchor)
+    if (!target) return
+    if ('scrollIntoView' in target) target.scrollIntoView({ block: 'center' })
+    const focusTarget = target.querySelector<HTMLElement>('input, select, button')
+    focusTarget?.focus()
+    setRequestedAnchor(null)
+  }, [editing, requestedAnchor])
 
   const save = useMutation({
     mutationFn: async (update: CandidateProfileUpdate) => {
@@ -54,6 +107,10 @@ export function ProfilePage() {
       client.setQueryData<CandidateProfileFacts>(profileKeys.facts(snapshot.profile.id), snapshot)
       client.setQueryData<CandidateProfile[]>(profileKeys.list, current => current?.map(item => item.id === snapshot.profile.id ? snapshot.profile : item) ?? [snapshot.profile])
       await client.invalidateQueries({ predicate: query => query.queryKey[0] === 'decisions' || query.queryKey[0] === 'workbench' })
+      await Promise.all([
+        client.invalidateQueries({ queryKey: profileKeys.evidenceTasks(snapshot.profile.id) }),
+        client.invalidateQueries({ predicate: query => query.queryKey[0] === 'personal-actions' || query.queryKey[0] === 'career-plan' }),
+      ])
     },
     onError: async () => {
       if (!candidate) return
@@ -69,27 +126,43 @@ export function ProfilePage() {
     setEditing(true)
   }
 
+  function handleEvidenceTask(task: CandidateEvidenceTask) {
+    save.reset()
+    setRequestedAnchor(task.deepLink.split('#')[1] ?? null)
+    setEditing(true)
+  }
+
   const loading = candidates.isLoading || (Boolean(listedCandidate) && candidateFacts.isLoading)
   const error = candidates.error ?? candidateFacts.error
 
   return (
     <main className="profile-page page-frame">
       <AsyncState loading={loading} error={error} empty={candidates.isSuccess && !listedCandidate}>
-        {candidate && facts && (!isConfirmed || editing || save.isPending || save.isError) ? <>
-          <p className="eyebrow">PROFILE EVIDENCE · 决策资料</p>
-          <h1>{isConfirmed ? '修改你的决策资料' : '先确认你的决策资料'}</h1>
-          <p className="page-intro">只有你确认过的当前事实才会参与资格和匹配判断。修改字段后，旧确认会自动失效。</p>
-          <Readiness facts={facts} />
-          <ProfileForm candidate={candidate} submitLabel={isConfirmed ? '保存并重新确认' : '确认并开始'} pending={save.isPending} error={save.error} onSubmit={value => save.mutate(value)} />
-        </> : candidate && facts ? <section className="profile-confirmed">
-          <p className="eyebrow">PROFILE READY · 可用于决策</p>
-          <h1>资料已确认</h1>
-          <Readiness facts={facts} />
-          <p>{candidate.displayName} · {educationLabels[candidate.highestEducation] ?? candidate.highestEducation} · {candidate.majors.join('、')}</p>
-          <EducationSummary candidate={candidate} />
-          <dl><div><dt>出生日期</dt><dd>{candidate.birthDate.year}-{String(candidate.birthDate.month).padStart(2, '0')}-{candidate.birthDate.day ? String(candidate.birthDate.day).padStart(2, '0') : '待确认'}</dd></div><div><dt>目标地点</dt><dd>{candidate.preferredLocations.join('、') || '明确不限'}</dd></div><div><dt>工作经历证据</dt><dd>{candidate.employmentRecords.length ? `${candidate.employmentRecords.length} 段` : '尚未核验'}</dd></div><div><dt>技能证据</dt><dd>{candidate.skills.join('、') || '明确未填写'}</dd></div><div><dt>资料版本</dt><dd>{candidate.profileVersion}</dd></div></dl>
-          <button className="secondary-action" type="button" onClick={beginEdit}>修改资料</button>
-        </section> : null}
+        {candidate && facts ? <>
+          {evidenceTasks.data && <EvidenceTaskPanel data={evidenceTasks.data} onSelect={handleEvidenceTask} />}
+          {(!isConfirmed || editing || save.isPending || save.isError) ? <section className="profile-editing">
+            <p className="eyebrow">PROFILE EVIDENCE · 决策资料</p>
+            <h1>{isConfirmed ? '修改你的决策资料' : '先确认你的决策资料'}</h1>
+            <p className="page-intro">只有你确认过的当前事实才会参与资格和匹配判断。修改字段后，旧确认会自动失效。</p>
+            <Readiness facts={facts} />
+            <ProfileForm candidate={candidate} submitLabel={isConfirmed ? '保存并重新确认' : '确认并开始'} pending={save.isPending} error={save.error} onSubmit={value => save.mutate(value)} />
+          </section> : <section className="profile-confirmed">
+            <p className="eyebrow">PROFILE READY · 可用于决策</p>
+            <h1>资料已确认</h1>
+            <Readiness facts={facts} />
+            <p>{candidate.displayName} · {educationLabels[candidate.highestEducation] ?? candidate.highestEducation} · {candidate.majors.join('、')}</p>
+            <EducationSummary candidate={candidate} />
+            <dl>
+              <div><dt>出生日期</dt><dd>{candidate.birthDate.year}-{String(candidate.birthDate.month).padStart(2, '0')}-{candidate.birthDate.day ? String(candidate.birthDate.day).padStart(2, '0') : '待确认'}</dd></div>
+              <div><dt>目标地点</dt><dd>{candidate.preferredLocations.join('、') || '明确不限'}</dd></div>
+              <div><dt>政治面貌</dt><dd>{politicalSummary(candidate, facts)}</dd></div>
+              <div><dt>工作经历证据</dt><dd>{employmentSummary(candidate)}</dd></div>
+              <div><dt>技能证据</dt><dd>{skillSummary(candidate, facts)}</dd></div>
+              <div><dt>资料版本</dt><dd>{candidate.profileVersion}</dd></div>
+            </dl>
+            <button className="secondary-action" type="button" onClick={beginEdit}>修改资料</button>
+          </section>}
+        </> : null}
       </AsyncState>
     </main>
   )

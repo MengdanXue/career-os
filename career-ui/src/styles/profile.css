@@ -6,6 +6,20 @@
 .fact-confirmed { border-color: var(--eligible); color: var(--eligible); }
 .fact-pending { border-color: var(--caution); color: var(--caution); }
 .fact-unknown { color: var(--archive); }
+.profile-evidence-priorities { margin: 0 0 46px; border-top: 5px solid var(--caution); background: var(--paper); box-shadow: var(--shadow); }
+.profile-evidence-priorities > header { display: flex; justify-content: space-between; gap: 30px; align-items: end; padding: 22px 24px; border-bottom: 1px solid var(--line); }
+.profile-evidence-priorities h2 { margin: 4px 0 0; font: 500 30px Georgia, "Songti SC", serif; }
+.profile-evidence-priorities > header > p { max-width: 430px; margin: 0; color: var(--muted); line-height: 1.6; }
+.profile-evidence-priorities > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.profile-evidence-priorities article { display: flex; min-width: 0; min-height: 230px; flex-direction: column; padding: 22px; border-right: 1px solid var(--line); }
+.profile-evidence-priorities article:last-child { border-right: 0; }
+.profile-evidence-priorities article > span { align-self: start; padding: 5px 7px; border: 1px solid #c68a55; color: #8a5227; font: 700 10px ui-monospace, monospace; }
+.profile-evidence-priorities h3 { margin: 18px 0 8px; font: 550 22px/1.25 Georgia, "Songti SC", serif; }
+.profile-evidence-priorities article p { margin: 0 0 20px; color: var(--muted); line-height: 1.65; }
+.profile-evidence-priorities article button { align-self: start; margin-top: auto; padding: 8px 0; border: 0; border-bottom: 1px solid var(--tide); background: transparent; color: var(--tide); font-weight: 750; cursor: pointer; }
+.profile-evidence-priorities article button:focus-visible { outline: 3px solid rgba(42,128,107,.25); outline-offset: 3px; }
+.profile-task-warning { margin: 0; padding: 11px 24px; border-bottom: 1px solid #e4c8a8; background: #fbf0df; color: #78532e; }
+.profile-editing { scroll-margin-top: 20px; }
 .profile-form { max-width: 900px; padding: 30px; border-top: 4px solid var(--tide); background: var(--paper); box-shadow: var(--shadow); }
 .profile-form fieldset { margin: 0 0 30px; padding: 0 0 28px; border: 0; border-bottom: 1px solid var(--line); }
 .profile-form legend { margin-bottom: 18px; color: var(--caution); font: 700 12px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
@@ -40,4 +54,5 @@
 .profile-confirmed dl div:last-child { border-right: 0; }
 .profile-confirmed dt { color: var(--muted); font-size: 12px; }
 .profile-confirmed dd { margin: 7px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .profile-evidence-priorities > header { display: block; } .profile-evidence-priorities > header > p { margin-top: 12px; } .profile-evidence-priorities > div { grid-template-columns: 1fr; } .profile-evidence-priorities article { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); } }
 @media (max-width: 680px) { .form-grid, .profile-confirmed dl { grid-template-columns: 1fr; } .profile-form { padding: 22px 18px; } .profile-confirmed dl div { border-right: 0; border-bottom: 1px solid var(--line); } }

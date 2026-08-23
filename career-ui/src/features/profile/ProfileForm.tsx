@@ -130,12 +130,12 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
           <label>最高学历<select value={fields.highestEducation} onChange={event => set('highestEducation', event.target.value)}><option value="BACHELOR">本科</option><option value="MASTER">硕士</option><option value="DOCTOR">博士</option></select></label>
           <label>出生日期<input aria-label="出生日期" required type="date" value={fields.birthDate} onChange={event => set('birthDate', event.target.value)} /></label>
           <label>性别<select aria-label="性别" value={fields.gender} onChange={event => set('gender', event.target.value as Gender)}><option value="FEMALE">女</option><option value="MALE">男</option><option value="OTHER">其他</option><option value="UNKNOWN">待明确</option></select></label>
-          <label>政治面貌<select aria-label="政治面貌" value={fields.politicalAffiliation} onChange={event => set('politicalAffiliation', event.target.value as PoliticalAffiliation)}><option value="UNKNOWN">待明确</option><option value="CPC_MEMBER">中共党员</option><option value="CPC_PROBATIONARY">中共预备党员</option><option value="NON_MEMBER">非中共党员</option></select></label>
+          <label id="political-affiliation">政治面貌<select aria-label="政治面貌" value={fields.politicalAffiliation} onChange={event => set('politicalAffiliation', event.target.value as PoliticalAffiliation)}><option value="UNKNOWN">待明确</option><option value="CPC_MEMBER">中共党员</option><option value="CPC_PROBATIONARY">中共预备党员</option><option value="NON_MEMBER">非中共党员</option></select></label>
           <label>毕业年份<input inputMode="numeric" value={fields.graduationYear} onChange={event => set('graduationYear', event.target.value)} /></label>
           <label>相关经验（年）<input type="number" min="0" value={fields.experienceYears} onChange={event => set('experienceYears', event.target.value)} /></label>
         </div>
       </fieldset>
-      <fieldset disabled={pending}>
+      <fieldset id="employment-history" disabled={pending}>
         <legend>经历证据</legend>
         <h2 className="form-section-title">可核验工作经历</h2>
         <p className="field-note">只填写能说明起止日期和证明类型的经历。空白比编造时间更可靠。</p>
@@ -171,8 +171,9 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
               <label>学历<select value={record.educationLevel} onChange={event => setEducation(index, { educationLevel: event.target.value as EducationRecord['educationLevel'] })}><option value="ASSOCIATE">专科</option><option value="BACHELOR">本科</option><option value="MASTER">硕士</option><option value="DOCTORATE">博士</option></select></label>
               <label>专业<input aria-label={`教育专业 ${index + 1}`} required value={record.majorName} onChange={event => setEducation(index, { majorName: event.target.value })} /></label>
               <label>毕业年份<input type="number" min="1900" max="2100" value={record.graduationYear ?? ''} onChange={event => setEducation(index, { graduationYear: event.target.value ? Number(event.target.value) : null })} /></label>
+              <label id={record.educationLevel === 'MASTER' ? 'master-graduation' : undefined}>毕业月份<input aria-label={`毕业月份 ${index + 1}`} type="number" min="1" max="12" value={record.graduationMonth ?? ''} onChange={event => setEducation(index, { graduationMonth: event.target.value ? Number(event.target.value) : null })} /><small>预计毕业也请填写月份；月份未知时留空。</small></label>
               <label>完成状态<select value={record.completionStatus} onChange={event => setEducation(index, { completionStatus: event.target.value as EducationRecord['completionStatus'] })}><option value="COMPLETED">已毕业</option><option value="EXPECTED">预计毕业</option></select></label>
-              <label>学历认证<select value={record.credentialVerificationStatus} onChange={event => setEducation(index, { credentialVerificationStatus: event.target.value as EducationRecord['credentialVerificationStatus'] })}><option value="UNKNOWN">待明确</option><option value="PLANNED">计划办理</option><option value="IN_PROGRESS">办理中</option><option value="VERIFIED">已认证</option><option value="NOT_REQUIRED">无需认证</option></select></label>
+              <label id={record.educationLevel === 'MASTER' ? 'credential-verification' : undefined}>学历认证<select value={record.credentialVerificationStatus} onChange={event => setEducation(index, { credentialVerificationStatus: event.target.value as EducationRecord['credentialVerificationStatus'] })}><option value="UNKNOWN">待明确</option><option value="PLANNED">计划办理</option><option value="IN_PROGRESS">办理中</option><option value="VERIFIED">已认证</option><option value="NOT_REQUIRED">无需认证</option></select></label>
             </div>
           </section>)}
         </div>
@@ -180,9 +181,9 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
       <fieldset disabled={pending}>
         <legend>岗位匹配依据</legend>
         <label>专业<input aria-label="专业" required value={fields.majors} onChange={event => set('majors', event.target.value)} /><small>多个专业用逗号分隔；用于检查公告中的专业硬条件。</small></label>
-        <label>专业职称<input aria-label="专业职称" value={fields.professionalTitles} onChange={event => set('professionalTitles', event.target.value)} /><small>没有职称可以留空；确认后会作为明确没有参与判断。</small></label>
-        <label>技能关键词<input aria-label="技能关键词" value={fields.skills} onChange={event => set('skills', event.target.value)} /><small>只填写你能用经历或作品证明的技能。</small></label>
-        <label>研究或业务关键词<input value={fields.researchKeywords} onChange={event => set('researchKeywords', event.target.value)} /></label>
+        <label id="professional-title">专业职称<input aria-label="专业职称" value={fields.professionalTitles} onChange={event => set('professionalTitles', event.target.value)} /><small>留空会按未知处理，不会自动推断为明确没有。</small></label>
+        <label id="skill-evidence">技能关键词<input aria-label="技能关键词" value={fields.skills} onChange={event => set('skills', event.target.value)} /><small>只填写你能用经历或作品证明的技能。</small></label>
+        <label id="research-evidence">研究或业务关键词<input value={fields.researchKeywords} onChange={event => set('researchKeywords', event.target.value)} /></label>
       </fieldset>
       <fieldset disabled={pending}>
         <legend>稳定岗位偏好</legend>
