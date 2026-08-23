@@ -59,8 +59,12 @@ public final class CandidateProfileService {
         for (var key : CandidateFactKey.values()) {
             String currentFingerprint = fingerprint(current, key);
             if (requestedKeys.contains(key)) {
-                next.add(new CandidateFactConfirmation(candidateId, key, CandidateFactStatus.CONFIRMED,
-                    currentFingerprint, CandidateFactSource.USER_CONFIRMED, now, now));
+                var currentValueStatus = CandidateFacts.resolve(current, List.of()).status(key);
+                var confirmedStatus = currentValueStatus == CandidateFactStatus.UNKNOWN
+                    ? CandidateFactStatus.UNKNOWN : CandidateFactStatus.CONFIRMED;
+                next.add(new CandidateFactConfirmation(candidateId, key, confirmedStatus,
+                    currentFingerprint, CandidateFactSource.USER_CONFIRMED,
+                    confirmedStatus == CandidateFactStatus.CONFIRMED ? now : null, now));
             } else {
                 next.add(currentState(current, key, stored.get(key), now));
             }

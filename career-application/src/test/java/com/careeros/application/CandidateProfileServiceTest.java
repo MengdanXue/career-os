@@ -82,6 +82,16 @@ class CandidateProfileServiceTest {
     }
 
     @Test
+    void bulkConfirmationDoesNotTurnAnEmptySkillSetIntoAKnownEmptyFact() {
+        var profiles = new Profiles(candidate("seed-v1", Set.of()));
+        var service = service(profiles, new Confirmations());
+
+        var result = service.confirm(profiles.profile.id(), Set.of(SKILLS));
+
+        assertThat(result.statuses()).containsEntry(SKILLS, UNKNOWN);
+    }
+
+    @Test
     void editingExpectedEducationPreservesBothRecordsAndInvalidatesOnlyEducationFacts() {
         var original = candidate("seed-v1", Set.of("Java"), CompletionStatus.EXPECTED);
         var profiles = new Profiles(original);

@@ -22,12 +22,83 @@ class MigrationIntegrationTest {
         .withPassword("career_os");
 
     @Test
+    void upgradeRepairsOnlyTheKnownEmptyCandidateFactConfirmations() throws Exception {
+        String schema = "repair_empty_candidate_facts";
+        Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema)
+            .defaultSchema(schema)
+            .target(MigrationVersion.fromVersion("23"))
+            .load()
+            .migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var insert = connection.prepareStatement("""
+                 insert into repair_empty_candidate_facts.candidate_fact_confirmation (
+                     candidate_profile_id, fact_key, status, value_fingerprint,
+                     source, confirmed_at, updated_at
+                 ) values
+                     ('01992f09-0000-7000-8000-000000000001', 'SKILLS', 'CONFIRMED',
+                      'ba768b331fd86cec803be04e56ab2b3d4c0e98ef4ee4fcd4e72ad7cce61a1d1f',
+                      'USER_CONFIRMED', now(), now()),
+                     ('01992f09-0000-7000-8000-000000000001', 'RESEARCH_KEYWORDS', 'CONFIRMED',
+                      'ba768b331fd86cec803be04e56ab2b3d4c0e98ef4ee4fcd4e72ad7cce61a1d1f',
+                      'USER_CONFIRMED', now(), now())
+                 on conflict (candidate_profile_id, fact_key) do update set
+                     status=excluded.status,
+                     value_fingerprint=excluded.value_fingerprint,
+                     source=excluded.source,
+                     confirmed_at=excluded.confirmed_at,
+                     updated_at=excluded.updated_at
+                 """)) {
+            assertThat(insert.executeUpdate()).isEqualTo(2);
+        }
+
+        Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema)
+            .defaultSchema(schema)
+            .load()
+            .migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var repaired = connection.prepareStatement("""
+                 select fact_key, status, confirmed_at
+                 from repair_empty_candidate_facts.candidate_fact_confirmation
+                 where candidate_profile_id='01992f09-0000-7000-8000-000000000001'
+                   and fact_key in ('SKILLS', 'RESEARCH_KEYWORDS')
+                 order by fact_key
+                 """);
+             var profile = connection.prepareStatement("""
+                 select skills::text, research_keywords::text
+                 from repair_empty_candidate_facts.candidate_profile
+                 where id='01992f09-0000-7000-8000-000000000001'
+                 """)) {
+            try (var rows = repaired.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("status")).isEqualTo("UNKNOWN");
+                assertThat(rows.getObject("confirmed_at")).isNull();
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("status")).isEqualTo("UNKNOWN");
+                assertThat(rows.getObject("confirmed_at")).isNull();
+            }
+            try (var rows = profile.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("[]");
+                assertThat(rows.getString(2)).isEqualTo("[]");
+            }
+        }
+    }
+
+    @Test
     void migrationsCreateExtractionAndReviewTablesWithPendingQueueIndex() throws Exception {
         var result = Flyway.configure()
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(23);
+        assertThat(result.migrationsExecuted).isEqualTo(24);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
