@@ -14,6 +14,8 @@ import java.net.http.HttpClient;
 import com.careeros.infrastructure.extraction.*;
 import com.careeros.application.workbench.WorkbenchPorts.*;
 import com.careeros.application.workbench.WorkbenchSummaryService;
+import com.careeros.application.planning.CareerPlanPorts.CareerPlanQuery;
+import com.careeros.application.planning.CareerPlanService;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -32,6 +34,7 @@ class ApplicationConfiguration {
     @Bean FitEvaluator fitEvaluator() { return new FitEvaluator(); }
     @Bean StabilityEvaluator stabilityEvaluator() { return new StabilityEvaluator(); }
     @Bean CandidateProfileService candidateProfileService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.CandidateFactConfirmations facts, Clock clock) { return new CandidateProfileService(candidates, facts, clock); }
+    @Bean CareerPlanService careerPlanService(CareerPlanQuery query, Clock clock) { return new CareerPlanService(query, clock); }
     @Bean DecisionIntelligenceService decisionIntelligenceService(RepositoryPorts.CandidateProfiles candidates,RepositoryPorts.CandidateFactConfirmations candidateFacts,RepositoryPorts.EligibilityAssessments assessments,DecisionPorts.JobContexts jobContexts,DecisionPorts.OrganizationStabilityFacts stabilityFacts,DecisionPorts.DecisionSnapshots snapshots,JobAdmissionPorts.JobAdmissions admissions,DecisionPorts.DecisionInputLock inputLock,EligibilityEvaluator eligibilityEvaluator,FitEvaluator fitEvaluator,StabilityEvaluator stabilityEvaluator) { return new DecisionIntelligenceService(candidates,candidateFacts,assessments,jobContexts,stabilityFacts,snapshots,admissions,inputLock,eligibilityEvaluator,fitEvaluator,stabilityEvaluator); }
     @Bean DecisionRankingService decisionRankingService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,DecisionIntelligenceService decisions) { return new DecisionRankingService(jobContexts,admissions,decisions); }
     @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }

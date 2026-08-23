@@ -3,6 +3,7 @@ package com.careeros;
 import com.careeros.application.ExtractionExceptions;
 import com.careeros.application.DecisionExceptions;
 import com.careeros.application.CandidateProfileService;
+import com.careeros.application.planning.CareerPlanService;
 import java.net.URI;
 import java.util.NoSuchElementException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -60,6 +61,10 @@ class ApiExceptionHandler {
     }
     @ExceptionHandler(CandidateProfileService.CandidateProfileNotFoundException.class)
     ResponseEntity<ProblemDetail> profileMissing(RuntimeException exception) {
+        return problem(HttpStatus.NOT_FOUND, "CANDIDATE_NOT_FOUND", "Candidate not found", exception.getMessage());
+    }
+    @ExceptionHandler(CareerPlanService.CandidateNotFoundException.class)
+    ResponseEntity<ProblemDetail> planCandidateMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "CANDIDATE_NOT_FOUND", "Candidate not found", exception.getMessage());
     }
     @ExceptionHandler(DecisionExceptions.JobNotFoundException.class)

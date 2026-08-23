@@ -1,0 +1,119 @@
+package com.careeros.infrastructure.persistence;
+
+import static com.careeros.application.planning.CareerPlanPorts.*;
+import static com.careeros.domain.DomainEnums.*;
+
+import com.careeros.application.RepositoryPorts;
+import com.careeros.application.planning.CareerPlanService.CandidateNotFoundException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
+    private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
+    private static final String TARGET_JOBS_SQL = """
+        select job.id job_id, event.id event_id, event.recruitment_year,
+               event.published_on,
+               coalesce(event.application_starts_on, event.application_starts_at::date) application_starts_on,
+               coalesce(event.application_ends_on, event.application_ends_at::date) application_ends_on,
+               event.written_exam_on, coalesce(job.age_reference_date, event.age_reference_date) age_reference_date,
+               event.written_exam_subjects::text, organization.name organization_name,
+               organization.organization_type, job.title, job.job_family, job.employment_type,
+               job.minimum_education, job.maximum_age, job.minimum_experience_years,
+               job.required_professional_titles::text, job.candidate_scope,
+               concat_ws('；', job.major_requirement_text, job.education_requirement_text,
+                         job.age_requirement_text, job.other_requirements, job.original_requirement_text) requirements,
+               job.source_url,
+               (job.employment_type <> 'UNKNOWN'
+                    and jsonb_array_length(job.exact_majors) > 0
+                    and coalesce(job.original_requirement_text, job.major_requirement_text, job.duties, '') <> '') evidence_complete
+        from job_posting job
+        join recruitment_event event on event.id = job.recruitment_event_id
+        join organization organization on organization.id = job.organization_id
+        where event.recruitment_year between ? and ?
+          and job.active
+          and job.minimum_education in ('BACHELOR', 'MASTER')
+          and job.employment_type not in ('LABOR_DISPATCH', 'PROJECT_BASED')
+          and (
+              job.exact_majors::text ~* '(计算机|软件|网络|数据|人工智能|电子信息)'
+              or coalesce(job.major_requirement_text, '') ~ '(计算机|软件|网络|数据|人工智能|电子信息)'
+          )
+          and (
+              job.job_family in ('SOFTWARE','DATA','AI','CYBERSECURITY','INFORMATION_SYSTEMS','DIGITALIZATION','IT_OPERATIONS','RESEARCH')
+              or concat_ws(' ', job.title, job.duties) ~* '(信息|软件|数据|网络|系统|数字化|计算机|运维|技术)'
+          )
+          and concat_ws(' ', job.title, job.duties, job.other_requirements) !~* '(博士后|教师|教学|临床|护理|销售)'
+        order by event.recruitment_year, event.id, job.id
+        """;
+
+    private static final String COVERAGE_SQL = """
+        select source.code, coverage.recruitment_year, coverage.status, coverage.updated_at
+        from source_year_coverage coverage
+        join recruitment_source source on source.id = coverage.source_id
+        where coverage.recruitment_year between ? and ?
+        order by coverage.recruitment_year, source.code
+        """;
+
+    private final JdbcTemplate jdbc;
+    private final RepositoryPorts.CandidateProfiles candidates;
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    public JdbcCareerPlanQueryAdapter(JdbcTemplate jdbc, RepositoryPorts.CandidateProfiles candidates) {
+        this.jdbc = jdbc;
+        this.candidates = candidates;
+    }
+
+    @Override
+    public CareerPlanData load(UUID candidateId, int fromYear, int toYear, LocalDate asOf) {
+        var candidate = candidates.findById(candidateId)
+            .orElseThrow(() -> new CandidateNotFoundException("Candidate not found: " + candidateId));
+        List<HistoricalJob> jobs = jdbc.query(TARGET_JOBS_SQL, this::mapJob, fromYear, toYear);
+        List<CoverageSignal> coverage = jdbc.query(COVERAGE_SQL, this::mapCoverage, fromYear, toYear);
+        Instant loadedAt = coverage.stream().map(CoverageSignal::updatedAt).max(Instant::compareTo).orElse(Instant.now());
+        return new CareerPlanData(candidate, jobs, coverage, loadedAt);
+    }
+
+    private HistoricalJob mapJob(ResultSet rows, int rowNumber) throws SQLException {
+        return new HistoricalJob(
+            rows.getObject("job_id", UUID.class), rows.getObject("event_id", UUID.class),
+            rows.getInt("recruitment_year"), rows.getObject("published_on", LocalDate.class),
+            rows.getObject("application_starts_on", LocalDate.class), rows.getObject("application_ends_on", LocalDate.class),
+            rows.getObject("written_exam_on", LocalDate.class), rows.getObject("age_reference_date", LocalDate.class),
+            strings(rows.getString("written_exam_subjects")), rows.getString("organization_name"),
+            OrganizationType.valueOf(rows.getString("organization_type")), rows.getString("title"),
+            JobFamily.valueOf(rows.getString("job_family")), EmploymentType.valueOf(rows.getString("employment_type")),
+            EducationLevel.valueOf(rows.getString("minimum_education")), integer(rows, "maximum_age"),
+            integer(rows, "minimum_experience_years"), new LinkedHashSet<>(strings(rows.getString("required_professional_titles"))),
+            rows.getString("candidate_scope"), rows.getString("requirements"), rows.getString("source_url"),
+            rows.getBoolean("evidence_complete"));
+    }
+
+    private CoverageSignal mapCoverage(ResultSet rows, int rowNumber) throws SQLException {
+        return new CoverageSignal(rows.getString("code"), rows.getInt("recruitment_year"),
+            CoverageStatus.valueOf(rows.getString("status")), rows.getTimestamp("updated_at").toInstant());
+    }
+
+    private List<String> strings(String json) throws SQLException {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return mapper.readValue(json, STRING_LIST);
+        } catch (Exception exception) {
+            throw new SQLException("Invalid JSON array in career planning projection", exception);
+        }
+    }
+
+    private static Integer integer(ResultSet rows, String column) throws SQLException {
+        int value = rows.getInt(column);
+        return rows.wasNull() ? null : value;
+    }
+}
