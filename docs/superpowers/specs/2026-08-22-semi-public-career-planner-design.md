@@ -1,6 +1,6 @@
 # Career OS 半体制职业规划工作台设计
 
-**状态：** 待书面确认
+**状态：** 已批准
 
 **阶段：** Phase 5A — Personal Career Planner
 
