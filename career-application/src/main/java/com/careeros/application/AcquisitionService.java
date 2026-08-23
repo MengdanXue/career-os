@@ -218,7 +218,9 @@ public final class AcquisitionService {
         }
         int pageSize = positiveConfiguration(source, "historicalPageSize");
         int maxPages = positiveConfiguration(source, "historicalMaxPages");
-        LinkedHashMap<URI, DiscoveredLink> distinct = new LinkedHashMap<>();
+        LinkedHashMap<URI, DiscoveredLink> rawDistinct = new LinkedHashMap<>();
+        LinkedHashMap<URI, DiscoveredLink> candidateDistinct = new LinkedHashMap<>();
+        Set<String> pageFingerprints = new HashSet<>();
         Integer total = null;
         for (int page = 1; page <= maxPages; page++) {
             URI pageUri = listingPageUri(source, page, pageSize);
@@ -226,14 +228,28 @@ public final class AcquisitionService {
             if (listing.status() != 200 || listing.content().length == 0) {
                 throw new FetchFailedException("Historical list page did not return content: " + listing.status());
             }
-            for (DiscoveredLink link : discoverer.discover(source, listing.finalUri(), listing.content())) {
-                distinct.putIfAbsent(link.uri(), link);
-            }
             int reported = listingTotal(listing.content());
             if (total == null) total = reported;
             else if (total != reported) throw new FetchFailedException("Historical listing total changed during traversal");
+            String pageFingerprint = sha256(listing.content());
+            if (!pageFingerprints.add(pageFingerprint) && (long) (page - 1) * pageSize < total) {
+                throw new FetchFailedException("Historical listing repeated a non-terminal page");
+            }
+            int beforePage = rawDistinct.size();
+            for (DiscoveredLink link : discoverer.discoverAll(source, listing.finalUri(), listing.content())) {
+                rawDistinct.putIfAbsent(link.uri(), link);
+            }
+            for (DiscoveredLink link : discoverer.discover(source, listing.finalUri(), listing.content())) {
+                candidateDistinct.putIfAbsent(link.uri(), link);
+            }
+            if (page > 1 && rawDistinct.size() == beforePage && beforePage < total) {
+                throw new FetchFailedException("Historical listing page did not add any new entry");
+            }
             if ((long) page * pageSize >= total) {
-                return new HistoricalListing(List.copyOf(distinct.values()), total, page, pageSize);
+                if (rawDistinct.size() != total) {
+                    throw new FetchFailedException("Historical listing unique entry count did not match reported total");
+                }
+                return new HistoricalListing(List.copyOf(candidateDistinct.values()), total, page, pageSize);
             }
         }
         throw new FetchFailedException("Historical listing exceeded configured page limit");
@@ -365,7 +381,13 @@ public final class AcquisitionService {
                 processing = processor.process(processCommand(
                     source, link, parent, document, content, announcementTitle));
                 if (processing.successful()) {
-                    document = document.processed(document.contentFingerprint(), processor.version());
+                    if (processing.status() == AcquiredDocumentProcessor.ProcessingStatus.PROCESSED_WITH_ERRORS) {
+                        document = document.processed(document.contentFingerprint(), processor.version() + ":partial");
+                        counts.failed++;
+                        observer.processingFailure(source.code(), document.mediaType());
+                    } else {
+                        document = document.processed(document.contentFingerprint(), processor.version());
+                    }
                 }
                 else {
                     counts.failed++;
@@ -434,7 +456,8 @@ public final class AcquisitionService {
         Object configured = source.configuration().get("allowedHosts");
         if (configured instanceof Collection<?> values) values.stream().map(Object::toString).forEach(hosts::add);
         return new FetchRequest(uri, hosts, prior == null ? null : prior.etag(),
-            prior == null ? null : prior.lastModified(), Duration.ofSeconds(20), maxDocumentBytes);
+            prior == null ? null : prior.lastModified(), Duration.ofSeconds(20), maxDocumentBytes,
+            source.id(), source.minimumRequestInterval());
     }
 
     private static URI listingUri(RecruitmentSource source) {

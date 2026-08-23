@@ -14,8 +14,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class JavaHttpDocumentFetcher implements DocumentFetcher {
     private final HttpClient client;
@@ -24,13 +28,23 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
     private final String userAgent;
     private final int maxRedirects;
     private final int maxRetries;
+    private final Clock clock;
+    private final Map<String, RequestGate> requestGates = new ConcurrentHashMap<>();
 
     public JavaHttpDocumentFetcher(
         HttpClient client, MediaTypeDetector mediaTypes, Sleeper sleeper,
         String userAgent, int maxRedirects, int maxRetries
     ) {
+        this(client, mediaTypes, sleeper, userAgent, maxRedirects, maxRetries, Clock.systemUTC());
+    }
+
+    JavaHttpDocumentFetcher(
+        HttpClient client, MediaTypeDetector mediaTypes, Sleeper sleeper,
+        String userAgent, int maxRedirects, int maxRetries, Clock clock
+    ) {
         this.client=Objects.requireNonNull(client); this.mediaTypes=Objects.requireNonNull(mediaTypes);
         this.sleeper=Objects.requireNonNull(sleeper); this.userAgent=requireText(userAgent);
+        this.clock=Objects.requireNonNull(clock);
         if (maxRedirects < 0 || maxRetries < 0) throw new IllegalArgumentException("limits cannot be negative");
         this.maxRedirects=maxRedirects; this.maxRetries=maxRetries;
     }
@@ -44,6 +58,7 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
         while (true) {
             HttpResponse<InputStream> response;
             try {
+                awaitRequestWindow(request);
                 response = client.send(buildRequest(current, request), HttpResponse.BodyHandlers.ofInputStream());
             } catch (IOException exception) {
                 if (attempt++ < maxRetries) { sleeper.sleep(backoff(attempt)); continue; }
@@ -81,6 +96,24 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
             return new FetchedDocument(current, status, mediaType, content,
                 response.headers().firstValue("ETag").orElse(request.etag()),
                 response.headers().firstValue("Last-Modified").orElse(request.lastModified()));
+        }
+    }
+
+    private void awaitRequestWindow(FetchRequest request) {
+        Duration interval = request.minimumRequestInterval();
+        if (interval.isZero()) return;
+        String key = request.sourceId() == null
+            ? request.uri().getHost().toLowerCase(Locale.ROOT)
+            : request.sourceId().toString();
+        RequestGate gate = requestGates.computeIfAbsent(key, ignored -> new RequestGate());
+        synchronized (gate) {
+            Instant now = clock.instant();
+            if (gate.nextAllowedAt != null && now.isBefore(gate.nextAllowedAt)) {
+                sleeper.sleep(Duration.between(now, gate.nextAllowedAt));
+                now = clock.instant();
+                if (now.isBefore(gate.nextAllowedAt)) now = gate.nextAllowedAt;
+            }
+            gate.nextAllowedAt = now.plus(interval);
         }
     }
 
@@ -144,4 +177,6 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
             };
         }
     }
+
+    private static final class RequestGate { Instant nextAllowedAt; }
 }

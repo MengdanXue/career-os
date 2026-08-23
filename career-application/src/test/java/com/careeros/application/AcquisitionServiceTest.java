@@ -168,6 +168,7 @@ class AcquisitionServiceTest {
         URI detail2026 = URI.create("https://official.example/art/2026/notice-c.html");
         URI detail2023 = URI.create("https://official.example/art/2023/notice-d.html");
         fixture.fetcher.historicalListing = true;
+        fixture.fetcher.historicalListingTotal = 4;
         fixture.discoverer.pages.put("page-1", List.of(
             new DiscoveredLink(detail2026, "2026年公开招聘公告"),
             new DiscoveredLink(detail2025, "2025年公开招聘公告")));
@@ -248,6 +249,58 @@ class AcquisitionServiceTest {
             assertThat(coverage.supportsAbsenceConclusion()).isFalse());
     }
 
+    @Test
+    void historicalBackfillKeepsRowLevelProcessingErrorsPartialAndRetryable() {
+        Fixture fixture = historicalFixture();
+        fixture.store.targetJobs.put(2025, 1L);
+        fixture.processor.rowErrors = true;
+
+        SourceCrawlRun first = fixture.service.backfill(SOURCE_ID, Set.of(2025));
+        SourceCrawlRun second = fixture.service.backfill(SOURCE_ID, Set.of(2025));
+
+        assertThat(first.status()).isEqualTo(RunStatus.PARTIALLY_SUCCEEDED);
+        assertThat(second.status()).isEqualTo(RunStatus.PARTIALLY_SUCCEEDED);
+        assertThat(fixture.store.coverages.get(2025).status())
+            .isEqualTo(SourceYearCoverage.CoverageStatus.PARTIAL);
+        assertThat(fixture.processor.calls).isEqualTo(2);
+        assertThat(fixture.store.documents.values()).allSatisfy(document -> {
+            assertThat(document.lastProcessedFingerprint()).isEqualTo(document.contentFingerprint());
+            assertThat(document.lastProcessorVersion()).endsWith(":partial");
+        });
+    }
+
+    @Test
+    void historicalBackfillRejectsRepeatedNonTerminalListingPages() {
+        Fixture fixture = historicalFixture();
+        fixture.discoverer.pages.put("page-2", fixture.discoverer.pages.get("page-1"));
+
+        SourceCrawlRun run = fixture.service.backfill(SOURCE_ID, Set.of(2024, 2025, 2026));
+
+        assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(fixture.store.coverages.values()).allSatisfy(coverage ->
+            assertThat(coverage.status()).isEqualTo(SourceYearCoverage.CoverageStatus.ACCESS_FAILED));
+    }
+
+    @Test
+    void historicalBackfillReconcilesOfficialTotalBeforeApplyingCandidateTitleFilters() {
+        Fixture fixture = new Fixture();
+        fixture.fetcher.historicalListing = true;
+        fixture.fetcher.historicalListingTotal = 2;
+        DiscoveredLink candidate = new DiscoveredLink(
+            URI.create("https://official.example/art/2026/notice-a.html"), "2026年公开招聘公告");
+        DiscoveredLink excluded = new DiscoveredLink(
+            URI.create("https://official.example/art/2026/result-b.html"), "2026年拟聘人员公示");
+        fixture.discoverer.pages.put("page-1", List.of(candidate));
+        fixture.discoverer.rawPages.put("page-1", List.of(candidate, excluded));
+
+        SourceCrawlRun run = fixture.service.backfill(SOURCE_ID, Set.of(2026));
+
+        assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(run.discoveredCount()).isEqualTo(1);
+        assertThat(fixture.fetcher.requested).contains(candidate.uri());
+        assertThat(fixture.fetcher.requested).doesNotContain(excluded.uri());
+    }
+
     private static Fixture historicalFixture() {
         Fixture fixture = new Fixture();
         fixture.fetcher.historicalListing = true;
@@ -260,26 +313,36 @@ class AcquisitionServiceTest {
     }
 
     private static final class Fixture {
-        final InMemoryStore store = new InMemoryStore(source());
+        final InMemoryStore store;
         final FakeFetcher fetcher = new FakeFetcher();
         final FakeDiscoverer discoverer = new FakeDiscoverer();
         final FakeAttachmentDiscoverer attachments = new FakeAttachmentDiscoverer();
         final FakeProcessor processor = new FakeProcessor();
         final MemoryArtifacts artifacts = new MemoryArtifacts();
-        final AcquisitionService service = new AcquisitionService(store,
-            (code, wait, work) -> Optional.of(work.get()),
-            discoverer,
-            fetcher,
-            attachments, processor, artifacts,
-            (source, after) -> after.plus(Duration.ofDays(1)), Clock.fixed(NOW, ZoneOffset.UTC),
-            26_214_400);
+        final AcquisitionService service;
+
+        Fixture() {
+            this(source(), Clock.fixed(NOW, ZoneOffset.UTC));
+        }
+
+        Fixture(RecruitmentSource source, Clock clock) {
+            store = new InMemoryStore(source);
+            service = new AcquisitionService(store,
+                (code, wait, work) -> Optional.of(work.get()), discoverer, fetcher, attachments,
+                processor, artifacts, (value, after) -> after.plus(Duration.ofDays(1)),
+                AcquisitionObserver.NOOP, clock, 26_214_400);
+        }
     }
 
     private static RecruitmentSource source() {
+        return source(Duration.ZERO);
+    }
+
+    private static RecruitmentSource source(Duration minimumRequestInterval) {
         return new RecruitmentSource(SOURCE_ID, "OFFICIAL", "官方事业单位招聘",
             URI.create("https://official.example/"), LIST, SourceType.OFFICIAL_GOVERNMENT,
             "杭州", CrawlMode.STATIC_HTML, true, "0 0 8 * * *", "Asia/Shanghai",
-            Duration.ZERO, Map.of(
+            minimumRequestInterval, Map.of(
                 "listingApiUri", LIST_API.toString(),
                 "historicalPaginationMode", "JCMS_PARAM_JSON",
                 "historicalPageSize", 2,
@@ -288,11 +351,17 @@ class AcquisitionServiceTest {
 
     private static final class FakeDiscoverer implements AcquisitionHttpPorts.SourceDiscoverer {
         final Map<String, List<DiscoveredLink>> pages = new HashMap<>();
+        final Map<String, List<DiscoveredLink>> rawPages = new HashMap<>();
         @Override public List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html) {
             String marker = new String(html, StandardCharsets.UTF_8);
             return pages.entrySet().stream().filter(entry -> marker.startsWith(entry.getKey()))
                 .map(Map.Entry::getValue).findFirst()
                 .orElse(List.of(new DiscoveredLink(DETAIL, "2026年公开招聘公告")));
+        }
+        @Override public List<DiscoveredLink> discoverAll(RecruitmentSource source, URI pageUri, byte[] html) {
+            String marker = new String(html, StandardCharsets.UTF_8);
+            return rawPages.entrySet().stream().filter(entry -> marker.startsWith(entry.getKey()))
+                .map(Map.Entry::getValue).findFirst().orElseGet(() -> discover(source, pageUri, html));
         }
     }
 
@@ -304,13 +373,14 @@ class AcquisitionServiceTest {
         boolean detailNotModified;
         boolean historicalListing;
         int historicalListingStatus = 200;
+        int historicalListingTotal = 3;
         final Set<URI> failedUris = new HashSet<>();
         @Override public FetchedDocument fetch(FetchRequest request) {
             requested.add(request.uri());
             if (historicalListing && request.uri().getPath().equals("/api/list")) {
                 int page = request.uri().getRawQuery().contains("pageNo%22%3A2") ? 2 : 1;
                 byte[] content = historicalListingStatus == 200
-                    ? ("page-" + page + " count=\\\"3\\\"").getBytes(StandardCharsets.UTF_8)
+                    ? ("page-" + page + " count=\\\"" + historicalListingTotal + "\\\"").getBytes(StandardCharsets.UTF_8)
                     : new byte[0];
                 return new FetchedDocument(request.uri(), historicalListingStatus, "application/json",
                     content, null, null);
@@ -333,6 +403,7 @@ class AcquisitionServiceTest {
     private static final class FakeProcessor implements AcquiredDocumentProcessor {
         int calls;
         boolean failNext;
+        boolean rowErrors;
         String version = "official-facts-v1";
         final List<ProcessDocumentCommand> commands = new ArrayList<>();
         @Override public String version() { return version; }
@@ -340,8 +411,19 @@ class AcquisitionServiceTest {
             calls++;
             commands.add(command);
             if (failNext) { failNext = false; return ProcessingResult.failed("TEST_FAILURE"); }
+            if (rowErrors) return ProcessingResult.importedWithErrors(
+                UUID.nameUUIDFromBytes(command.content()), 1, 0, 0, 0, 1);
             return ProcessingResult.extracted(UUID.nameUUIDFromBytes(command.content()));
         }
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant instant;
+        MutableClock(Instant instant) { this.instant = instant; }
+        void advance(Duration duration) { instant = instant.plus(duration); }
+        @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(ZoneId zone) { return this; }
+        @Override public Instant instant() { return instant; }
     }
 
     private static final class MemoryArtifacts implements ArtifactStore {

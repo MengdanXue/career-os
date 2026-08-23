@@ -19,9 +19,18 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
     @Override
     public List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html) {
         Map<String, Object> config = source.configuration();
-        Pattern article = Pattern.compile(required(config, "articleUrlRegex"));
         Pattern include = Pattern.compile(required(config, "titleIncludeRegex"));
         Pattern exclude = Pattern.compile(required(config, "titleExcludeRegex"));
+        return discoverAll(source, pageUri, html).stream()
+            .filter(link -> include.matcher(link.title()).find())
+            .filter(link -> !exclude.matcher(link.title()).find())
+            .toList();
+    }
+
+    @Override
+    public List<DiscoveredLink> discoverAll(RecruitmentSource source, URI pageUri, byte[] html) {
+        Map<String, Object> config = source.configuration();
+        Pattern article = Pattern.compile(required(config, "articleUrlRegex"));
         String selector = required(config, "linkSelector");
         String allowedHost = source.baseUri().getHost();
         var distinct = new LinkedHashMap<URI, DiscoveredLink>();
@@ -39,9 +48,7 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
             if (title.isEmpty()) title = element.text().strip();
             if (!"https".equalsIgnoreCase(resolved.getScheme())
                 || !allowedHost.equalsIgnoreCase(resolved.getHost())
-                || !article.matcher(resolved.toString()).matches()
-                || !include.matcher(title).find()
-                || exclude.matcher(title).find()) continue;
+                || !article.matcher(resolved.toString()).matches()) continue;
             distinct.putIfAbsent(resolved, new DiscoveredLink(resolved, title));
         }
         var result = new ArrayList<>(distinct.values());

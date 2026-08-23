@@ -2,6 +2,7 @@ package com.careeros.infrastructure.persistence;
 
 import static com.careeros.domain.DomainEnums.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -22,6 +23,126 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class OfficialExcelImportServiceTest {
+    @Test
+    void identifiesApplicantRosterAsANonJobWorkbook() throws Exception {
+        RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
+        OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
+        JobUpsertService upserts = mock(JobUpsertService.class);
+        OfficialJobAdmissionService admissions = mock(OfficialJobAdmissionService.class);
+        when(events.findFirstBySourceUrl(any())).thenReturn(Optional.empty());
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> new OfficialExcelImportService(
+            events, organizations, upserts, admissions).importWorkbook(
+                new ByteArrayInputStream(applicantRosterWorkbook()),
+                new OfficialExcelImportService.ImportCommand(
+                    "2026年公开招聘", "https://example.test/notice", 2026,
+                    LocalDate.of(2026, 3, 17), null, "杭州", EventType.PUBLIC_INSTITUTION)))
+            .isInstanceOf(OfficialExcelImportService.NonJobWorkbookException.class);
+    }
+
+    @Test
+    void identifiesTeachingResearchPlanAsOutsideTheCandidateScope() throws Exception {
+        RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
+        OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
+        JobUpsertService upserts = mock(JobUpsertService.class);
+        OfficialJobAdmissionService admissions = mock(OfficialJobAdmissionService.class);
+        when(events.findFirstBySourceUrl(any())).thenReturn(Optional.empty());
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> new OfficialExcelImportService(
+            events, organizations, upserts, admissions).importWorkbook(
+                new ByteArrayInputStream(teachingResearchWorkbook()),
+                new OfficialExcelImportService.ImportCommand(
+                    "杭州师范大学2025年春季公开招聘", "https://example.test/teaching", 2025,
+                    LocalDate.of(2025, 5, 8), null, "杭州", EventType.UNIVERSITY,
+                    "杭州师范大学")))
+            .isInstanceOf(OfficialExcelImportService.NonTargetWorkbookException.class);
+    }
+
+    @Test
+    void workbookTitleOverridesGenericPublisherAndSuppliesTheOrganization() throws Exception {
+        RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
+        OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
+        JobUpsertService upserts = mock(JobUpsertService.class);
+        OfficialJobAdmissionService admissions = mock(OfficialJobAdmissionService.class);
+        when(events.findFirstBySourceUrl(any())).thenReturn(Optional.empty());
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(organizations.findFirstByName(any())).thenReturn(Optional.empty());
+        when(organizations.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(upserts.stableKey(any())).thenAnswer(invocation ->
+            ((JobUpsertService.NormalizedJob) invocation.getArgument(0)).title());
+        when(upserts.upsert(any())).thenReturn(
+            new JobUpsertResult(1, 0, 0, 0, List.of(UUID.randomUUID())));
+
+        new OfficialExcelImportService(events, organizations, upserts, admissions).importWorkbook(
+            new ByteArrayInputStream(singleInstitutionWorkbook()),
+            new OfficialExcelImportService.ImportCommand(
+                "浙江省卫生健康委员会下属事业单位2026年公开招聘",
+                "https://example.test/health-notice", 2026, LocalDate.of(2026, 3, 17), null,
+                "浙江", EventType.PUBLIC_INSTITUTION, "浙江省卫生健康委员会"));
+
+        ArgumentCaptor<JobUpsertBatch> batch = ArgumentCaptor.forClass(JobUpsertBatch.class);
+        verify(upserts).upsert(batch.capture());
+        assertThat(batch.getValue().jobs()).singleElement().satisfies(job -> {
+            assertThat(job.organizationName()).isEqualTo("浙江省立同德医院");
+            assertThat(job.title()).isEqualTo("信息中心/工程师");
+            assertThat(job.minimumEducation()).isEqualTo(EducationLevel.MASTER);
+            assertThat(job.degreeRequirement()).isEqualTo("硕士研究生/硕士");
+        });
+    }
+
+    @Test
+    void teachingSheetDoesNotDiscardTechnicalSheetFromTheSameWorkbook() throws Exception {
+        assertThat(importedJobs(mixedTeachingAndTechnicalWorkbook()))
+            .singleElement()
+            .satisfies(job -> {
+                assertThat(job.organizationName()).isEqualTo("杭州师范大学信息化中心");
+                assertThat(job.title()).isEqualTo("软件工程师");
+            });
+    }
+
+    @Test
+    void jobTableRemarksAndContactColumnsDoNotTurnItIntoAnApplicantForm() throws Exception {
+        assertThat(importedJobs(jobPlanWithApplicationFormRemark()))
+            .singleElement()
+            .satisfies(job -> assertThat(job.title()).isEqualTo("信息系统工程师"));
+    }
+
+    @Test
+    void technicalRoleInTeachingPlanSheetPreventsTheWholeSheetFromBeingDiscarded() throws Exception {
+        assertThat(importedJobs(singleSheetTeachingAndTechnicalWorkbook()))
+            .extracting(JobUpsertService.NormalizedJob::title)
+            .contains("软件工程师");
+    }
+
+    @Test
+    void unrecognizedSubstantiveSheetPreventsMixedWorkbookFromBeingMarkedNonTarget() throws Exception {
+        RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
+        OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
+        JobUpsertService upserts = mock(JobUpsertService.class);
+        OfficialJobAdmissionService admissions = mock(OfficialJobAdmissionService.class);
+        when(events.findFirstBySourceUrl(any())).thenReturn(Optional.empty());
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> new OfficialExcelImportService(
+            events, organizations, upserts, admissions).importWorkbook(
+                new ByteArrayInputStream(mixedTeachingAndUnrecognizedTechnicalWorkbook()),
+                new OfficialExcelImportService.ImportCommand(
+                    "杭州师范大学2025年公开招聘", "https://example.test/mixed", 2025,
+                    LocalDate.of(2025, 5, 8), null, "杭州", EventType.UNIVERSITY,
+                    "杭州师范大学")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .isNotInstanceOf(OfficialExcelImportService.NonTargetWorkbookException.class);
+    }
+
+    @Test
+    void rowOrganizationOverridesWorkbookPublisherForMultiInstitutionPlans() throws Exception {
+        assertThat(importedJobs(multiInstitutionWorkbook()))
+            .extracting(JobUpsertService.NormalizedJob::organizationName)
+            .containsExactly("浙江省第一医院", "浙江省第二研究院");
+    }
+
     @Test
     void attachesWorkbookEvidenceAndLocatedFieldsToImportedJob() throws Exception {
         RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
@@ -345,6 +466,198 @@ class OfficialExcelImportServiceTest {
             row.createCell(12).setCellValue("1：4");
             row.createCell(13).setCellValue("否");
             row.createCell(14).setCellValue("0571-12345678");
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] applicantRosterWorkbook() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("应聘信息汇总表");
+            sheet.createRow(0).createCell(0).setCellValue("公开招聘应聘信息汇总表");
+            var header = sheet.createRow(1);
+            List<String> headers = List.of("姓名", "性别", "身份证号", "联系电话", "毕业院校");
+            for (int index = 0; index < headers.size(); index++) {
+                header.createCell(index).setCellValue(headers.get(index));
+            }
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] teachingResearchWorkbook() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("教学科研人员计划");
+            sheet.createRow(0).createCell(0).setCellValue("杭州师范大学2025年春季公开招聘教学科研人员计划");
+            var header = sheet.createRow(1);
+            List<String> headers = List.of("岗位名称", "岗位编号", "岗位类别", "招聘人数", "学历学位", "学科/专业");
+            for (int index = 0; index < headers.size(); index++) {
+                header.createCell(index).setCellValue(headers.get(index));
+            }
+            var row = sheet.createRow(2);
+            row.createCell(0).setCellValue("经济学院教师");
+            row.createCell(1).setCellValue("HSD2501");
+            row.createCell(2).setCellValue("教学科研岗");
+            row.createCell(3).setCellValue(1);
+            row.createCell(4).setCellValue("博士研究生");
+            row.createCell(5).setCellValue("应用经济学");
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] singleInstitutionWorkbook() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("计划表");
+            sheet.createRow(0).createCell(0).setCellValue("浙江省立同德医院2026年招聘计划表");
+            var header = sheet.createRow(1);
+            List<String> headers = List.of("部门岗位", "岗位代码", "招聘人数", "专业", "学历/学位");
+            for (int index = 0; index < headers.size(); index++) {
+                header.createCell(index).setCellValue(headers.get(index));
+            }
+            var row = sheet.createRow(2);
+            row.createCell(0).setCellValue("信息中心/工程师");
+            row.createCell(1).setCellValue("IT-01");
+            row.createCell(2).setCellValue(1);
+            row.createCell(3).setCellValue("计算机科学与技术");
+            row.createCell(4).setCellValue("硕士研究生/硕士");
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static List<JobUpsertService.NormalizedJob> importedJobs(byte[] workbook) throws Exception {
+        RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
+        OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
+        JobUpsertService upserts = mock(JobUpsertService.class);
+        OfficialJobAdmissionService admissions = mock(OfficialJobAdmissionService.class);
+        when(events.findFirstBySourceUrl(any())).thenReturn(Optional.empty());
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(organizations.findFirstByName(any())).thenReturn(Optional.empty());
+        when(organizations.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(upserts.stableKey(any())).thenAnswer(invocation -> {
+            var job = (JobUpsertService.NormalizedJob) invocation.getArgument(0);
+            return job.organizationName() + ":" + job.title();
+        });
+        when(upserts.upsert(any())).thenAnswer(invocation -> {
+            JobUpsertBatch batch = invocation.getArgument(0);
+            return new JobUpsertResult(batch.jobs().size(), 0, 0, 0,
+                batch.jobs().stream().map(ignored -> UUID.randomUUID()).toList());
+        });
+        new OfficialExcelImportService(events, organizations, upserts, admissions).importWorkbook(
+            new ByteArrayInputStream(workbook), new OfficialExcelImportService.ImportCommand(
+                "浙江省卫生健康委员会下属事业单位2026年公开招聘",
+                "https://example.test/multi-notice", 2026, LocalDate.of(2026, 3, 17), null,
+                "浙江", EventType.PUBLIC_INSTITUTION, "浙江省卫生健康委员会"));
+        ArgumentCaptor<JobUpsertBatch> batch = ArgumentCaptor.forClass(JobUpsertBatch.class);
+        verify(upserts).upsert(batch.capture());
+        return batch.getValue().jobs();
+    }
+
+    private static byte[] mixedTeachingAndTechnicalWorkbook() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var teaching = workbook.createSheet("教学科研人员计划");
+            teaching.createRow(0).createCell(0).setCellValue("杭州师范大学教学科研人员计划");
+            var teachingHeader = teaching.createRow(1);
+            teachingHeader.createCell(0).setCellValue("岗位名称");
+            teachingHeader.createCell(1).setCellValue("招聘单位");
+            var teachingRow = teaching.createRow(2);
+            teachingRow.createCell(0).setCellValue("教师岗");
+            teachingRow.createCell(1).setCellValue("杭州师范大学");
+
+            var technical = workbook.createSheet("管理与技术岗位");
+            var header = technical.createRow(0);
+            List.of("招聘单位", "岗位名称", "学历/学位", "专业").forEach(value ->
+                header.createCell(header.getLastCellNum() < 0 ? 0 : header.getLastCellNum()).setCellValue(value));
+            var row = technical.createRow(1);
+            row.createCell(0).setCellValue("杭州师范大学信息化中心");
+            row.createCell(1).setCellValue("软件工程师");
+            row.createCell(2).setCellValue("硕士研究生/硕士");
+            row.createCell(3).setCellValue("计算机科学与技术");
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] jobPlanWithApplicationFormRemark() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("招聘岗位表");
+            var header = sheet.createRow(0);
+            List.of("招聘单位", "岗位名称", "专业", "备注", "联系人姓名", "联系电话")
+                .forEach(value -> header.createCell(header.getLastCellNum() < 0 ? 0 : header.getLastCellNum()).setCellValue(value));
+            var row = sheet.createRow(1);
+            row.createCell(0).setCellValue("杭州市信息中心");
+            row.createCell(1).setCellValue("信息系统工程师");
+            row.createCell(2).setCellValue("计算机科学与技术");
+            row.createCell(3).setCellValue("请按要求填写报名表");
+            row.createCell(4).setCellValue("张老师");
+            row.createCell(5).setCellValue("0571-12345678");
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] singleSheetTeachingAndTechnicalWorkbook() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("教学科研人员计划");
+            sheet.createRow(0).createCell(0).setCellValue("教学科研人员计划及信息化技术岗位计划");
+            var header = sheet.createRow(1);
+            List.of("招聘单位", "岗位名称", "专业")
+                .forEach(value -> header.createCell(header.getLastCellNum() < 0 ? 0 : header.getLastCellNum()).setCellValue(value));
+            var teaching = sheet.createRow(2);
+            teaching.createCell(0).setCellValue("杭州师范大学");
+            teaching.createCell(1).setCellValue("经济学院教师岗");
+            teaching.createCell(2).setCellValue("应用经济学");
+            var technical = sheet.createRow(3);
+            technical.createCell(0).setCellValue("杭州师范大学信息化中心");
+            technical.createCell(1).setCellValue("软件工程师");
+            technical.createCell(2).setCellValue("计算机科学与技术");
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] mixedTeachingAndUnrecognizedTechnicalWorkbook() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var teaching = workbook.createSheet("教学科研人员计划");
+            var teachingHeader = teaching.createRow(0);
+            teachingHeader.createCell(0).setCellValue("岗位名称");
+            teachingHeader.createCell(1).setCellValue("招聘单位");
+            var teachingRow = teaching.createRow(1);
+            teachingRow.createCell(0).setCellValue("教师岗");
+            teachingRow.createCell(1).setCellValue("杭州师范大学");
+
+            var technical = workbook.createSheet("信息化岗位计划");
+            var header = technical.createRow(0);
+            header.createCell(0).setCellValue("职务名称");
+            header.createCell(1).setCellValue("所属部门");
+            header.createCell(2).setCellValue("专业门类");
+            var row = technical.createRow(1);
+            row.createCell(0).setCellValue("软件工程师");
+            row.createCell(1).setCellValue("信息化中心");
+            row.createCell(2).setCellValue("计算机类");
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] multiInstitutionWorkbook() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("招聘计划");
+            sheet.createRow(0).createCell(0).setCellValue("浙江省卫生健康委员会2026年招聘计划表");
+            var header = sheet.createRow(1);
+            List<String> headers = List.of("招聘单位", "岗位名称", "学历", "专业");
+            for (int index = 0; index < headers.size(); index++) header.createCell(index).setCellValue(headers.get(index));
+            var first = sheet.createRow(2);
+            first.createCell(0).setCellValue("浙江省第一医院");
+            first.createCell(1).setCellValue("信息中心工程师");
+            first.createCell(2).setCellValue("硕士研究生");
+            first.createCell(3).setCellValue("计算机科学与技术");
+            var second = sheet.createRow(3);
+            second.createCell(0).setCellValue("浙江省第二研究院");
+            second.createCell(1).setCellValue("数据工程师");
+            second.createCell(2).setCellValue("硕士研究生");
+            second.createCell(3).setCellValue("软件工程");
             workbook.write(output);
             return output.toByteArray();
         }

@@ -65,6 +65,13 @@ public interface AcquiredDocumentProcessor {
             return new ProcessingResult(ProcessingStatus.PROCESSED, null, eventId,
                 inserted, updated, unchanged, deactivated, null);
         }
+        public static ProcessingResult importedWithErrors(
+            UUID eventId, int inserted, int updated, int unchanged, int deactivated, int rowErrorCount
+        ) {
+            if (rowErrorCount < 1) throw new IllegalArgumentException("rowErrorCount must be positive");
+            return new ProcessingResult(ProcessingStatus.PROCESSED_WITH_ERRORS, null, eventId,
+                inserted, updated, unchanged, deactivated, "ROW_ERRORS:" + rowErrorCount);
+        }
         public static ProcessingResult unsupported() {
             return new ProcessingResult(ProcessingStatus.UNSUPPORTED, null, null, 0, 0, 0, 0,
                 "UNSUPPORTED_MEDIA_TYPE");
@@ -77,7 +84,9 @@ public interface AcquiredDocumentProcessor {
             return new ProcessingResult(ProcessingStatus.FAILED, null, null, 0, 0, 0, 0, code);
         }
         public boolean successful() {
-            return status == ProcessingStatus.PROCESSED || status == ProcessingStatus.IGNORED;
+            return status == ProcessingStatus.PROCESSED
+                || status == ProcessingStatus.PROCESSED_WITH_ERRORS
+                || status == ProcessingStatus.IGNORED;
         }
         public Map<String, Object> summary() {
             Map<String, Object> summary = new LinkedHashMap<>();
@@ -93,7 +102,7 @@ public interface AcquiredDocumentProcessor {
         }
     }
 
-    enum ProcessingStatus { PROCESSED, IGNORED, UNSUPPORTED, FAILED }
+    enum ProcessingStatus { PROCESSED, PROCESSED_WITH_ERRORS, IGNORED, UNSUPPORTED, FAILED }
 
     private static void requireText(String value, String field) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required");

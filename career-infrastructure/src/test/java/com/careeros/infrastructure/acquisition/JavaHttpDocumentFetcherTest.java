@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,9 +87,40 @@ class JavaHttpDocumentFetcherTest {
         assertThat(sleeper.delays).isNotEmpty();
     }
 
+    @Test void pacesEveryActualHttpAttemptIncludingRetries() {
+        server.stubFor(get("/paced-retry").inScenario("paced-retry")
+            .whenScenarioStateIs(Scenario.STARTED)
+            .willReturn(aResponse().withStatus(503))
+            .willSetStateTo("second"));
+        server.stubFor(get("/paced-retry").inScenario("paced-retry")
+            .whenScenarioStateIs("second").willReturn(ok("done")));
+
+        fetcher.fetch(pacedRequest("/paced-retry"));
+
+        server.verify(2, getRequestedFor(urlEqualTo("/paced-retry")));
+        assertThat(sleeper.delays).anySatisfy(delay ->
+            assertThat(delay).isGreaterThanOrEqualTo(Duration.ofMillis(900)));
+    }
+
+    @Test void pacesRedirectRequestsAtTheActualSendBoundary() {
+        server.stubFor(get("/paced-redirect").willReturn(temporaryRedirect("/paced-final")));
+        server.stubFor(get("/paced-final").willReturn(ok("done")));
+
+        fetcher.fetch(pacedRequest("/paced-redirect"));
+
+        assertThat(sleeper.delays).singleElement().satisfies(delay ->
+            assertThat(delay).isGreaterThanOrEqualTo(Duration.ofMillis(900)));
+    }
+
     private FetchRequest request(String path, String etag, String lastModified, long maxBytes) {
         URI uri = URI.create(server.baseUrl() + path);
         return new FetchRequest(uri, Set.of("localhost"), etag, lastModified, Duration.ofSeconds(20), maxBytes);
+    }
+
+    private FetchRequest pacedRequest(String path) {
+        URI uri = URI.create(server.baseUrl() + path);
+        return new FetchRequest(uri, Set.of("localhost"), null, null, Duration.ofSeconds(20), 1024,
+            UUID.fromString("00000000-0000-0000-0000-000000000001"), Duration.ofSeconds(1));
     }
 
     private static final class RecordingSleeper implements JavaHttpDocumentFetcher.Sleeper {

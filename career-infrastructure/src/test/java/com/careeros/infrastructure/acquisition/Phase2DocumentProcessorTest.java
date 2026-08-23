@@ -74,6 +74,26 @@ class Phase2DocumentProcessorTest {
     }
 
     @Test
+    void workbookRowErrorsAreReportedAsProcessedWithErrors() throws Exception {
+        UUID eventId = UUID.fromString("01992f09-0000-7000-8000-000000000704");
+        when(workbooks.importWorkbook(any(), any())).thenReturn(new ImportResult(
+            eventId, 1, 0, 0, 0,
+            List.of(new OfficialExcelImportService.RowError("岗位计划", 3, "招聘单位为空"))));
+
+        var result = processor.process(command(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", new byte[] {'P','K',3,4}));
+
+        assertThat(result.status()).isEqualTo(ProcessingStatus.PROCESSED_WITH_ERRORS);
+        assertThat(result.successful()).isTrue();
+        assertThat(result.errorCode()).isEqualTo("ROW_ERRORS:1");
+    }
+
+    @Test
+    void processorVersionChangesWhenWorkbookInterpretationChanges() {
+        assertThat(processor.version()).isEqualTo("official-fact-fusion-v6");
+    }
+
+    @Test
     void singleOrganizationAnnouncementSuppliesWorkbookOrganizationContext() throws Exception {
         UUID eventId = UUID.fromString("01992f09-0000-7000-8000-000000000703");
         when(workbooks.importWorkbook(any(), any())).thenReturn(
@@ -114,6 +134,34 @@ class Phase2DocumentProcessorTest {
         assertThat(result.successful()).isTrue();
         assertThat(result.errorCode()).isEqualTo("NON_JOB_WORKBOOK");
         verify(workbooks, never()).importWorkbook(any(), any());
+    }
+
+    @Test
+    void workbookWhoseSchemaIsAnApplicantRosterIsIgnored() throws Exception {
+        when(workbooks.importWorkbook(any(), any())).thenThrow(
+            new OfficialExcelImportService.NonJobWorkbookException("应聘信息汇总表不是岗位计划表"));
+
+        var result = processor.process(command(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            new byte[] {'P','K',3,4},
+            URI.create("https://hrss.hangzhou.gov.cn/files/opaque-id.xlsx")));
+
+        assertThat(result.successful()).isTrue();
+        assertThat(result.errorCode()).isEqualTo("NON_JOB_WORKBOOK_SCHEMA");
+    }
+
+    @Test
+    void workbookWhoseContentIsOnlyTeachingResearchJobsIsIgnored() throws Exception {
+        when(workbooks.importWorkbook(any(), any())).thenThrow(
+            new OfficialExcelImportService.NonTargetWorkbookException("教学科研人员计划不在候选人范围内"));
+
+        var result = processor.process(command(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            new byte[] {'P','K',3,4},
+            URI.create("https://hrss.hangzhou.gov.cn/files/opaque-teaching-plan.xlsx")));
+
+        assertThat(result.successful()).isTrue();
+        assertThat(result.errorCode()).isEqualTo("NON_TARGET_WORKBOOK_SCHEMA");
     }
 
     @Test
@@ -167,6 +215,13 @@ class Phase2DocumentProcessorTest {
         assertThat(Phase2DocumentProcessor.defaultOrganizationName(
             "浙江师范大学附属中学2026年公开招聘工作人员公告"))
             .isEqualTo("浙江师范大学附属中学");
+    }
+
+    @Test
+    void organizationContextRecognizesAStandaloneInstituteName() {
+        assertThat(Phase2DocumentProcessor.defaultOrganizationName(
+            "浙江省教育考试院2024年公开招聘人员公告"))
+            .isEqualTo("浙江省教育考试院");
     }
 
     private static ProcessDocumentCommand command(String mediaType, byte[] content) {

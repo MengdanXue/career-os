@@ -380,6 +380,35 @@ class CareerOsApplicationTest {
     }
 
     @Test
+    void excelImportPersistsEvidenceForValidJobsWhenAnotherRowIsInvalid(
+        @Autowired OfficialExcelImportService imports,
+        @Autowired JdbcTemplate jdbc
+    ) throws Exception {
+        var command = new OfficialExcelImportService.ImportCommand(
+            "2026杭州市混合行测试招聘",
+            "https://example.test/2026/mixed-row-notice",
+            2026,
+            LocalDate.of(2026, 4, 1),
+            LocalDate.of(2026, 4, 10),
+            "浙江杭州",
+            com.careeros.domain.DomainEnums.EventType.PUBLIC_INSTITUTION);
+
+        var result = imports.importWorkbook(workbook(new String[][]{
+            {"", "BROKEN", "缺少单位的岗位", "1", "本科及以上", "计算机科学与技术", "35周岁以下", "事业编制"},
+            {"杭州市混合行测试信息中心", "VALID", "信息系统管理", "1", "本科及以上", "计算机科学与技术", "35周岁以下", "事业编制"}
+        }), command);
+
+        assertThat(result.inserted()).isEqualTo(1);
+        assertThat(result.errors()).hasSize(1);
+        assertThat(jdbc.queryForObject("""
+            select count(*)
+            from job_field_evidence fact
+            join job_posting job on job.id=fact.job_posting_id
+            where job.external_job_code='VALID'
+            """, Integer.class)).isGreaterThan(0);
+    }
+
+    @Test
     void legacyDecisionApiCannotTurnRawJobsIntoOpportunities(@Autowired MockMvc mvc,@Autowired ObjectMapper json,@Autowired JdbcTemplate jdbc) throws Exception {
         var organization=json.readTree(mvc.perform(post("/api/v1/organizations").contentType(MediaType.APPLICATION_JSON).content("""
             {"name":"杭州测试数据中心","organizationType":"PUBLIC_INSTITUTION","province":"浙江","city":"杭州"}

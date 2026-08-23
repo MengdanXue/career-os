@@ -28,11 +28,14 @@ class StaticHtmlSourceDiscovererTest {
             """.getBytes(StandardCharsets.UTF_8);
 
         var links = new StaticHtmlSourceDiscoverer().discover(source, source.entryUri(), html);
+        var rawLinks = new StaticHtmlSourceDiscoverer().discoverAll(source, source.entryUri(), html);
 
         assertThat(links).hasSize(1);
         assertThat(links.getFirst().uri()).hasToString(
             "https://rlsbt.zj.gov.cn/art/2026/3/17/art_1229743683_58950000.html");
         assertThat(links.getFirst().title()).isEqualTo("省属事业单位公开招聘公告");
+        assertThat(rawLinks).extracting(link -> link.title())
+            .containsExactly("省属事业单位公开招聘公告", "拟聘人员公示");
     }
 
     @Test

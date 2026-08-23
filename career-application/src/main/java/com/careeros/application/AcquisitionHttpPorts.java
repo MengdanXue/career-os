@@ -7,12 +7,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 public final class AcquisitionHttpPorts {
     private AcquisitionHttpPorts() {}
 
     public interface SourceDiscoverer {
         List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html);
+
+        default List<DiscoveredLink> discoverAll(RecruitmentSource source, URI pageUri, byte[] html) {
+            return discover(source, pageUri, html);
+        }
     }
 
     public interface DocumentFetcher {
@@ -36,8 +41,17 @@ public final class AcquisitionHttpPorts {
         String etag,
         String lastModified,
         Duration requestTimeout,
-        long maxBytes
+        long maxBytes,
+        UUID sourceId,
+        Duration minimumRequestInterval
     ) {
+        public FetchRequest(
+            URI uri, Set<String> allowedHosts, String etag, String lastModified,
+            Duration requestTimeout, long maxBytes
+        ) {
+            this(uri, allowedHosts, etag, lastModified, requestTimeout, maxBytes, null, Duration.ZERO);
+        }
+
         public FetchRequest {
             Objects.requireNonNull(uri, "uri");
             allowedHosts = allowedHosts == null ? Set.of() : allowedHosts.stream()
@@ -47,6 +61,10 @@ public final class AcquisitionHttpPorts {
                 throw new IllegalArgumentException("requestTimeout must be positive");
             }
             if (maxBytes < 1) throw new IllegalArgumentException("maxBytes must be positive");
+            minimumRequestInterval = minimumRequestInterval == null ? Duration.ZERO : minimumRequestInterval;
+            if (minimumRequestInterval.isNegative()) {
+                throw new IllegalArgumentException("minimumRequestInterval cannot be negative");
+            }
         }
     }
 

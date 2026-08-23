@@ -17,10 +17,10 @@ import org.springframework.stereotype.Component;
 @Component
 public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor {
     private static final Logger LOG = LoggerFactory.getLogger(Phase2DocumentProcessor.class);
-    public static final String PROCESSOR_VERSION = "official-fact-fusion-v5";
+    public static final String PROCESSOR_VERSION = "official-fact-fusion-v6";
     private static final Pattern ANNOUNCEMENT_YEAR = Pattern.compile("20\\d{2}年");
     private static final Pattern ORGANIZATION_SUFFIX = Pattern.compile(
-        ".*(中心|医院|大学|学院|学校|中学|研究院|研究所|集团|公司|协会|图书馆|博物馆|艺术馆|乐团|运动队|厅|局|委员会)$");
+        ".*(中心|医院|大学|学院|学校|中学|研究院|研究所|集团|公司|协会|图书馆|博物馆|艺术馆|乐团|运动队|厅|局|委员会|院|所|站|馆|社|室)$");
     private final ExtractionService extractions;
     private final OfficialExcelImportService workbooks;
     private final OfficialAnnouncementFactService announcementFacts;
@@ -86,10 +86,21 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
         if (differentOrganizations(parentOrganization, attachmentOrganization)) {
             return ProcessingResult.ignored("ATTACHMENT_PARENT_MISMATCH");
         }
-        var result = workbooks.importWorkbook(new ByteArrayInputStream(command.content()), new ImportCommand(
-            command.announcementTitle(), command.parentAnnouncementUri().toString(), command.recruitmentYear(),
-            command.publishedOn(), null, command.defaultLocation(), command.eventType(),
-            parentOrganization, command.documentUri().toString()));
+        OfficialExcelImportService.ImportResult result;
+        try {
+            result = workbooks.importWorkbook(new ByteArrayInputStream(command.content()), new ImportCommand(
+                command.announcementTitle(), command.parentAnnouncementUri().toString(), command.recruitmentYear(),
+                command.publishedOn(), null, command.defaultLocation(), command.eventType(),
+                parentOrganization, command.documentUri().toString()));
+        } catch (OfficialExcelImportService.NonJobWorkbookException ignored) {
+            return ProcessingResult.ignored("NON_JOB_WORKBOOK_SCHEMA");
+        } catch (OfficialExcelImportService.NonTargetWorkbookException ignored) {
+            return ProcessingResult.ignored("NON_TARGET_WORKBOOK_SCHEMA");
+        }
+        if (!result.errors().isEmpty()) {
+            return ProcessingResult.importedWithErrors(result.recruitmentEventId(), result.inserted(), result.updated(),
+                result.unchanged(), result.deactivated(), result.errors().size());
+        }
         return ProcessingResult.imported(result.recruitmentEventId(), result.inserted(), result.updated(),
             result.unchanged(), result.deactivated());
     }
