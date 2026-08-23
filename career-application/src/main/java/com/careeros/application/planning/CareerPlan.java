@@ -37,6 +37,7 @@ public record CareerPlan(
 
     public enum EvidenceStrength { STRONG, MODERATE, LIMITED, INSUFFICIENT }
     public enum RiskSeverity { HIGH, MEDIUM, LOW }
+    public enum QualificationOutcome { ELIGIBLE, CONDITIONALLY_ELIGIBLE, UNCERTAIN, INELIGIBLE }
 
     public record CandidateSnapshot(
         String displayName, LocalDate birthDate, Gender gender, String profileVersion,
@@ -46,7 +47,29 @@ public record CareerPlan(
     public record Scenario(String code, String label, String description, LocalDate effectiveFrom, boolean current) {}
 
     public record RepresentativeJob(
-        UUID jobId, String organizationName, String title, int year, String sourceUrl, boolean evidenceComplete
+        UUID jobId, String organizationName, String title, int year, String sourceUrl, boolean evidenceComplete,
+        List<JobScenarioOutcome> scenarioOutcomes
+    ) {
+        public RepresentativeJob {
+            scenarioOutcomes = copy(scenarioOutcomes);
+        }
+    }
+
+    public record JobScenarioOutcome(
+        String scenarioCode, QualificationOutcome outcome, List<String> reasons
+    ) {
+        public JobScenarioOutcome { reasons = copy(reasons); }
+    }
+
+    public record ScenarioBreakdown(
+        String scenarioCode, int eligible, int conditionallyEligible, int uncertain, int ineligible,
+        List<String> notes
+    ) {
+        public ScenarioBreakdown { notes = copy(notes); }
+    }
+
+    public record ScoreComponent(
+        String code, String label, int score, int weight, String basis, boolean evidenceBacked
     ) {}
 
     public record Route(
@@ -64,12 +87,15 @@ public record CareerPlan(
         List<String> risks,
         List<String> preparationFocus,
         List<RepresentativeJob> representativeJobs,
+        List<ScenarioBreakdown> scenarioBreakdowns,
+        List<ScoreComponent> scoreComponents,
         EvidenceStrength evidenceStrength
     ) {
         public Route {
             organizations = copy(organizations); jobFamilies = copy(jobFamilies); applicableScenarios = copy(applicableScenarios);
             advantages = copy(advantages); risks = copy(risks); preparationFocus = copy(preparationFocus);
-            representativeJobs = copy(representativeJobs);
+            representativeJobs = copy(representativeJobs); scenarioBreakdowns = copy(scenarioBreakdowns);
+            scoreComponents = copy(scoreComponents);
         }
     }
 
@@ -85,10 +111,11 @@ public record CareerPlan(
     public record ActionItem(LocalDate startsOn, LocalDate endsOn, String title, String detail, String status) {}
     public record DataCoverage(
         boolean complete, int sourceYearCount, int completeSourceYearCount, List<String> incompleteSourceYears,
-        List<String> warnings, Instant loadedAt
+        List<String> warnings, List<String> failedSections, Instant loadedAt
     ) {
         public DataCoverage {
-            incompleteSourceYears = copy(incompleteSourceYears); warnings = copy(warnings); Objects.requireNonNull(loadedAt);
+            incompleteSourceYears = copy(incompleteSourceYears); warnings = copy(warnings);
+            failedSections = copy(failedSections); Objects.requireNonNull(loadedAt);
         }
     }
 }

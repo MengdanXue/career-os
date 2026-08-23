@@ -5,22 +5,28 @@ import static com.careeros.domain.DomainEnums.*;
 
 import com.careeros.application.RepositoryPorts;
 import com.careeros.application.planning.CareerPlanService.CandidateNotFoundException;
+import com.careeros.domain.CandidateFacts;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Repository;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Repository
 public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {};
+    private static final TypeReference<List<Integer>> INTEGER_LIST = new TypeReference<>() {};
     private static final String TARGET_JOBS_SQL = """
         select job.id job_id, event.id event_id, event.recruitment_year,
                event.published_on,
@@ -31,6 +37,8 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
                organization.organization_type, job.title, job.job_family, job.employment_type,
                job.minimum_education, job.maximum_age, job.minimum_experience_years,
                job.required_professional_titles::text, job.candidate_scope,
+               job.exact_majors::text, job.accepted_graduation_years::text, job.gender_requirement,
+               event.overseas_degree_rule,
                concat_ws('；', job.major_requirement_text, job.education_requirement_text,
                          job.age_requirement_text, job.other_requirements, job.original_requirement_text) requirements,
                job.source_url,
@@ -66,21 +74,45 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
 
     private final JdbcTemplate jdbc;
     private final RepositoryPorts.CandidateProfiles candidates;
+    private final RepositoryPorts.CandidateFactConfirmations confirmations;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public JdbcCareerPlanQueryAdapter(JdbcTemplate jdbc, RepositoryPorts.CandidateProfiles candidates) {
+        this(jdbc, candidates, null);
+    }
+
+    @Autowired
+    public JdbcCareerPlanQueryAdapter(JdbcTemplate jdbc, RepositoryPorts.CandidateProfiles candidates,
+        RepositoryPorts.CandidateFactConfirmations confirmations) {
         this.jdbc = jdbc;
         this.candidates = candidates;
+        this.confirmations = confirmations;
     }
 
     @Override
     public CareerPlanData load(UUID candidateId, int fromYear, int toYear, LocalDate asOf) {
         var candidate = candidates.findById(candidateId)
             .orElseThrow(() -> new CandidateNotFoundException("Candidate not found: " + candidateId));
-        List<HistoricalJob> jobs = jdbc.query(TARGET_JOBS_SQL, this::mapJob, fromYear, toYear);
-        List<CoverageSignal> coverage = jdbc.query(COVERAGE_SQL, this::mapCoverage, fromYear, toYear);
-        Instant loadedAt = coverage.stream().map(CoverageSignal::updatedAt).max(Instant::compareTo).orElse(Instant.now());
-        return new CareerPlanData(candidate, jobs, coverage, loadedAt);
+        var failedSections = new ArrayList<String>();
+        List<HistoricalJob> jobs;
+        try {
+            jobs = jdbc.query(TARGET_JOBS_SQL, this::mapJob, fromYear, toYear);
+        } catch (DataAccessException exception) {
+            jobs = List.of();
+            failedSections.add("HISTORY");
+        }
+        List<CoverageSignal> coverage;
+        try {
+            coverage = jdbc.query(COVERAGE_SQL, this::mapCoverage, fromYear, toYear);
+        } catch (DataAccessException exception) {
+            coverage = List.of();
+            failedSections.add("COVERAGE");
+        }
+        Instant loadedAt = coverage.stream().map(CoverageSignal::updatedAt).max(Instant::compareTo)
+            .orElse(asOf.atStartOfDay().toInstant(ZoneOffset.UTC));
+        var facts = confirmations == null ? CandidateFacts.resolve(candidate, List.of())
+            : CandidateFacts.resolve(candidate, confirmations.findByCandidateId(candidateId));
+        return new CareerPlanData(candidate, jobs, coverage, loadedAt, failedSections, facts);
     }
 
     private HistoricalJob mapJob(ResultSet rows, int rowNumber) throws SQLException {
@@ -95,7 +127,9 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
             EducationLevel.valueOf(rows.getString("minimum_education")), integer(rows, "maximum_age"),
             integer(rows, "minimum_experience_years"), new LinkedHashSet<>(strings(rows.getString("required_professional_titles"))),
             rows.getString("candidate_scope"), rows.getString("requirements"), rows.getString("source_url"),
-            rows.getBoolean("evidence_complete"));
+            rows.getBoolean("evidence_complete"), strings(rows.getString("exact_majors")),
+            integers(rows.getString("accepted_graduation_years")), rows.getString("gender_requirement"),
+            rows.getString("overseas_degree_rule"));
     }
 
     private CoverageSignal mapCoverage(ResultSet rows, int rowNumber) throws SQLException {
@@ -109,6 +143,15 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
             return mapper.readValue(json, STRING_LIST);
         } catch (Exception exception) {
             throw new SQLException("Invalid JSON array in career planning projection", exception);
+        }
+    }
+
+    private List<Integer> integers(String json) throws SQLException {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return mapper.readValue(json, INTEGER_LIST);
+        } catch (Exception exception) {
+            throw new SQLException("Invalid JSON integer array in career planning projection", exception);
         }
     }
 

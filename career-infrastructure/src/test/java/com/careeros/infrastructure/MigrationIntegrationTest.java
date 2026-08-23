@@ -27,7 +27,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(20);
+        assertThat(result.migrationsExecuted).isEqualTo(23);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -120,8 +120,11 @@ class MigrationIntegrationTest {
              var educationRows = connection.prepareStatement("select completion_status from candidate_education_record where candidate_profile_id='01992f09-0000-7000-8000-000000000001' order by record_order");
              var coverageRows = connection.prepareStatement("select count(*) from source_year_coverage where recruitment_year between 2024 and 2026 and status='NOT_DISCOVERED'");
              var educationFactConstraint = connection.prepareStatement("select pg_get_constraintdef(oid) from pg_constraint where conrelid='candidate_fact_confirmation'::regclass and contype='c' and pg_get_constraintdef(oid) like '%fact_key%'");
-             var candidateSummary = connection.prepareStatement("select highest_education, graduation_year, birth_day, gender, political_affiliation from candidate_profile where id='01992f09-0000-7000-8000-000000000001'");
-             var planningFacts = connection.prepareStatement("select fact_key, status from candidate_fact_confirmation where candidate_profile_id='01992f09-0000-7000-8000-000000000001' and fact_key in ('BIRTH_DATE','GENDER') order by fact_key")) {
+             var candidateSummary = connection.prepareStatement("select display_name, highest_education, graduation_year, birth_day, gender, political_affiliation from candidate_profile where id='01992f09-0000-7000-8000-000000000001'");
+             var planningFacts = connection.prepareStatement("select fact_key, status from candidate_fact_confirmation where candidate_profile_id='01992f09-0000-7000-8000-000000000001' and fact_key in ('BIRTH_DATE','GENDER') order by fact_key");
+             var alignedFacts = connection.prepareStatement("select count(*) from candidate_fact_confirmation where candidate_profile_id='01992f09-0000-7000-8000-000000000001' and fact_key in ('HIGHEST_EDUCATION','MAJORS','GRADUATION_YEAR','PROFESSIONAL_TITLES','PREFERRED_LOCATIONS','ACCEPTED_EMPLOYMENT_TYPES','TARGET_JOB_FAMILIES','PREFERRED_ORGANIZATION_TYPES','EDUCATION_RECORDS') and status='CONFIRMED'");
+             var planningTargets = connection.prepareStatement("select preferred_locations, accepted_employment_types, target_job_families from candidate_profile where id='01992f09-0000-7000-8000-000000000001'");
+             var professionalTitleFingerprint = connection.prepareStatement("select value_fingerprint from candidate_fact_confirmation where candidate_profile_id='01992f09-0000-7000-8000-000000000001' and fact_key='PROFESSIONAL_TITLES'")) {
             try (var rows = foundationTables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(3); }
             try (var rows = educationRows.executeQuery()) {
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("COMPLETED");
@@ -135,6 +138,7 @@ class MigrationIntegrationTest {
             }
             try (var rows = candidateSummary.executeQuery()) {
                 assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("display_name")).isEqualTo("测试候选人");
                 assertThat(rows.getString("highest_education")).isEqualTo("BACHELOR");
                 assertThat(rows.getInt("graduation_year")).isEqualTo(2014);
                 assertThat(rows.getInt("birth_day")).isEqualTo(29);
@@ -145,6 +149,52 @@ class MigrationIntegrationTest {
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString("fact_key")).isEqualTo("BIRTH_DATE"); assertThat(rows.getString("status")).isEqualTo("CONFIRMED");
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString("fact_key")).isEqualTo("GENDER"); assertThat(rows.getString("status")).isEqualTo("CONFIRMED");
                 assertThat(rows.next()).isFalse();
+            }
+            try (var rows = alignedFacts.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(9); }
+            try (var rows = planningTargets.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("preferred_locations")).contains("杭州", "浙江").doesNotContain("广东");
+                assertThat(rows.getString("accepted_employment_types")).contains("ESTABLISHMENT", "PUBLIC_INSTITUTION_FORMAL");
+                assertThat(rows.getString("target_job_families")).contains("INFORMATION_SYSTEMS", "SOFTWARE");
+            }
+            try (var rows = professionalTitleFingerprint.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("fa5bbcbd85cdb0ed57f60533c850108e08e6f358db505bdf13ec455ffa9f299c");
+            }
+        }
+    }
+
+    @Test
+    void planningFactAlignmentDoesNotOverwriteAnEditedCandidate() throws Exception {
+        String schema = "edited_candidate_upgrade";
+        var configuration = Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema).defaultSchema(schema);
+        configuration.target(MigrationVersion.fromVersion("21")).load().migrate();
+        String customFingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var edit = connection.prepareStatement("update " + schema + ".candidate_profile set profile_version='user-edited-v1', preferred_locations='[\"宁波\"]'::jsonb where id='01992f09-0000-7000-8000-000000000001'");
+             var confirm = connection.prepareStatement("insert into " + schema + ".candidate_fact_confirmation(candidate_profile_id,fact_key,status,value_fingerprint,source,confirmed_at,updated_at) values ('01992f09-0000-7000-8000-000000000001','PROFESSIONAL_TITLES','CONFIRMED',?,'USER_CONFIRMED',now(),now())")) {
+            edit.executeUpdate();
+            confirm.setString(1, customFingerprint);
+            confirm.executeUpdate();
+        }
+
+        configuration.target(MigrationVersion.LATEST).load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var candidate = connection.prepareStatement("select profile_version, preferred_locations from " + schema + ".candidate_profile where id='01992f09-0000-7000-8000-000000000001'");
+             var fact = connection.prepareStatement("select value_fingerprint from " + schema + ".candidate_fact_confirmation where candidate_profile_id='01992f09-0000-7000-8000-000000000001' and fact_key='PROFESSIONAL_TITLES'")) {
+            try (var rows = candidate.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("profile_version")).isEqualTo("user-edited-v1");
+                assertThat(rows.getString("preferred_locations")).contains("宁波").doesNotContain("杭州");
+            }
+            try (var rows = fact.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo(customFingerprint);
             }
         }
     }

@@ -73,6 +73,7 @@ class CandidateProfileTransactionIntegrationTest {
     ) {
         var candidate = candidates.findById(CANDIDATE_ID).orElseThrow();
 
+        assertThat(candidate.displayName()).isEqualTo("测试候选人");
         assertThat(candidate.educationRecords()).hasSize(2);
         assertThat(candidate.educationRecords().get(0).majorName()).isEqualTo("计算机科学与技术");
         assertThat(candidate.educationRecords().get(0).completionStatus().name()).isEqualTo("COMPLETED");

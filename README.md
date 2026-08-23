@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-工程基础已经可以运行，但完整业务 MVP 尚未验收完成。当前版本首先保证结论正确：采集到的记录只是“原始岗位”，只有经过解析、证据核验、目标范围确认并明确准入后，才会成为可排名、可推送的“可信机会”。因此，原始岗位数量不会再被当作 T1/T2/T3 机会数量。
+工程基础与个人半体制规划工作台已经可以运行，但官方历史来源仍在持续补采，不能把当前岗位数量理解为完整市场总量。当前版本首先保证结论正确：采集到的记录只是“原始岗位”，只有经过解析、证据核验、目标范围确认并明确准入后，才会成为可排名、可推送的“可信机会”。因此，原始岗位数量不会再被当作 T1/T2/T3 机会数量。
 
 当前主干具备：
 
@@ -13,6 +13,7 @@
 - Phase 3A：浙江省、杭州市人社官方源定时增量采集；稳定公告键、SHA-256 内容指纹、条件请求、附件路由、PostgreSQL 分布式锁，以及新增/变更/下线变化流。
 - Phase 4A：确定性硬资格门槛、六维岗位匹配、证据感知稳定性、T1/T2/T3 分层、版本化决策快照、排名 API，以及带无模型回退的受控自然语言查询入口；这些能力只对已准入岗位运行。
 - Phase 4B：可运行的 React 决策工作台，覆盖资料入口、今日变化、机会池、岗位档案、岗位库更新、人工复核和 Agent 入口，并明确区分原始岗位库与可信机会池。
+- Phase 5A：个人半体制职业规划工作台。基于 1992-12-31 完整生日、本科已完成、2027 境外硕士预计毕业等可核验事实，按“本科阶段 / 硕士待认证 / 硕士已认证”三种资格场景，生成四条路线、逐年年龄窗口、2024—2026 历史供给、招聘与笔试节奏、资格风险和行动时间线。
 - Opportunity Admission Gate（V9/V10）：持久化记录解析质量、目标范围、准入原因和人工核验状态；岗位内容变化后自动撤销旧准入，用工身份未知时禁止进入机会池，避免过期或不完整结论继续排名。
 - Java 21：编译与运行均使用 Java 21，Spring 任务执行器启用虚拟线程，适合并发下载、文档解析和数据库等待等 I/O 密集工作。
 
@@ -90,9 +91,10 @@ java -jar career-web\target\career-web-0.1.0-SNAPSHOT.jar
 
 运行后可访问：
 
+- 我的半体制规划：`http://localhost:8080/plan`
 - 健康检查：`http://localhost:8080/actuator/health`
 - OpenAPI：`http://localhost:8080/v3/api-docs`
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - 指标：`http://localhost:8080/actuator/metrics`
 
-接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md)、[Phase 3 增量采集 API](docs/PHASE3_API.md)、[Phase 4A 决策智能与 Agent API](docs/PHASE4A_API.md) 和 [Phase 4B 决策工作台](docs/PHASE4B_WORKBENCH.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。
+接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md)、[Phase 3 增量采集 API](docs/PHASE3_API.md)、[Phase 4A 决策智能与 Agent API](docs/PHASE4A_API.md)、[Phase 4B 决策工作台](docs/PHASE4B_WORKBENCH.md) 和 [Phase 5A 半体制职业规划](docs/PHASE5A_CAREER_PLANNER.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。

@@ -1,12 +1,17 @@
 import { queryKeys, requestJson } from '../../api/http'
 
 export type Scenario = { code: string; label: string; description: string; effectiveFrom: string | null; current: boolean }
-export type RepresentativeJob = { jobId: string; organizationName: string; title: string; year: number; sourceUrl: string; evidenceComplete: boolean }
+export type QualificationOutcome = 'ELIGIBLE' | 'CONDITIONALLY_ELIGIBLE' | 'UNCERTAIN' | 'INELIGIBLE'
+export type JobScenarioOutcome = { scenarioCode: string; outcome: QualificationOutcome; reasons: string[] }
+export type RepresentativeJob = { jobId: string; organizationName: string; title: string; year: number; sourceUrl: string; evidenceComplete: boolean; scenarioOutcomes: JobScenarioOutcome[] }
+export type ScenarioBreakdown = { scenarioCode: string; eligible: number; conditionallyEligible: number; uncertain: number; ineligible: number; notes: string[] }
+export type ScoreComponent = { code: string; label: string; score: number; weight: number; basis: string; evidenceBacked: boolean }
 export type Route = {
   code: string; label: string; priorityScore: number; priorityLabel: string; historicalJobCount: number
   eventCount: number; formalJobCount: number; organizations: string[]; jobFamilies: string[]
   applicableScenarios: string[]; advantages: string[]; risks: string[]; preparationFocus: string[]
-  representativeJobs: RepresentativeJob[]; evidenceStrength: 'STRONG' | 'MODERATE' | 'LIMITED' | 'INSUFFICIENT'
+  representativeJobs: RepresentativeJob[]; scenarioBreakdowns: ScenarioBreakdown[]; scoreComponents: ScoreComponent[]
+  evidenceStrength: 'STRONG' | 'MODERATE' | 'LIMITED' | 'INSUFFICIENT'
 }
 export type CareerPlan = {
   candidateId: string; targetYear: number; asOf: string
@@ -18,12 +23,58 @@ export type CareerPlan = {
   historicalSummary: { year: number; jobCount: number; eventCount: number; formalJobCount: number; coverageComplete: boolean }[]
   qualificationRisks: { code: string; severity: 'HIGH' | 'MEDIUM' | 'LOW'; title: string; detail: string }[]
   actionTimeline: { startsOn: string; endsOn: string; title: string; detail: string; status: string }[]
-  dataCoverage: { complete: boolean; sourceYearCount: number; completeSourceYearCount: number; incompleteSourceYears: string[]; warnings: string[]; loadedAt: string }
+  dataCoverage: { complete: boolean; sourceYearCount: number; completeSourceYearCount: number; incompleteSourceYears: string[]; warnings: string[]; failedSections: string[]; loadedAt: string }
   generatedAt: string; algorithmVersion: string
 }
 
 export function getCareerPlan(candidateId: string, targetYear: number) {
   return requestJson<CareerPlan>(`/api/v1/candidates/${candidateId}/career-plan?targetYear=${targetYear}`)
+}
+
+export type PlanningJob = {
+  id: string; recruitmentEventId: string; organizationId: string; externalJobCode: string | null
+  title: string; jobFamily: string; employmentType: string; location: string | null; headcount: number
+  minimumEducation: string; exactMajors: string[]; acceptedGraduationYears: number[]
+  maximumAge: number | null; ageReferenceDate: string | null; minimumExperienceYears: number | null
+  requiredProfessionalTitles: string[]; duties: string | null; sourceUrl: string
+  supervisingDepartment: string | null; jobCategory: string | null; jobGrade: string | null
+  educationRequirementText: string | null; degreeRequirement: string | null; majorRequirementText: string | null
+  ageRequirementText: string | null; genderRequirement: string | null; candidateScope: string | null
+  otherRequirements: string | null; originalRequirementText: string | null; interviewRatio: string | null
+  professionalTestRequired: boolean | null; contactPhone: string | null
+}
+
+export type PlanningEvent = {
+  id: string; title: string; recruitmentYear: number; publishedOn: string | null
+  applicationStartsOn: string | null; applicationEndsOn: string | null
+  applicationStartsAt?: string | null; applicationEndsAt?: string | null
+  sourceUrl: string; registrationUrl: string | null; writtenExamOn: string | null
+  writtenExamSubjects: string[]; graduateRule: string | null; overseasDegreeRule: string | null
+  experienceEvidenceRule: string | null; employmentStatement: string | null; interviewRule: string | null
+}
+
+export type PlanningOrganization = {
+  id: string; name: string; organizationType: string; province: string | null; city: string | null
+  district: string | null; officialWebsite: string | null
+}
+
+export type PlanningJobDetail = {
+  job: PlanningJob; event: PlanningEvent; organization: PlanningOrganization
+  scenarioOutcomes: JobScenarioOutcome[]
+}
+
+export async function getPlanningJobDetail(jobId: string, candidateId: string, targetYear: number): Promise<PlanningJobDetail> {
+  const [job, plan] = await Promise.all([
+    requestJson<PlanningJob>(`/api/v1/jobs/${jobId}`),
+    getCareerPlan(candidateId, targetYear),
+  ])
+  const [event, organization] = await Promise.all([
+    requestJson<PlanningEvent>(`/api/v1/recruitment-events/${job.recruitmentEventId}`),
+    requestJson<PlanningOrganization>(`/api/v1/organizations/${job.organizationId}`),
+  ])
+  const representative = plan.recommendedRoutes.flatMap(route => route.representativeJobs)
+    .find(value => value.jobId === jobId)
+  return { job, event, organization, scenarioOutcomes: representative?.scenarioOutcomes ?? [] }
 }
 
 export const planningKeys = { plan: queryKeys.careerPlan }

@@ -3,6 +3,9 @@ package com.careeros;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.not;
 
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,6 +92,8 @@ class CareerPlanEndToEndTest {
             .andExpect(jsonPath("$.recommendedRoutes[0].code").value("PUBLIC_TECH"))
             .andExpect(jsonPath("$.recommendedRoutes[0].representativeJobs[0].jobId")
                 .value(JOB_ID.toString()))
+            .andExpect(jsonPath("$.recommendedRoutes[0].representativeJobs[0].scenarioOutcomes[0].reasons[*]",
+                everyItem(not(containsString("尚未确认")))))
             .andExpect(jsonPath("$.historicalSummary[2].jobCount").value(1))
             .andExpect(jsonPath("$.recruitmentWindows[0].month").value(3))
             .andExpect(jsonPath("$.examPatterns[0].subject").exists())

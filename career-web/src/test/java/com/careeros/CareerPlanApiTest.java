@@ -41,10 +41,13 @@ class CareerPlanApiTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.currentScenario.code").value("PRE_GRADUATION"))
             .andExpect(jsonPath("$.recommendedRoutes").isArray())
+            .andExpect(jsonPath("$.recommendedRoutes[0].scenarioBreakdowns").isArray())
+            .andExpect(jsonPath("$.recommendedRoutes[0].scoreComponents[0].weight").value(30))
+            .andExpect(jsonPath("$.futureScenarios[0].effectiveFrom").doesNotExist())
             .andExpect(jsonPath("$.ageWindows").isArray())
             .andExpect(jsonPath("$.qualificationRisks").isArray())
             .andExpect(jsonPath("$.dataCoverage.complete").value(false))
-            .andExpect(jsonPath("$.algorithmVersion").value("career-plan-v1"));
+            .andExpect(jsonPath("$.algorithmVersion").value("career-plan-v2"));
 
         mvc.perform(get("/api/v1/candidates/{candidateId}/career-plan", CANDIDATE_ID)
                 .param("targetYear", "2032").param("asOf", "2026-08-22"))

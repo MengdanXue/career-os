@@ -25,6 +25,12 @@ class SpaServingTest {
         mvc.perform(get("/opportunities/example-job"))
             .andExpect(status().isOk())
             .andExpect(forwardedUrl("/index.html"));
+        mvc.perform(get("/plan"))
+            .andExpect(status().isOk())
+            .andExpect(forwardedUrl("/index.html"));
+        mvc.perform(get("/jobs/example-job"))
+            .andExpect(status().isOk())
+            .andExpect(forwardedUrl("/index.html"));
     }
 
     @Test

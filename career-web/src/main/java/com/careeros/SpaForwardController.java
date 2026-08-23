@@ -8,6 +8,8 @@ final class SpaForwardController {
     @GetMapping({
         "/",
         "/today",
+        "/plan",
+        "/jobs/{jobId:[^.]+}",
         "/opportunities",
         "/opportunities/{jobId:[^.]+}",
         "/updates",
