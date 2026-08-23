@@ -1,8 +1,11 @@
 # Career OS 半体制职业规划工作台设计
 
-**状态：** 待书面确认  
-**阶段：** Phase 5A — Personal Career Planner  
-**目标年度：** 2027，行动范围覆盖 2026-08 至 2028-12  
+**状态：** 待书面确认
+
+**阶段：** Phase 5A — Personal Career Planner
+
+**目标年度：** 2027，行动范围覆盖 2026-08 至 2028-12
+
 **上位规范：** `docs/CAREER_OS_MASTER_SPEC.md`、`docs/superpowers/specs/2026-08-22-historical-opportunity-forecast-design.md`
 
 ## 1. 目标与成功标准
