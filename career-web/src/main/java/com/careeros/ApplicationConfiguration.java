@@ -16,11 +16,21 @@ import com.careeros.application.workbench.WorkbenchPorts.*;
 import com.careeros.application.workbench.WorkbenchSummaryService;
 import com.careeros.application.planning.CareerPlanPorts.CareerPlanQuery;
 import com.careeros.application.planning.CareerPlanService;
+import com.careeros.application.personal.CandidateEvidenceTaskPorts.CandidateSnapshot;
+import com.careeros.application.personal.CandidateEvidenceTaskPorts.QualificationImpact;
+import com.careeros.application.personal.CandidateEvidenceTaskService;
+import com.careeros.application.personal.PersonalActionPorts.CurrentJobSignal;
+import com.careeros.application.personal.PersonalActionPorts.TargetJobChangeSnapshot;
+import com.careeros.application.personal.PersonalActionService;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +45,31 @@ class ApplicationConfiguration {
     @Bean StabilityEvaluator stabilityEvaluator() { return new StabilityEvaluator(); }
     @Bean CandidateProfileService candidateProfileService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.CandidateFactConfirmations facts, Clock clock) { return new CandidateProfileService(candidates, facts, clock); }
     @Bean CareerPlanService careerPlanService(CareerPlanQuery query, Clock clock) { return new CareerPlanService(query, clock); }
+    @Bean CandidateEvidenceTaskService candidateEvidenceTaskService(
+        CandidateProfileService candidateProfiles,
+        DecisionRankingService rankings
+    ) {
+        var facts = (com.careeros.application.personal.CandidateEvidenceTaskPorts.CandidateFactsSnapshot) candidateId -> {
+            var snapshot = candidateProfiles.facts(candidateId);
+            return new CandidateSnapshot(snapshot.profile(), snapshot.statuses());
+        };
+        var impact = (com.careeros.application.personal.CandidateEvidenceTaskPorts.CandidateQualificationImpact)
+            (candidateId, asOf) -> qualificationImpact(rankings, candidateId, asOf);
+        return new CandidateEvidenceTaskService(facts, impact);
+    }
+    @Bean PersonalActionService personalActionService(
+        DecisionRankingService rankings,
+        CandidateEvidenceTaskService evidenceTasks
+    ) {
+        var jobs = (com.careeros.application.personal.PersonalActionPorts.CurrentJobs) (candidateId, asOf) ->
+            ranking(rankings, candidateId, asOf).stream().map(bundle -> new CurrentJobSignal(
+                bundle.decision().jobPostingId(), bundle.jobContext().job().title(),
+                bundle.jobContext().organization().name(), bundle.decision().eligibilityStatus(),
+                bundle.decision().tier(), bundle.jobContext().event().applicationEndsOn())).toList();
+        var changes = (com.careeros.application.personal.PersonalActionPorts.TargetJobChanges) (candidateId, asOf) ->
+            new TargetJobChangeSnapshot(true, null, List.of());
+        return new PersonalActionService(jobs, evidenceTasks::tasks, changes);
+    }
     @Bean DecisionIntelligenceService decisionIntelligenceService(RepositoryPorts.CandidateProfiles candidates,RepositoryPorts.CandidateFactConfirmations candidateFacts,RepositoryPorts.EligibilityAssessments assessments,DecisionPorts.JobContexts jobContexts,DecisionPorts.OrganizationStabilityFacts stabilityFacts,DecisionPorts.DecisionSnapshots snapshots,JobAdmissionPorts.JobAdmissions admissions,DecisionPorts.DecisionInputLock inputLock,EligibilityEvaluator eligibilityEvaluator,FitEvaluator fitEvaluator,StabilityEvaluator stabilityEvaluator) { return new DecisionIntelligenceService(candidates,candidateFacts,assessments,jobContexts,stabilityFacts,snapshots,admissions,inputLock,eligibilityEvaluator,fitEvaluator,stabilityEvaluator); }
     @Bean DecisionRankingService decisionRankingService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,DecisionIntelligenceService decisions) { return new DecisionRankingService(jobContexts,admissions,decisions); }
     @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }
@@ -113,5 +148,55 @@ class ApplicationConfiguration {
     ) {
         return new AcquisitionService(store, sourceRunLock, sourceDiscoverer, acquisitionDocumentFetcher,
             attachmentDiscoverer, processor, artifacts, nextRunCalculator, acquisitionObserver, clock, maxDocumentBytes);
+    }
+
+    private static QualificationImpact qualificationImpact(
+        DecisionRankingService rankings,
+        java.util.UUID candidateId,
+        LocalDate asOf
+    ) {
+        var counts = new EnumMap<com.careeros.domain.CandidateFacts.CandidateFactKey, Integer>(
+            com.careeros.domain.CandidateFacts.CandidateFactKey.class);
+        for (var bundle : ranking(rankings, candidateId, asOf)) {
+            if (bundle.decision().tier() == com.careeros.domain.DomainEnums.OpportunityTier.EXCLUDED) continue;
+            var affected = EnumSet.noneOf(com.careeros.domain.CandidateFacts.CandidateFactKey.class);
+            bundle.eligibility().ruleResults().forEach((rule, result) -> {
+                if (result.status() == com.careeros.domain.DomainEnums.EligibilityStatus.ELIGIBLE) return;
+                switch (rule) {
+                    case EXPERIENCE -> {
+                        affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.EMPLOYMENT_HISTORY);
+                        affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.EXPERIENCE_YEARS);
+                    }
+                    case EDUCATION, EXACT_MAJOR, GRADUATE_YEAR ->
+                        affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.EDUCATION_RECORDS);
+                    case PROFESSIONAL_TITLE ->
+                        affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.PROFESSIONAL_TITLES);
+                    default -> { }
+                }
+            });
+            bundle.fit().dimensions().stream()
+                .filter(dimension -> dimension.factStatus() == com.careeros.domain.DomainEnums.AssessmentFactStatus.UNKNOWN)
+                .forEach(dimension -> {
+                    switch (dimension.type()) {
+                        case SKILL_FIT -> affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.SKILLS);
+                        case RESEARCH_FIT -> affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.RESEARCH_KEYWORDS);
+                        case EXPERIENCE_FIT -> affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.EMPLOYMENT_HISTORY);
+                        case PROFESSIONAL_TITLE_FIT -> affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.PROFESSIONAL_TITLES);
+                        default -> { }
+                    }
+                });
+            affected.forEach(key -> counts.merge(key, 1, Integer::sum));
+        }
+        return new QualificationImpact(counts);
+    }
+
+    private static List<com.careeros.application.DecisionPorts.DecisionBundle> ranking(
+        DecisionRankingService rankings,
+        java.util.UUID candidateId,
+        LocalDate asOf
+    ) {
+        return rankings.rank(candidateId,
+            new DecisionRankingService.RankingQuery(null, null, null, 0, 100, true),
+            asOf.atStartOfDay(ZoneOffset.UTC).toInstant()).items();
     }
 }
