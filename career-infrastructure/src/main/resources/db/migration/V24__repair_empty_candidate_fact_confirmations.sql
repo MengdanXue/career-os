@@ -14,6 +14,7 @@ WHERE fact.candidate_profile_id = '01992f09-0000-7000-8000-000000000001'
       SELECT 1
       FROM candidate_profile candidate
       WHERE candidate.id = fact.candidate_profile_id
+        AND candidate.profile_version = 'profile-v18-real-education'
         AND (
             (fact.fact_key = 'SKILLS' AND candidate.skills = '[]'::jsonb)
             OR

@@ -59,11 +59,22 @@ class EligibilityEvaluatorTest {
         assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), null, 0), restricted), RuleType.GRADUATE_YEAR, EligibilityStatus.UNCERTAIN);
     }
 
-    @Test void experienceBoundaryIncludesExactMinimum() {
+    @Test void legacyExperienceTotalNeverSatisfiesAHardRequirement() {
         var requiresTwo = job(null, null, EducationLevel.MASTER, Set.of(), Set.of(), 2);
-        assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2020, 2), requiresTwo), RuleType.EXPERIENCE, EligibilityStatus.ELIGIBLE);
-        assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2020, 1), requiresTwo), RuleType.EXPERIENCE, EligibilityStatus.INELIGIBLE);
-        assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2020, null), requiresTwo), RuleType.EXPERIENCE, EligibilityStatus.UNCERTAIN);
+        var candidate = candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2020, 7);
+        assertRule(evaluator.evaluate(candidate, CandidateFacts.resolve(candidate, List.of()), requiresTwo,
+            "legacy", Instant.parse("2026-08-23T00:00:00Z")), RuleType.EXPERIENCE, EligibilityStatus.UNCERTAIN);
+    }
+
+    @Test void verifiedFullTimeIntervalsDetermineTheExperienceBoundary() {
+        var requiresTwo = job(null, null, EducationLevel.MASTER, Set.of(), Set.of(), 2);
+        var candidate = candidateWithEmployment(List.of(new CandidateEmploymentRecord(
+            "杭州测试单位", "Java 工程师", LocalDate.of(2022, 1, 1), LocalDate.of(2023, 12, 31),
+            CandidateEmploymentRecord.EmploymentMode.FULL_TIME,
+            CandidateEmploymentRecord.VerificationStatus.VERIFIED, Set.of("劳动合同"))));
+        var facts = CandidateFacts.confirmed(candidate);
+
+        assertRule(evaluator.evaluate(candidate, facts, requiresTwo, "verified", Instant.parse("2026-08-23T00:00:00Z")), RuleType.EXPERIENCE, EligibilityStatus.ELIGIBLE);
     }
 
     @Test void specificCandidateTitleSatisfiesAGenericRequiredLevel() {
@@ -93,6 +104,13 @@ class EligibilityEvaluatorTest {
 
     private CandidateProfile candidate(PartialDate birth, EducationLevel education, Set<String> majors, Integer graduationYear, Integer experience) {
         return new CandidateProfile(UUID.randomUUID(), "test", birth, education, majors, graduationYear, experience, Set.of(), List.of("杭州"), Set.of(EmploymentType.ESTABLISHMENT), "test-v1");
+    }
+
+    private CandidateProfile candidateWithEmployment(List<CandidateEmploymentRecord> employment) {
+        return new CandidateProfile(UUID.randomUUID(), "test", PartialDate.month(1995, 1),
+            EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 7, Set.of(), List.of("杭州"),
+            Set.of(EmploymentType.ESTABLISHMENT), "test-v1", Set.of(), Set.of(), Set.of(), Set.of(),
+            List.of(), DomainEnums.Gender.FEMALE, DomainEnums.PoliticalAffiliation.NON_MEMBER, employment);
     }
 
     private JobPosting job(Integer maxAge, LocalDate referenceDate, EducationLevel education, Set<String> majors, Set<Integer> graduationYears, Integer experience) {

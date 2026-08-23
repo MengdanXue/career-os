@@ -40,7 +40,8 @@ public final class EligibilityEvaluator {
         results.put(RuleType.EDUCATION, evaluateEducation(candidate, facts, job));
         results.put(RuleType.EXACT_MAJOR, evaluateMajor(candidate, facts, job));
         results.put(RuleType.GRADUATE_YEAR, evaluateGraduation(candidate, facts, job));
-        results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, facts, job));
+        results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, facts, job,
+            now.atZone(java.time.ZoneOffset.UTC).toLocalDate()));
         results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, facts, job));
         var overall = results.values().stream().map(RuleResult::status).max(EligibilityEvaluator::compareSeverity).orElse(EligibilityStatus.UNCERTAIN);
         return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), VERSION, now, candidate.profileVersion(), jobContentFingerprint);
@@ -87,11 +88,13 @@ public final class EligibilityEvaluator {
         return job.acceptedGraduationYears().contains(candidate.graduationYear()) ? eligible("毕业年份满足应届范围") : ineligible("毕业年份不在允许范围内");
     }
 
-    RuleResult evaluateExperience(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
+    RuleResult evaluateExperience(CandidateProfile candidate, CandidateFacts facts, JobPosting job, LocalDate asOf) {
         if (job.minimumExperienceYears() == null || job.minimumExperienceYears() == 0) return eligible("岗位无最低工作年限要求");
-        if (!facts.isConfirmed(EXPERIENCE_YEARS)) return uncertain("候选人工作年限尚未确认");
-        if (candidate.experienceYears() == null) return uncertain("候选人工作年限缺失");
-        return candidate.experienceYears() >= job.minimumExperienceYears() ? eligible("工作年限满足要求") : ineligible("工作年限不足 " + job.minimumExperienceYears() + " 年");
+        var verifiedYears = CandidateEmploymentExperience.completedYears(candidate, facts, asOf);
+        if (verifiedYears.isEmpty()) return uncertain("缺少已确认、逐段核验的全职工作经历");
+        return verifiedYears.getAsInt() >= job.minimumExperienceYears()
+            ? eligible("已核验全职工作年限满足要求")
+            : ineligible("已核验全职工作年限不足 " + job.minimumExperienceYears() + " 年");
     }
 
     RuleResult evaluateProfessionalTitle(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {

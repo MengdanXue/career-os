@@ -10,6 +10,10 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-23-phase5b-personal-decision-loop-design.md` — delivery slice 1; P5B-ACT-001, P5B-ACT-002, P5B-PROFILE-001, P5B-PROFILE-002, and the slice-1 portions of sections 10.1, 10.5, 11, 12, 13, and 14.
 
+**Delivery status (2026-08-23): COMPLETE for Phase 5B slice 1.** Tasks 1–7 below were implemented and committed incrementally. Final verification: 328 Java tests, 41 UI tests, production UI build, Flyway fresh/upgrade coverage, health/API smoke checks, and desktop/mobile Playwright acceptance. Phase 5B slices 2–4 remain intentionally out of scope.
+
+**Final truth-safety corrections:** legacy `experienceYears` is display-only; hard eligibility and fit use confirmed, verified full-time intervals merged by complete months. Confirmed empty employment is known zero, while unknown or unverified history remains unknown. Decision cache version `decision-v2-verified-employment` invalidates legacy snapshots and uses the official application deadline as the fixed qualification reference date. Internal action/impact ranking is full-set and uses a single batched admission lookup rather than truncating at 100 jobs.
+
 ## Global Constraints
 
 - Follow red-green-refactor for every behavioral change; run the named failing test before implementation.
@@ -495,4 +499,3 @@ git push origin codex/phase4b-career-workbench
 ```
 
 Record the final test counts, browser evidence paths, health result, commit SHA, and private remote branch in the handoff. Do not claim the whole Phase 5B is complete; only slice 1 is complete until slices 2–4 pass their own acceptance.
-

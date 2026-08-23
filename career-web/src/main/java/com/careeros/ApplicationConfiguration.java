@@ -185,6 +185,9 @@ class ApplicationConfiguration {
                         default -> { }
                     }
                 });
+            if (hasPoliticalRequirement(bundle.jobContext().job())) {
+                affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.POLITICAL_AFFILIATION);
+            }
             affected.forEach(key -> counts.merge(key, 1, Integer::sum));
         }
         return new QualificationImpact(counts);
@@ -195,8 +198,23 @@ class ApplicationConfiguration {
         java.util.UUID candidateId,
         LocalDate asOf
     ) {
-        return rankings.rank(candidateId,
-            new DecisionRankingService.RankingQuery(null, null, null, 0, 100, true),
-            asOf.atStartOfDay(ZoneOffset.UTC).toInstant()).items();
+        return rankings.rankAll(candidateId, asOf.atStartOfDay(ZoneOffset.UTC).toInstant());
+    }
+
+    private static boolean hasPoliticalRequirement(com.careeros.domain.JobPosting job) {
+        String text = String.join(" ",
+            job.candidateScope() == null ? "" : job.candidateScope(),
+            job.otherRequirements() == null ? "" : job.otherRequirements(),
+            job.originalRequirementText() == null ? "" : job.originalRequirementText());
+        String compact = text.replaceAll("[\\s，。；、]", "");
+        if (compact.contains("不限") || compact.contains("优先")
+            || compact.contains("党员或") || compact.contains("或民主党派")) {
+            return false;
+        }
+        return compact.contains("须为中共党员")
+            || compact.contains("要求中共党员")
+            || compact.contains("政治面貌中共党员")
+            || compact.contains("政治面貌为中共党员")
+            || compact.contains("限中共党员");
     }
 }

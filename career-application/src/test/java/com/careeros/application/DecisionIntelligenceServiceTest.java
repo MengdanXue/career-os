@@ -36,7 +36,7 @@ class DecisionIntelligenceServiceTest {
         var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
 
         var first = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW);
-        var repeated = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW.plusSeconds(60));
+        var repeated = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW.plus(java.time.Duration.ofDays(30)));
         fixture.candidates.save(candidateWithId(fixture.candidateId, "profile-v2", Set.of("计算机科学与技术")));
         var changed = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW.plusSeconds(120));
 

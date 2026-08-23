@@ -185,6 +185,25 @@ describe('ProfilePage', () => {
 
     expect(await screen.findByRole('heading', { name: '修改你的决策资料' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '可核验工作经历' })).toBeInTheDocument()
+    expect(screen.getByText('旧资料记录 7 年；硬资格仍需逐段核验')).toBeInTheDocument()
+    expect(screen.getByText('技能证据尚未提供；留空会按未知处理')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '添加一段经历' })).toHaveFocus()
+  })
+
+  it('keeps profile editing available when evidence priorities fail to load', async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/candidates')) return json([candidate])
+      if (url.includes('/evidence-tasks')) return json({ title: 'Unavailable', detail: '证据任务暂时无法读取' }, 503)
+      if (url.endsWith('/facts')) return json(facts(candidate))
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    render(<AppProviders><ProfilePage /></AppProviders>)
+
+    expect(await screen.findByRole('heading', { name: '先确认你的决策资料' })).toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent('证据任务暂时无法读取')
+    expect(screen.getByRole('button', { name: '确认并开始' })).toBeEnabled()
   })
 })

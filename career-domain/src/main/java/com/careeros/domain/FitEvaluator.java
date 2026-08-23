@@ -23,17 +23,21 @@ public final class FitEvaluator {
         var dimensions = new ArrayList<AssessmentDimension>();
         dimensions.add(overlap(AssessmentDimensionType.MAJOR_FIT, 25, confirmed(facts, MAJORS, candidate.majors()), job.exactMajors(), job.evidenceIds(), "MAJOR"));
         dimensions.add(textOverlap(AssessmentDimensionType.SKILL_FIT, 20, confirmed(facts, SKILLS, candidate.skills()), jobText(job), job.evidenceIds(), "SKILL"));
-        dimensions.add(experience(candidate, facts, job));
+        dimensions.add(experience(candidate, facts, job, now));
         dimensions.add(textOverlap(AssessmentDimensionType.RESEARCH_FIT, 10, confirmed(facts, RESEARCH_KEYWORDS, candidate.researchKeywords()), jobText(job), job.evidenceIds(), "RESEARCH"));
         dimensions.add(overlap(AssessmentDimensionType.PROFESSIONAL_TITLE_FIT, 10, confirmed(facts, PROFESSIONAL_TITLES, candidate.professionalTitles()), job.requiredProfessionalTitles(), job.evidenceIds(), "TITLE"));
         dimensions.add(preference(candidate, facts, job, organization));
         return new FitAssessment(UUID.randomUUID(), candidate.id(), job.id(), dimensions, VERSION, candidate.profileVersion(), jobFingerprint, now);
     }
 
-    private AssessmentDimension experience(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
-        if (!facts.isConfirmed(EXPERIENCE_YEARS) || job.minimumExperienceYears() == null || candidate.experienceYears() == null) return unknown(AssessmentDimensionType.EXPERIENCE_FIT, 20, "EXPERIENCE_UNKNOWN");
-        int points = candidate.experienceYears() >= job.minimumExperienceYears() ? 20 : 0;
-        return known(AssessmentDimensionType.EXPERIENCE_FIT, points, 20, "EXPERIENCE_NUMERIC", "工作年限按明确数值比较", job.evidenceIds());
+    private AssessmentDimension experience(CandidateProfile candidate, CandidateFacts facts, JobPosting job, Instant now) {
+        if (job.minimumExperienceYears() == null) return unknown(AssessmentDimensionType.EXPERIENCE_FIT, 20, "EXPERIENCE_REQUIREMENT_UNKNOWN");
+        var years = CandidateEmploymentExperience.completedYears(candidate, facts,
+            now.atZone(java.time.ZoneOffset.UTC).toLocalDate());
+        if (years.isEmpty()) return unknown(AssessmentDimensionType.EXPERIENCE_FIT, 20, "VERIFIED_EMPLOYMENT_UNKNOWN");
+        int points = years.getAsInt() >= job.minimumExperienceYears() ? 20 : 0;
+        return known(AssessmentDimensionType.EXPERIENCE_FIT, points, 20, "VERIFIED_EMPLOYMENT_INTERVALS",
+            "工作年限按已确认、逐段核验的全职区间合并计算", job.evidenceIds());
     }
 
     private AssessmentDimension preference(CandidateProfile candidate, CandidateFacts facts, JobPosting job, Organization organization) {

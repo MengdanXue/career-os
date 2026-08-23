@@ -4,6 +4,7 @@ import static com.careeros.domain.CandidateFacts.CandidateFactKey.*;
 import static com.careeros.domain.CandidateFacts.CandidateFactStatus.CONFIRMED;
 import static com.careeros.domain.CandidateFacts.CandidateFactStatus.UNKNOWN;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.careeros.domain.CandidateFacts.CandidateFactKey;
 import com.careeros.domain.CandidateFacts.CandidateFactStatus;
@@ -108,6 +109,23 @@ class CandidateEvidenceTaskServiceTest {
         assertThat(result.message()).isEqualTo("目标岗位影响暂时无法计算");
         assertThat(result.items()).extracting(CandidateEvidenceTask::code).contains("VERIFY_EMPLOYMENT_HISTORY");
         assertThat(result.items()).allSatisfy(task -> assertThat(task.affectedJobCount()).isZero());
+    }
+
+    @Test
+    void candidateNotFoundIsNeverReportedAsTemporaryUnavailability() {
+        var missing = new com.careeros.application.CandidateProfileService.CandidateProfileNotFoundException("missing");
+        var service = service(candidateId -> { throw missing; }, impacts(Map.of()));
+
+        assertThatThrownBy(() -> service.tasks(CANDIDATE_ID, AS_OF)).isSameAs(missing);
+    }
+
+    @Test
+    void confirmedEmptyEmploymentMeansKnownZeroAndDoesNotRequestInventedHistory() {
+        var result = service(statuses(Map.of(EMPLOYMENT_HISTORY, CONFIRMED)), impacts(Map.of()))
+            .tasks(CANDIDATE_ID, AS_OF);
+
+        assertThat(result.items()).extracting(CandidateEvidenceTask::code)
+            .doesNotContain("VERIFY_EMPLOYMENT_HISTORY");
     }
 
     private static CandidateEvidenceTaskService service(

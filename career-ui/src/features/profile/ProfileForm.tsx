@@ -138,6 +138,8 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
       <fieldset id="employment-history" disabled={pending}>
         <legend>经历证据</legend>
         <h2 className="form-section-title">可核验工作经历</h2>
+        {fields.experienceYears && !fields.employmentRecords.some(record => record.verificationStatus === 'VERIFIED') &&
+          <p className="field-note">旧资料记录 {fields.experienceYears} 年；硬资格仍需逐段核验</p>}
         <p className="field-note">只填写能说明起止日期和证明类型的经历。空白比编造时间更可靠。</p>
         <div className="employment-records">
           {fields.employmentRecords.map((record, index) => <section className="employment-record" key={`employment-${index}`} aria-label={`工作经历 ${index + 1}`}>
@@ -182,8 +184,8 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
         <legend>岗位匹配依据</legend>
         <label>专业<input aria-label="专业" required value={fields.majors} onChange={event => set('majors', event.target.value)} /><small>多个专业用逗号分隔；用于检查公告中的专业硬条件。</small></label>
         <label id="professional-title">专业职称<input aria-label="专业职称" value={fields.professionalTitles} onChange={event => set('professionalTitles', event.target.value)} /><small>留空会按未知处理，不会自动推断为明确没有。</small></label>
-        <label id="skill-evidence">技能关键词<input aria-label="技能关键词" value={fields.skills} onChange={event => set('skills', event.target.value)} /><small>只填写你能用经历或作品证明的技能。</small></label>
-        <label id="research-evidence">研究或业务关键词<input value={fields.researchKeywords} onChange={event => set('researchKeywords', event.target.value)} /></label>
+        <label id="skill-evidence">技能关键词<input aria-label="技能关键词" value={fields.skills} onChange={event => set('skills', event.target.value)} /><small>{fields.skills.trim() ? '只填写你能用经历或作品证明的技能。' : '技能证据尚未提供；留空会按未知处理'}</small></label>
+        <label id="research-evidence">研究或业务关键词<input value={fields.researchKeywords} onChange={event => set('researchKeywords', event.target.value)} /><small>{fields.researchKeywords.trim() ? '只填写你能用材料支持的研究或项目方向。' : '研究或项目证据尚未提供；留空会按未知处理'}</small></label>
       </fieldset>
       <fieldset disabled={pending}>
         <legend>稳定岗位偏好</legend>

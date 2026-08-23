@@ -10,6 +10,7 @@ import static com.careeros.domain.DomainEnums.OpportunityTier.EXCLUDED;
 import com.careeros.application.personal.PersonalActionPorts.CurrentJobs;
 import com.careeros.application.personal.PersonalActionPorts.EvidenceTasks;
 import com.careeros.application.personal.PersonalActionPorts.TargetJobChanges;
+import com.careeros.application.CandidateProfileService.CandidateProfileNotFoundException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -51,6 +52,8 @@ public final class PersonalActionService {
                     job.organizationName() + "的官方报名截止日期已进入 14 天提醒窗口。",
                     1, job.deadline(), DOCUMENTED, "/opportunities/" + job.jobId()))
                 .forEach(actions::add);
+        } catch (CandidateProfileNotFoundException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             messages.add("当前岗位截止暂时无法读取");
         }
@@ -59,12 +62,14 @@ public final class PersonalActionService {
             var snapshot = evidenceTasks.load(candidateId, asOf);
             if (!snapshot.available()) messages.add(snapshot.message());
             snapshot.items().stream()
-                .filter(task -> task.affectedJobCount() > 0 || !snapshot.available())
+                .filter(task -> task.affectedJobCount() > 0)
                 .map(task -> new PersonalAction(
                     "evidence:" + task.code(), CANDIDATE_EVIDENCE, 2,
                     task.title(), task.reason(), task.affectedJobCount(), null,
                     task.evidenceStrength(), task.deepLink()))
                 .forEach(actions::add);
+        } catch (CandidateProfileNotFoundException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             messages.add("候选人证据任务暂时无法读取");
         }

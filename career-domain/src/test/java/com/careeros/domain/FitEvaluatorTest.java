@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -65,7 +66,12 @@ class FitEvaluatorTest {
             UUID.randomUUID(), "候选人", new PartialDate(1992, 12, null), EducationLevel.MASTER,
             Set.of("计算机科学与技术"), 2018, 6, Set.of("中级：计算机应用"), List.of("杭州"),
             Set.of(EmploymentType.ESTABLISHMENT), "candidate-v2", skills, research,
-            Set.of(JobFamily.SOFTWARE), Set.of(OrganizationType.PUBLIC_INSTITUTION)
+            Set.of(JobFamily.SOFTWARE), Set.of(OrganizationType.PUBLIC_INSTITUTION), List.of(),
+            Gender.FEMALE, PoliticalAffiliation.NON_MEMBER,
+            List.of(new CandidateEmploymentRecord("测试单位", "工程师",
+                LocalDate.of(2018, 1, 1), LocalDate.of(2023, 12, 31),
+                CandidateEmploymentRecord.EmploymentMode.FULL_TIME,
+                CandidateEmploymentRecord.VerificationStatus.VERIFIED, Set.of("劳动合同")))
         );
     }
 

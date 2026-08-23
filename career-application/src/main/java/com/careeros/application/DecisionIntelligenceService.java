@@ -8,12 +8,13 @@ import com.careeros.domain.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.UUID;
 
 public final class DecisionIntelligenceService implements DecisionAssessor {
-    public static final String VERSION = "decision-v1";
+    public static final String VERSION = "decision-v2-verified-employment";
     private final RepositoryPorts.CandidateProfiles candidates;
     private final RepositoryPorts.CandidateFactConfirmations candidateFacts;
     private final RepositoryPorts.EligibilityAssessments eligibilityAssessments;
@@ -113,8 +114,9 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     }
 
     private DecisionBundle evaluate(DecisionInputKey input, CandidateProfile candidate, CandidateFacts facts, JobContext context, Instant now) {
-        var eligibility = eligibilityAssessments.save(eligibilityEvaluator.evaluate(candidate, facts, context.job(), context.contentFingerprint(), now));
-        var fit = fitEvaluator.evaluate(candidate, facts, context.job(), context.organization(), context.contentFingerprint(), now);
+        Instant qualificationReference = qualificationReference(context, now);
+        var eligibility = eligibilityAssessments.save(eligibilityEvaluator.evaluate(candidate, facts, context.job(), context.contentFingerprint(), qualificationReference));
+        var fit = fitEvaluator.evaluate(candidate, facts, context.job(), context.organization(), context.contentFingerprint(), qualificationReference);
         var stabilityResult = stabilityEvaluator.evaluate(candidate, context.job(), context.organization(), stabilityFacts.findByOrganizationId(context.organization().id()), context.contentFingerprint(), now);
         OpportunityTier tier = excluded(eligibility.status()) ? OpportunityTier.EXCLUDED : stabilityResult.tier();
         int coverage = Math.round((fit.coveragePercent() + stabilityResult.assessment().coveragePercent()) / 2f);
@@ -125,6 +127,13 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
             VERSION, candidate.profileVersion(), context.contentFingerprint(), now
         );
         return snapshots.save(input, new DecisionBundle(eligibility, fit, stabilityResult.assessment(), decision, context));
+    }
+
+    private static Instant qualificationReference(JobContext context, Instant fallback) {
+        var referenceDate = context.event().applicationEndsOn();
+        if (referenceDate == null) referenceDate = context.job().ageReferenceDate();
+        if (referenceDate == null) referenceDate = context.event().publishedOn();
+        return referenceDate == null ? fallback : referenceDate.atStartOfDay(ZoneOffset.UTC).toInstant();
     }
 
     private static boolean excluded(EligibilityStatus status) { return status == EligibilityStatus.INELIGIBLE || status == EligibilityStatus.LIKELY_INELIGIBLE; }

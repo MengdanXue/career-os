@@ -51,6 +51,38 @@ class DecisionRankingAndExplanationTest {
     }
 
     @Test
+    void rankingLoadsAdmissionsInOneBatchBeforeAssessingJobs() {
+        var first = bundle(OpportunityTier.T1, EligibilityStatus.ELIGIBLE, 70, "岗位一", LocalDate.of(2026, 9, 1));
+        var second = bundle(OpportunityTier.T2, EligibilityStatus.ELIGIBLE, 60, "岗位二", LocalDate.of(2026, 9, 2));
+        var contexts = new Contexts(List.of(first.jobContext(), second.jobContext()));
+        var values = Map.of(
+            first.decision().jobPostingId(), admitted(first.jobContext()),
+            second.decision().jobPostingId(), admitted(second.jobContext()));
+        var batchCalls = new int[1];
+        var admissions = new JobAdmissions() {
+            public Optional<JobAdmission> findByJobId(UUID jobId) {
+                throw new AssertionError("ranking must not issue one admission query per job");
+            }
+            public Map<UUID, JobAdmission> findByJobIds(Collection<UUID> jobIds) {
+                batchCalls[0]++;
+                return values;
+            }
+            public JobAdmission save(JobAdmission value) { throw new UnsupportedOperationException(); }
+            public AdmissionSummary summarize() { throw new UnsupportedOperationException(); }
+        };
+        var bundles = Map.of(
+            first.decision().jobPostingId(), first,
+            second.decision().jobPostingId(), second);
+
+        var page = new DecisionRankingService(contexts, admissions,
+            (candidateId, jobId, now) -> bundles.get(jobId))
+            .rank(CANDIDATE_ID, new DecisionRankingService.RankingQuery(null, null, null, 0, 10, false), NOW);
+
+        assertThat(batchCalls[0]).isEqualTo(1);
+        assertThat(page.total()).isEqualTo(2);
+    }
+
+    @Test
     void rankingDoesNotTreatUnknownEmploymentIdentityAsT3() {
         var unknown = bundle(OpportunityTier.T3, EligibilityStatus.ELIGIBLE, 99, "用工身份未知", LocalDate.of(2026, 9, 1), EmploymentType.UNKNOWN);
         var contexts = new Contexts(List.of(unknown.jobContext()));
@@ -89,6 +121,24 @@ class DecisionRankingAndExplanationTest {
         }).doesNotThrowAnyException();
     }
 
+    @Test
+    void internalFullRankingIsNotTruncatedAtThePublicPageLimit() {
+        var bundles = java.util.stream.IntStream.range(0, 101)
+            .mapToObj(index -> bundle(OpportunityTier.T1, EligibilityStatus.ELIGIBLE, 70,
+                "岗位" + index, LocalDate.of(2026, 9, 1)))
+            .toList();
+        var contexts = new Contexts(bundles.stream().map(DecisionBundle::jobContext).toList());
+        var byJob = new HashMap<UUID, DecisionBundle>();
+        bundles.forEach(bundle -> byJob.put(bundle.decision().jobPostingId(), bundle));
+        var service = new DecisionRankingService(contexts, admissionsFor(contexts.values),
+            (candidateId, jobId, now) -> byJob.get(jobId));
+
+        assertThat(service.rankAll(CANDIDATE_ID, NOW)).hasSize(101);
+        assertThat(service.rank(CANDIDATE_ID,
+            new DecisionRankingService.RankingQuery(null, null, null, 0, 100, true), NOW).items())
+            .hasSize(100);
+    }
+
     private static DecisionBundle bundle(OpportunityTier tier, EligibilityStatus eligibilityStatus, int fitScore, String title, LocalDate deadline) {
         return bundle(tier, eligibilityStatus, fitScore, title, deadline, EmploymentType.ESTABLISHMENT);
     }
@@ -115,13 +165,16 @@ class DecisionRankingAndExplanationTest {
 
     private static JobAdmissions admissionsFor(List<JobContext> contexts) {
         var values = new LinkedHashMap<UUID, JobAdmission>();
-        contexts.forEach(context -> values.put(context.job().id(), new JobAdmission(
-            context.job().id(), DataQualityStatus.VERIFIED, TargetScopeStatus.INCLUDED,
-            Set.of(JobAdmissionReason.TARGET_TECHNICAL_ROLE), "admission-v1", NOW, true)));
+        contexts.forEach(context -> values.put(context.job().id(), admitted(context)));
         return new JobAdmissions() {
             public Optional<JobAdmission> findByJobId(UUID jobId) { return Optional.ofNullable(values.get(jobId)); }
             public JobAdmission save(JobAdmission value) { values.put(value.jobPostingId(), value); return value; }
             public AdmissionSummary summarize() { throw new UnsupportedOperationException(); }
         };
+    }
+
+    private static JobAdmission admitted(JobContext context) {
+        return new JobAdmission(context.job().id(), DataQualityStatus.VERIFIED, TargetScopeStatus.INCLUDED,
+            Set.of(JobAdmissionReason.TARGET_TECHNICAL_ROLE), "admission-v1", NOW, true);
     }
 }

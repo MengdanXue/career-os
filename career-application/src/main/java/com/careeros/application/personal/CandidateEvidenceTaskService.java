@@ -51,6 +51,8 @@ public final class CandidateEvidenceTaskService {
         CandidateSnapshot snapshot;
         try {
             snapshot = facts.load(candidateId);
+        } catch (com.careeros.application.CandidateProfileService.CandidateProfileNotFoundException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             return new CandidateEvidenceTasks(candidateId, asOf, false, "候选人资料暂时无法读取", List.of());
         }
@@ -86,7 +88,10 @@ public final class CandidateEvidenceTaskService {
         boolean hasIncompleteEmployment = profile.employmentRecords().stream()
             .anyMatch(record -> record.verificationStatus() != VerificationStatus.VERIFIED
                 && record.verificationStatus() != VerificationStatus.REJECTED);
-        if (!hasVerifiedEmployment || hasIncompleteEmployment || snapshot.status(EMPLOYMENT_HISTORY) != CONFIRMED) {
+        boolean confirmedEmptyEmployment = snapshot.status(EMPLOYMENT_HISTORY) == CONFIRMED
+            && profile.employmentRecords().isEmpty();
+        if (!confirmedEmptyEmployment
+            && (!hasVerifiedEmployment || hasIncompleteEmployment || snapshot.status(EMPLOYMENT_HISTORY) != CONFIRMED)) {
             tasks.add(task("VERIFY_EMPLOYMENT_HISTORY", EMPLOYMENT, EMPLOYMENT_HISTORY,
                 "补齐可核验工作经历",
                 legacyExperienceReason(profile.experienceYears()), impact, NONE, "employment-history"));

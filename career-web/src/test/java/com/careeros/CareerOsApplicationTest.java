@@ -207,7 +207,7 @@ class CareerOsApplicationTest {
                       "majors":["计算机科学与技术"],
                       "graduationYear":2018,
                       "experienceYears":6,
-                      "professionalTitles":[],
+                      "professionalTitles":["明确无职称"],
                       "preferredLocations":["杭州"],
                       "acceptedEmploymentTypes":["ESTABLISHMENT","CONTRACT"],
                       "profileVersion":"profile-api-v2",

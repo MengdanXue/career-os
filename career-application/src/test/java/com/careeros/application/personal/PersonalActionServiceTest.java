@@ -11,6 +11,7 @@ import static com.careeros.domain.DomainEnums.EligibilityStatus.INELIGIBLE;
 import static com.careeros.domain.DomainEnums.OpportunityTier.EXCLUDED;
 import static com.careeros.domain.DomainEnums.OpportunityTier.T1;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.careeros.application.personal.CandidateEvidenceTaskService.CandidateEvidenceTasks;
 import com.careeros.application.personal.PersonalActionPorts.CurrentJobSignal;
@@ -96,8 +97,18 @@ class PersonalActionServiceTest {
 
         assertThat(result.available()).isFalse();
         assertThat(result.message()).isEqualTo("当前岗位截止暂时无法读取；目标岗位影响暂时无法计算；目标岗位变化暂时无法读取");
-        assertThat(result.items()).singleElement().satisfies(action ->
-            assertThat(action.kind()).isEqualTo(CANDIDATE_EVIDENCE));
+        assertThat(result.items()).isEmpty();
+    }
+
+    @Test
+    void candidateNotFoundIsNeverDowngradedToPartialAvailability() {
+        var missing = new com.careeros.application.CandidateProfileService.CandidateProfileNotFoundException("missing");
+        var service = new PersonalActionService(
+            (candidateId, asOf) -> { throw missing; },
+            PersonalActionServiceTest::noEvidence,
+            PersonalActionServiceTest::noChanges);
+
+        assertThatThrownBy(() -> service.actions(CANDIDATE_ID, AS_OF)).isSameAs(missing);
     }
 
     private static CurrentJobSignal job(

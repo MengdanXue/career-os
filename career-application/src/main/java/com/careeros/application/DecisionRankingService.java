@@ -25,19 +25,32 @@ public final class DecisionRankingService {
     public RankingPage rank(UUID candidateId, RankingQuery query, Instant now) {
         if (query.page() < 0) throw new IllegalArgumentException("page must not be negative");
         if (query.size() < 1 || query.size() > 100) throw new IllegalArgumentException("size must be between 1 and 100");
-        Stream<DecisionBundle> stream = jobContexts.findActive().stream()
-            .filter(context -> admissions.findByJobId(context.job().id())
-                .map(admission -> admission.admits(context.job()))
-                .orElse(false))
-            .filter(context -> query.location() == null || contains(context.job().location(), query.location()))
-            .filter(context -> query.jobFamily() == null || context.job().jobFamily() == query.jobFamily())
-            .map(context -> assessor.assess(candidateId, context.job().id(), now))
-            .filter(bundle -> query.includeExcluded() || bundle.decision().tier() != OpportunityTier.EXCLUDED)
-            .filter(bundle -> query.tier() == null || bundle.decision().tier() == query.tier());
-        List<DecisionBundle> ordered = stream.sorted(order()).toList();
+        List<DecisionBundle> ordered = ordered(candidateId, query, now);
         int from = (int) Math.min((long) query.page() * query.size(), ordered.size());
         int to = Math.min(from + query.size(), ordered.size());
         return new RankingPage(ordered.subList(from, to), query.page(), query.size(), ordered.size());
+    }
+
+    public List<DecisionBundle> rankAll(UUID candidateId, Instant now) {
+        return ordered(candidateId, new RankingQuery(null, null, null, 0, 100, true), now);
+    }
+
+    private List<DecisionBundle> ordered(UUID candidateId, RankingQuery query, Instant now) {
+        var candidateContexts = jobContexts.findActive().stream()
+            .filter(context -> query.location() == null || contains(context.job().location(), query.location()))
+            .filter(context -> query.jobFamily() == null || context.job().jobFamily() == query.jobFamily())
+            .toList();
+        var admissionsByJob = admissions.findByJobIds(candidateContexts.stream()
+            .map(context -> context.job().id()).toList());
+        Stream<DecisionBundle> stream = candidateContexts.stream()
+            .filter(context -> {
+                var admission = admissionsByJob.get(context.job().id());
+                return admission != null && admission.admits(context.job());
+            })
+            .map(context -> assessor.assess(candidateId, context.job().id(), now))
+            .filter(bundle -> query.includeExcluded() || bundle.decision().tier() != OpportunityTier.EXCLUDED)
+            .filter(bundle -> query.tier() == null || bundle.decision().tier() == query.tier());
+        return stream.sorted(order()).toList();
     }
 
     private static Comparator<DecisionBundle> order() {

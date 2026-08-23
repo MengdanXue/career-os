@@ -246,10 +246,12 @@ class MigrationIntegrationTest {
         try (var connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var edit = connection.prepareStatement("update " + schema + ".candidate_profile set profile_version='user-edited-v1', preferred_locations='[\"宁波\"]'::jsonb where id='01992f09-0000-7000-8000-000000000001'");
-             var confirm = connection.prepareStatement("insert into " + schema + ".candidate_fact_confirmation(candidate_profile_id,fact_key,status,value_fingerprint,source,confirmed_at,updated_at) values ('01992f09-0000-7000-8000-000000000001','PROFESSIONAL_TITLES','CONFIRMED',?,'USER_CONFIRMED',now(),now())")) {
+             var confirm = connection.prepareStatement("insert into " + schema + ".candidate_fact_confirmation(candidate_profile_id,fact_key,status,value_fingerprint,source,confirmed_at,updated_at) values ('01992f09-0000-7000-8000-000000000001','PROFESSIONAL_TITLES','CONFIRMED',?,'USER_CONFIRMED',now(),now())");
+             var confirmEmptySkill = connection.prepareStatement("insert into " + schema + ".candidate_fact_confirmation(candidate_profile_id,fact_key,status,value_fingerprint,source,confirmed_at,updated_at) values ('01992f09-0000-7000-8000-000000000001','SKILLS','CONFIRMED','ba768b331fd86cec803be04e56ab2b3d4c0e98ef4ee4fcd4e72ad7cce61a1d1f','USER_CONFIRMED',now(),now())")) {
             edit.executeUpdate();
             confirm.setString(1, customFingerprint);
             confirm.executeUpdate();
+            confirmEmptySkill.executeUpdate();
         }
 
         configuration.target(MigrationVersion.LATEST).load().migrate();
@@ -257,7 +259,8 @@ class MigrationIntegrationTest {
         try (var connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var candidate = connection.prepareStatement("select profile_version, preferred_locations from " + schema + ".candidate_profile where id='01992f09-0000-7000-8000-000000000001'");
-             var fact = connection.prepareStatement("select value_fingerprint from " + schema + ".candidate_fact_confirmation where candidate_profile_id='01992f09-0000-7000-8000-000000000001' and fact_key='PROFESSIONAL_TITLES'")) {
+             var fact = connection.prepareStatement("select value_fingerprint from " + schema + ".candidate_fact_confirmation where candidate_profile_id='01992f09-0000-7000-8000-000000000001' and fact_key='PROFESSIONAL_TITLES'");
+             var emptySkill = connection.prepareStatement("select status, confirmed_at from " + schema + ".candidate_fact_confirmation where candidate_profile_id='01992f09-0000-7000-8000-000000000001' and fact_key='SKILLS'")) {
             try (var rows = candidate.executeQuery()) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString("profile_version")).isEqualTo("user-edited-v1");
@@ -266,6 +269,11 @@ class MigrationIntegrationTest {
             try (var rows = fact.executeQuery()) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString(1)).isEqualTo(customFingerprint);
+            }
+            try (var rows = emptySkill.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("status")).isEqualTo("CONFIRMED");
+                assertThat(rows.getTimestamp("confirmed_at")).isNotNull();
             }
         }
     }

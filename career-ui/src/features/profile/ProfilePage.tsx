@@ -139,6 +139,9 @@ export function ProfilePage() {
     <main className="profile-page page-frame">
       <AsyncState loading={loading} error={error} empty={candidates.isSuccess && !listedCandidate}>
         {candidate && facts ? <>
+          {evidenceTasks.error && <p className="profile-task-warning" role="status">
+            {evidenceTasks.error instanceof Error ? evidenceTasks.error.message : '证据任务暂时无法读取'}
+          </p>}
           {evidenceTasks.data && <EvidenceTaskPanel data={evidenceTasks.data} onSelect={handleEvidenceTask} />}
           {(!isConfirmed || editing || save.isPending || save.isError) ? <section className="profile-editing">
             <p className="eyebrow">PROFILE EVIDENCE · 决策资料</p>
