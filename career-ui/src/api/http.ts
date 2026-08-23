@@ -68,6 +68,7 @@ export const queryKeys = {
   decisions: (candidateId: string, filters: Record<string, unknown>) => ['decisions', candidateId, filters] as const,
   candidateMatches: (candidateId: string) => ['candidate-matches', candidateId] as const,
   workbench: (candidateId: string) => ['workbench', candidateId] as const,
+  careerPlan: (candidateId: string, targetYear: number) => ['career-plan', candidateId, targetYear] as const,
   sources: ['acquisition-sources'] as const,
   jobLibrarySummary: ['job-library-summary'] as const,
   reviews: (status: string) => ['reviews', status] as const,

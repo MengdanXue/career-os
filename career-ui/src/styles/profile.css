@@ -16,7 +16,11 @@
 .field-note { margin: -6px 0 18px; color: var(--muted); line-height: 1.65; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
 .education-records { display: grid; gap: 16px; }
-.education-record { padding: 18px 18px 0; border: 1px solid var(--line); background: #fffefa; }
+.education-record, .employment-record { padding: 18px 18px 0; border: 1px solid var(--line); background: #fffefa; }
+.employment-records { display: grid; gap: 16px; margin-bottom: 16px; }
+.form-section-title { margin: -6px 0 12px; color: var(--archive); font: 500 24px/1.2 Georgia, "Songti SC", serif; }
+.empty-evidence { margin: 0; padding: 18px; border: 1px dashed var(--line); color: var(--muted); }
+.text-action { border: 0; background: transparent; color: var(--blocker); cursor: pointer; }
 .education-record-heading { display: flex; justify-content: space-between; margin-bottom: 16px; color: var(--archive); }
 .education-record-heading span { color: var(--muted); font: 600 12px ui-monospace, monospace; }
 .education-summary { margin: 20px 0; border-left: 3px solid var(--evidence); }

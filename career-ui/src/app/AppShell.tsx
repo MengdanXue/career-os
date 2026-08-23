@@ -3,6 +3,7 @@ import { AgentComposer } from '../features/agent/AgentComposer'
 
 const navItems = [
   { to: '/', label: '今天', end: true },
+  { to: '/plan', label: '我的规划' },
   { to: '/opportunities', label: '机会池' },
   { to: '/updates', label: '更新岗位库' },
   { to: '/profile', label: '我的资料' },

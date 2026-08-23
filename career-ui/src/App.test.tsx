@@ -8,6 +8,7 @@ describe('Career OS application shell', () => {
 
     expect(screen.getByRole('heading', { name: 'Career OS' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '今天' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: '我的规划' })).toHaveAttribute('href', '/plan')
     expect(screen.getByRole('link', { name: '机会池' })).toHaveAttribute('href', '/opportunities')
     expect(screen.getByRole('link', { name: '更新岗位库' })).toHaveAttribute('href', '/updates')
     expect(screen.getByRole('link', { name: '我的资料' })).toHaveAttribute('href', '/profile')

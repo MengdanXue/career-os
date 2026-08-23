@@ -87,7 +87,7 @@ export function ProfilePage() {
           <Readiness facts={facts} />
           <p>{candidate.displayName} · {educationLabels[candidate.highestEducation] ?? candidate.highestEducation} · {candidate.majors.join('、')}</p>
           <EducationSummary candidate={candidate} />
-          <dl><div><dt>目标地点</dt><dd>{candidate.preferredLocations.join('、') || '明确不限'}</dd></div><div><dt>技能证据</dt><dd>{candidate.skills.join('、') || '明确未填写'}</dd></div><div><dt>资料版本</dt><dd>{candidate.profileVersion}</dd></div></dl>
+          <dl><div><dt>出生日期</dt><dd>{candidate.birthDate.year}-{String(candidate.birthDate.month).padStart(2, '0')}-{candidate.birthDate.day ? String(candidate.birthDate.day).padStart(2, '0') : '待确认'}</dd></div><div><dt>目标地点</dt><dd>{candidate.preferredLocations.join('、') || '明确不限'}</dd></div><div><dt>工作经历证据</dt><dd>{candidate.employmentRecords.length ? `${candidate.employmentRecords.length} 段` : '尚未核验'}</dd></div><div><dt>技能证据</dt><dd>{candidate.skills.join('、') || '明确未填写'}</dd></div><div><dt>资料版本</dt><dd>{candidate.profileVersion}</dd></div></dl>
           <button className="secondary-action" type="button" onClick={beginEdit}>修改资料</button>
         </section> : null}
       </AsyncState>

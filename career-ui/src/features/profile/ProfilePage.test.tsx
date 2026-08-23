@@ -6,7 +6,7 @@ import { ProfilePage } from './ProfilePage'
 
 const candidate = {
   id: '01992f09-0000-7000-8000-000000000001', displayName: '候选人',
-  birthDate: { year: 1992, month: 12, day: null }, highestEducation: 'BACHELOR',
+  birthDate: { year: 1992, month: 12, day: 31 }, gender: 'FEMALE', politicalAffiliation: 'UNKNOWN', highestEducation: 'BACHELOR',
   majors: ['计算机科学与技术'], graduationYear: 2014, experienceYears: 6,
   professionalTitles: ['中级：计算机应用'], preferredLocations: ['杭州'],
   acceptedEmploymentTypes: ['ESTABLISHMENT', 'CONTRACT'], profileVersion: 'seed-v1',
@@ -16,20 +16,21 @@ const candidate = {
     { institutionName: null, countryOrRegion: null, educationLevel: 'BACHELOR', majorName: '计算机科学与技术', graduationYear: 2014, graduationMonth: null, completionStatus: 'COMPLETED', credentialVerificationStatus: 'UNKNOWN' },
     { institutionName: '示例海外大学', countryOrRegion: '示例国', educationLevel: 'MASTER', majorName: '计算机科学', graduationYear: 2027, graduationMonth: null, completionStatus: 'EXPECTED', credentialVerificationStatus: 'PLANNED' },
   ],
+  employmentRecords: [],
 }
 
 const factKeys = [
   'BIRTH_DATE', 'HIGHEST_EDUCATION', 'MAJORS', 'GRADUATION_YEAR', 'EXPERIENCE_YEARS',
   'PROFESSIONAL_TITLES', 'PREFERRED_LOCATIONS', 'ACCEPTED_EMPLOYMENT_TYPES', 'SKILLS',
   'RESEARCH_KEYWORDS', 'TARGET_JOB_FAMILIES', 'PREFERRED_ORGANIZATION_TYPES',
-  'EDUCATION_RECORDS',
+  'EDUCATION_RECORDS', 'GENDER', 'POLITICAL_AFFILIATION', 'EMPLOYMENT_HISTORY',
 ]
 
 function facts(profile = candidate, status = 'UNCONFIRMED') {
   return {
     profile, statuses: Object.fromEntries(factKeys.map(key => [key, status])),
-    confirmedCount: status === 'CONFIRMED' ? 13 : 0,
-    unconfirmedCount: status === 'UNCONFIRMED' ? 13 : 0,
+    confirmedCount: status === 'CONFIRMED' ? 16 : 0,
+    unconfirmedCount: status === 'UNCONFIRMED' ? 16 : 0,
     unknownCount: 0, decisionReady: status === 'CONFIRMED',
   }
 }
@@ -57,7 +58,11 @@ describe('ProfilePage', () => {
 
     render(<AppProviders><ProfilePage /></AppProviders>)
     expect(await screen.findByRole('heading', { name: '先确认你的决策资料' })).toBeInTheDocument()
-    expect(screen.getByText('待确认 13')).toBeInTheDocument()
+    expect(screen.getByText('待确认 16')).toBeInTheDocument()
+    expect(screen.getByLabelText('出生日期')).toHaveValue('1992-12-31')
+    expect(screen.getByLabelText('性别')).toHaveValue('FEMALE')
+    expect(screen.getByLabelText('政治面貌')).toHaveValue('UNKNOWN')
+    expect(screen.getByRole('heading', { name: '可核验工作经历' })).toBeInTheDocument()
     expect(screen.getByDisplayValue('示例海外大学')).toBeInTheDocument()
     expect(screen.getByLabelText('教育专业 1')).toHaveValue('计算机科学与技术')
     expect(screen.getByLabelText('专业职称')).toHaveValue('中级：计算机应用')
@@ -65,7 +70,7 @@ describe('ProfilePage', () => {
 
     expect(await screen.findByRole('heading', { name: '资料已确认' })).toBeInTheDocument()
     expect(screen.getByText(/候选人 · 本科 · 计算机科学与技术/)).toBeInTheDocument()
-    expect(screen.getByText('已确认 13')).toBeInTheDocument()
+    expect(screen.getByText('已确认 16')).toBeInTheDocument()
     expect(screen.getByText(/本科 · 计算机科学与技术 · 2014 · 已毕业/)).toBeInTheDocument()
     expect(screen.getByText(/示例海外大学 · 硕士 · 计算机科学 · 2027 · 预计毕业/)).toBeInTheDocument()
     expect(localStorage.getItem(`career-os.profile-confirmed.${candidate.id}`)).toBeNull()
@@ -73,6 +78,9 @@ describe('ProfilePage', () => {
     expect(JSON.parse(String(confirmCall?.[1]?.body)).factKeys).toEqual(factKeys)
     const updateCall = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')
     expect(JSON.parse(String(updateCall?.[1]?.body)).educationRecords).toHaveLength(2)
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
+      birthDay: 31, gender: 'FEMALE', politicalAffiliation: 'UNKNOWN', employmentRecords: [],
+    })
   })
 
   it('keeps a failed server confirmation retryable and never sends a client profile version', async () => {

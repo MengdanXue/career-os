@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ApiProblem } from '../../api/http'
-import type { CandidateProfile, CandidateProfileUpdate, EducationRecord } from './profileSchema'
+import type { CandidateEmploymentRecord, CandidateProfile, CandidateProfileUpdate, EducationRecord, Gender, PoliticalAffiliation } from './profileSchema'
 import { splitFacts } from './profileSchema'
 
 type Props = {
@@ -13,8 +13,9 @@ type Props = {
 
 type Fields = {
   displayName: string
-  birthYear: string
-  birthMonth: string
+  birthDate: string
+  gender: Gender
+  politicalAffiliation: PoliticalAffiliation
   highestEducation: string
   majors: string
   graduationYear: string
@@ -27,13 +28,20 @@ type Fields = {
   targetJobFamilies: string[]
   preferredOrganizationTypes: string[]
   educationRecords: EducationRecord[]
+  employmentRecords: CandidateEmploymentRecord[]
+}
+
+function isoBirthDate(candidate: CandidateProfile) {
+  const { year, month, day } = candidate.birthDate
+  return day ? `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}` : ''
 }
 
 function initialFields(candidate: CandidateProfile): Fields {
   return {
     displayName: candidate.displayName,
-    birthYear: String(candidate.birthDate.year),
-    birthMonth: String(candidate.birthDate.month),
+    birthDate: isoBirthDate(candidate),
+    gender: candidate.gender ?? 'UNKNOWN',
+    politicalAffiliation: candidate.politicalAffiliation ?? 'UNKNOWN',
     highestEducation: candidate.highestEducation,
     majors: candidate.majors.join(', '),
     graduationYear: candidate.graduationYear?.toString() ?? '',
@@ -46,6 +54,7 @@ function initialFields(candidate: CandidateProfile): Fields {
     targetJobFamilies: candidate.targetJobFamilies,
     preferredOrganizationTypes: candidate.preferredOrganizationTypes,
     educationRecords: (candidate.educationRecords ?? []).map(record => ({ ...record })),
+    employmentRecords: (candidate.employmentRecords ?? []).map(record => ({ ...record, evidenceTypes: [...record.evidenceTypes] })),
   }
 }
 
@@ -59,11 +68,14 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    const [birthYear, birthMonth, birthDay] = fields.birthDate.split('-').map(Number)
     onSubmit({
       displayName: fields.displayName.trim(),
-      birthYear: Number(fields.birthYear),
-      birthMonth: Number(fields.birthMonth),
-      birthDay: candidate.birthDate.day,
+      birthYear,
+      birthMonth,
+      birthDay,
+      gender: fields.gender,
+      politicalAffiliation: fields.politicalAffiliation,
       highestEducation: fields.highestEducation,
       majors: splitFacts(fields.majors),
       graduationYear: fields.graduationYear ? Number(fields.graduationYear) : null,
@@ -83,11 +95,29 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
         graduationYear: record.graduationYear ? Number(record.graduationYear) : null,
         graduationMonth: record.graduationMonth ? Number(record.graduationMonth) : null,
       })),
+      employmentRecords: fields.employmentRecords.map(record => ({
+        ...record,
+        employerName: record.employerName.trim(),
+        roleTitle: record.roleTitle.trim(),
+        endsOn: record.endsOn || null,
+        evidenceTypes: record.evidenceTypes.map(value => value.trim()).filter(Boolean),
+      })),
     })
   }
 
   function setEducation(index: number, patch: Partial<EducationRecord>) {
     set('educationRecords', fields.educationRecords.map((record, recordIndex) => recordIndex === index ? { ...record, ...patch } : record))
+  }
+
+  function setEmployment(index: number, patch: Partial<CandidateEmploymentRecord>) {
+    set('employmentRecords', fields.employmentRecords.map((record, recordIndex) => recordIndex === index ? { ...record, ...patch } : record))
+  }
+
+  function addEmployment() {
+    set('employmentRecords', [...fields.employmentRecords, {
+      employerName: '', roleTitle: '', startsOn: '', endsOn: null, employmentMode: 'FULL_TIME',
+      verificationStatus: 'UNVERIFIED', evidenceTypes: [],
+    }])
   }
 
   const errorMessage = error instanceof ApiProblem ? error.message : error ? '资料没有保存，请重试。' : null
@@ -98,11 +128,33 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
         <div className="form-grid">
           <label>称呼<input required value={fields.displayName} onChange={event => set('displayName', event.target.value)} /></label>
           <label>最高学历<select value={fields.highestEducation} onChange={event => set('highestEducation', event.target.value)}><option value="BACHELOR">本科</option><option value="MASTER">硕士</option><option value="DOCTOR">博士</option></select></label>
-          <label>出生年份<input required inputMode="numeric" value={fields.birthYear} onChange={event => set('birthYear', event.target.value)} /></label>
-          <label>出生月份<input required type="number" min="1" max="12" value={fields.birthMonth} onChange={event => set('birthMonth', event.target.value)} /></label>
+          <label>出生日期<input aria-label="出生日期" required type="date" value={fields.birthDate} onChange={event => set('birthDate', event.target.value)} /></label>
+          <label>性别<select aria-label="性别" value={fields.gender} onChange={event => set('gender', event.target.value as Gender)}><option value="FEMALE">女</option><option value="MALE">男</option><option value="OTHER">其他</option><option value="UNKNOWN">待明确</option></select></label>
+          <label>政治面貌<select aria-label="政治面貌" value={fields.politicalAffiliation} onChange={event => set('politicalAffiliation', event.target.value as PoliticalAffiliation)}><option value="UNKNOWN">待明确</option><option value="CPC_MEMBER">中共党员</option><option value="CPC_PROBATIONARY">中共预备党员</option><option value="NON_MEMBER">非中共党员</option></select></label>
           <label>毕业年份<input inputMode="numeric" value={fields.graduationYear} onChange={event => set('graduationYear', event.target.value)} /></label>
           <label>相关经验（年）<input type="number" min="0" value={fields.experienceYears} onChange={event => set('experienceYears', event.target.value)} /></label>
         </div>
+      </fieldset>
+      <fieldset disabled={pending}>
+        <legend>经历证据</legend>
+        <h2 className="form-section-title">可核验工作经历</h2>
+        <p className="field-note">只填写能说明起止日期和证明类型的经历。空白比编造时间更可靠。</p>
+        <div className="employment-records">
+          {fields.employmentRecords.map((record, index) => <section className="employment-record" key={`employment-${index}`} aria-label={`工作经历 ${index + 1}`}>
+            <div className="education-record-heading"><strong>第 {index + 1} 段经历</strong><button className="text-action" type="button" onClick={() => set('employmentRecords', fields.employmentRecords.filter((_, recordIndex) => recordIndex !== index))}>移除</button></div>
+            <div className="form-grid">
+              <label>单位<input required value={record.employerName} onChange={event => setEmployment(index, { employerName: event.target.value })} /></label>
+              <label>岗位<input required value={record.roleTitle} onChange={event => setEmployment(index, { roleTitle: event.target.value })} /></label>
+              <label>开始日期<input required type="date" value={record.startsOn} onChange={event => setEmployment(index, { startsOn: event.target.value })} /></label>
+              <label>结束日期<input type="date" value={record.endsOn ?? ''} onChange={event => setEmployment(index, { endsOn: event.target.value || null })} /></label>
+              <label>经历类型<select value={record.employmentMode} onChange={event => setEmployment(index, { employmentMode: event.target.value as CandidateEmploymentRecord['employmentMode'] })}><option value="FULL_TIME">全职</option><option value="PART_TIME">兼职</option><option value="INTERNSHIP">实习</option><option value="UNKNOWN">待明确</option></select></label>
+              <label>证明状态<select value={record.verificationStatus} onChange={event => setEmployment(index, { verificationStatus: event.target.value as CandidateEmploymentRecord['verificationStatus'] })}><option value="UNVERIFIED">未核验</option><option value="PARTIAL">部分证明</option><option value="VERIFIED">已核验</option><option value="REJECTED">不可用于证明</option></select></label>
+            </div>
+            <label>可提供的证明类型<input value={record.evidenceTypes.join(', ')} onChange={event => setEmployment(index, { evidenceTypes: splitFacts(event.target.value) })} placeholder="例如：劳动合同、社保记录、单位证明" /></label>
+          </section>)}
+          {fields.employmentRecords.length === 0 && <p className="empty-evidence">尚未记录可核验经历；系统不会从简历自动猜测工作年限。</p>}
+        </div>
+        <button className="secondary-action" type="button" onClick={addEmployment}>添加一段经历</button>
       </fieldset>
       <fieldset disabled={pending}>
         <legend>教育经历</legend>

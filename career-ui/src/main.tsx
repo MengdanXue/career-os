@@ -9,6 +9,7 @@ import './styles/opportunities.css'
 import './styles/agent.css'
 import './styles/today.css'
 import './styles/updates.css'
+import './styles/planning.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
