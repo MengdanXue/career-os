@@ -49,7 +49,13 @@ class CareerPlanApiTest {
             .andExpect(jsonPath("$.futureScenarios[0].effectiveFrom").doesNotExist())
             .andExpect(jsonPath("$.ageWindows").isArray())
             .andExpect(jsonPath("$.qualificationRisks").isArray())
+            .andExpect(jsonPath("$.examSummary.totalEvents").value(0))
+            .andExpect(jsonPath("$.examSummary.writtenExamUnknown").value(0))
             .andExpect(jsonPath("$.dataCoverage.complete").value(false))
+            .andExpect(jsonPath("$.configuredCoverage.complete").value(false))
+            .andExpect(jsonPath("$.targetMarketCoverage.targetCount").value(0))
+            .andExpect(jsonPath("$.targetMarketCoverage.routes").isArray())
+            .andExpect(jsonPath("$.analysisCoverage.jobCount").value(0))
             .andExpect(jsonPath("$.algorithmVersion").value("career-plan-v3"));
 
         mvc.perform(get("/api/v1/candidates/{candidateId}/career-plan", CANDIDATE_ID)

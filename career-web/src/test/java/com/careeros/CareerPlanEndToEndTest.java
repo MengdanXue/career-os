@@ -88,15 +88,31 @@ class CareerPlanEndToEndTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.candidateSnapshot.birthDate").value("1992-12-31"))
             .andExpect(jsonPath("$.candidateSnapshot.gender").value("FEMALE"))
-            .andExpect(jsonPath("$.currentScenario.code").value("PRE_GRADUATION"))
+            .andExpect(jsonPath("$.currentScenario.code").value("MASTER_IN_PROGRESS"))
+            .andExpect(jsonPath("$.graduateTrack.code").value("TARGET_YEAR_GRADUATE"))
+            .andExpect(jsonPath("$.graduateTrack.outcome").value("CONDITIONALLY_ELIGIBLE"))
             .andExpect(jsonPath("$.recommendedRoutes[0].code").value("PUBLIC_TECH"))
             .andExpect(jsonPath("$.recommendedRoutes[0].representativeJobs[0].jobId")
                 .value(JOB_ID.toString()))
+            .andExpect(jsonPath("$.recommendedRoutes[0].representativeJobs[0].historicalActual.scenarioCode")
+                .value("HISTORICAL_ACTUAL"))
+            .andExpect(jsonPath("$.recommendedRoutes[0].representativeJobs[0].targetYearAnalog.scenarioCode")
+                .value("TARGET_YEAR_ANALOG"))
             .andExpect(jsonPath("$.recommendedRoutes[0].representativeJobs[0].scenarioOutcomes[0].reasons[*]",
                 everyItem(not(containsString("尚未确认")))))
             .andExpect(jsonPath("$.historicalSummary[2].jobCount").value(1))
             .andExpect(jsonPath("$.recruitmentWindows[0].month").value(3))
             .andExpect(jsonPath("$.examPatterns[0].subject").exists())
-            .andExpect(jsonPath("$.qualificationRisks[?(@.code == 'EMPLOYMENT_EVIDENCE')]").exists());
+            .andExpect(jsonPath("$.examSummary.totalEvents").value(1))
+            .andExpect(jsonPath("$.processWindows[?(@.stage == 'APPLICATION_START')]").exists())
+            .andExpect(jsonPath("$.configuredCoverage.sourceYearCount").isNumber())
+            .andExpect(jsonPath("$.targetMarketCoverage.targetCount").value(20))
+            .andExpect(jsonPath("$.targetMarketCoverage.connected").value(2))
+            .andExpect(jsonPath("$.targetMarketCoverage.partial").value(1))
+            .andExpect(jsonPath("$.targetMarketCoverage.notConnected").value(17))
+            .andExpect(jsonPath("$.analysisCoverage.eventCount").value(1))
+            .andExpect(jsonPath("$.analysisCoverage.jobCount").value(1))
+            .andExpect(jsonPath("$.qualificationRisks[?(@.code == 'EMPLOYMENT_EVIDENCE')]").exists())
+            .andExpect(jsonPath("$.algorithmVersion").value("career-plan-v3"));
     }
 }
