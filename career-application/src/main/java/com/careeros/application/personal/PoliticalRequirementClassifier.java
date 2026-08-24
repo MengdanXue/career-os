@@ -19,7 +19,9 @@ public final class PoliticalRequirementClassifier {
         if (clause.isBlank() || !clause.contains("党员")) return false;
         if (clause.contains("不限") || clause.contains("优先")
             || clause.contains("党员或") || clause.contains("或民主党派")) return false;
-        return clause.contains("限中共党员")
+        return clause.equals("中共党员")
+            || clause.equals("中共预备党员")
+            || clause.contains("限中共党员")
             || clause.contains("须为中共党员")
             || clause.contains("必须为中共党员")
             || clause.contains("要求中共党员")

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppProviders } from '../../app/AppProviders'
@@ -103,10 +103,11 @@ describe('ProfilePage', () => {
   it('keeps confirmed facts usable and offers decision retry when recomputation fails', async () => {
     const updated = { ...candidate, skills: ['Java', 'Spring Boot'], profileVersion: 'current-v2' }
     let diffAttempts = 0
+    let evidenceTaskRequests = 0
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/api/v1/candidates')) return json([candidate])
-      if (url.includes('/evidence-tasks')) return json(evidenceTasks())
+      if (url.includes('/evidence-tasks')) { evidenceTaskRequests += 1; return json(evidenceTasks()) }
       if (url.endsWith('/facts') && !init?.method) return json(facts(candidate, 'CONFIRMED'))
       if (init?.method === 'PUT') return json(updated)
       if (url.endsWith('/facts/confirm')) return json(facts(updated, 'CONFIRMED'))
@@ -133,6 +134,7 @@ describe('ProfilePage', () => {
     await userEvent.click(screen.getByRole('button', { name: '重新更新岗位结论' }))
     expect(await screen.findByText('减少待确认 1')).toBeInTheDocument()
     expect(diffAttempts).toBe(2)
+    await waitFor(() => expect(evidenceTaskRequests).toBeGreaterThanOrEqual(3))
   })
 
   it('keeps a failed server confirmation retryable and never sends a client profile version', async () => {
@@ -148,6 +150,11 @@ describe('ProfilePage', () => {
         if (confirmationAttempts === 1) return json({ title: 'Temporary', detail: '确认暂时失败', code: 'TEMPORARY' }, 503)
         return json(facts({ ...candidate, skills: ['Java', 'Spring Boot'], profileVersion: 'profile-server-final' }, 'CONFIRMED'))
       }
+      if (url.includes('/decision-change-summaries/')) return json({
+        candidateId: candidate.id, previousProfileVersion: 'seed-v1', currentProfileVersion: 'profile-server-final',
+        asOf: '2026-08-24', available: true, message: null, newlyEligibleCount: 0,
+        resolvedUncertaintyCount: 0, newlyIneligibleCount: 0, affectedJobs: [],
+      })
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetch)
@@ -163,6 +170,8 @@ describe('ProfilePage', () => {
     const putBodies = fetch.mock.calls.filter(([, init]) => init?.method === 'PUT').map(([, init]) => JSON.parse(String(init?.body)))
     expect(putBodies).not.toHaveLength(0)
     expect(putBodies.every(body => !('profileVersion' in body))).toBe(true)
+    const diffCall = fetch.mock.calls.find(([input]) => String(input).includes('/decision-change-summaries/'))
+    expect(String(diffCall?.[0])).toContain('/decision-change-summaries/seed-v1?')
   })
 
   it('edits the candidate selected by the decision gate when multiple profiles exist', async () => {

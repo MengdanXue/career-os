@@ -28,6 +28,14 @@ public final class FitEvaluator {
     public FitAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
                                   Organization organization, String jobFingerprint,
                                   LocalDate qualificationAsOf, Instant assessedAt) {
+        return evaluate(candidate, facts, job, organization, jobFingerprint, qualificationAsOf,
+            assessedAt, VERSION);
+    }
+
+    public FitAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
+                                  Organization organization, String jobFingerprint,
+                                  LocalDate qualificationAsOf, Instant assessedAt,
+                                  String evaluatorVersion) {
         var dimensions = new ArrayList<AssessmentDimension>();
         dimensions.add(overlap(AssessmentDimensionType.MAJOR_FIT, 25, confirmed(facts, MAJORS, candidate.majors()), job.exactMajors(), job.evidenceIds(), "MAJOR"));
         dimensions.add(textOverlap(AssessmentDimensionType.SKILL_FIT, 20, confirmed(facts, SKILLS, candidate.skills()), jobText(job), job.evidenceIds(), "SKILL"));
@@ -35,7 +43,7 @@ public final class FitEvaluator {
         dimensions.add(textOverlap(AssessmentDimensionType.RESEARCH_FIT, 10, confirmed(facts, RESEARCH_KEYWORDS, candidate.researchKeywords()), jobText(job), job.evidenceIds(), "RESEARCH"));
         dimensions.add(overlap(AssessmentDimensionType.PROFESSIONAL_TITLE_FIT, 10, confirmed(facts, PROFESSIONAL_TITLES, candidate.professionalTitles()), job.requiredProfessionalTitles(), job.evidenceIds(), "TITLE"));
         dimensions.add(preference(candidate, facts, job, organization));
-        return new FitAssessment(UUID.randomUUID(), candidate.id(), job.id(), dimensions, VERSION, candidate.profileVersion(), jobFingerprint, assessedAt);
+        return new FitAssessment(UUID.randomUUID(), candidate.id(), job.id(), dimensions, evaluatorVersion, candidate.profileVersion(), jobFingerprint, assessedAt);
     }
 
     private AssessmentDimension experience(CandidateProfile candidate, CandidateFacts facts, JobPosting job, LocalDate qualificationAsOf) {

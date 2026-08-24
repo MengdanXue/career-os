@@ -117,10 +117,12 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     private DecisionBundle evaluate(DecisionInputKey input, CandidateProfile candidate, CandidateFacts facts, JobContext context, Instant now) {
         LocalDate qualificationAsOf = context.event().applicationEndsOn();
         var eligibility = eligibilityAssessments.save(eligibilityEvaluator.evaluate(candidate, facts,
-            context.job(), context.contentFingerprint(), qualificationAsOf, now));
+            context.job(), context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion()));
         var fit = fitEvaluator.evaluate(candidate, facts, context.job(), context.organization(),
-            context.contentFingerprint(), qualificationAsOf, now);
-        var stabilityResult = stabilityEvaluator.evaluate(candidate, context.job(), context.organization(), stabilityFacts.findByOrganizationId(context.organization().id()), context.contentFingerprint(), now);
+            context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion());
+        var stabilityResult = stabilityEvaluator.evaluate(candidate, context.job(), context.organization(),
+            stabilityFacts.findByOrganizationId(context.organization().id()), context.contentFingerprint(),
+            now, input.evaluatorVersion());
         OpportunityTier tier = excluded(eligibility.status()) ? OpportunityTier.EXCLUDED : stabilityResult.tier();
         int coverage = Math.round((fit.coveragePercent() + stabilityResult.assessment().coveragePercent()) / 2f);
         RecommendationStatus recommendation = recommendation(eligibility.status(), tier, fit.score(), coverage);

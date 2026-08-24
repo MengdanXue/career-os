@@ -139,6 +139,13 @@ class DecisionIntelligenceServiceTest {
         var corrected = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW.plusSeconds(60));
 
         assertThat(corrected.decision().id()).isNotEqualTo(first.decision().id());
+        assertThat(corrected.decision().evaluatorVersion()).isNotEqualTo(first.decision().evaluatorVersion());
+        assertThat(corrected.eligibility().evaluatorVersion()).isEqualTo(corrected.decision().evaluatorVersion());
+        assertThat(corrected.fit().evaluatorVersion()).isEqualTo(corrected.decision().evaluatorVersion());
+        assertThat(corrected.stability().evaluatorVersion()).isEqualTo(corrected.decision().evaluatorVersion());
+        assertThat(first.eligibility().evaluatorVersion()).isNotEqualTo(corrected.eligibility().evaluatorVersion());
+        assertThat(first.fit().evaluatorVersion()).isNotEqualTo(corrected.fit().evaluatorVersion());
+        assertThat(first.stability().evaluatorVersion()).isNotEqualTo(corrected.stability().evaluatorVersion());
         assertThat(fixture.snapshots.saved).isEqualTo(2);
     }
 

@@ -42,6 +42,12 @@ public final class EligibilityEvaluator {
     public EligibilityAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
                                           String jobContentFingerprint, LocalDate qualificationAsOf,
                                           Instant assessedAt) {
+        return evaluate(candidate, facts, job, jobContentFingerprint, qualificationAsOf, assessedAt, VERSION);
+    }
+
+    public EligibilityAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
+                                          String jobContentFingerprint, LocalDate qualificationAsOf,
+                                          Instant assessedAt, String evaluatorVersion) {
         var results = new EnumMap<RuleType, RuleResult>(RuleType.class);
         results.put(RuleType.AGE, evaluateAge(candidate, facts, job));
         results.put(RuleType.EDUCATION, evaluateEducation(candidate, facts, job));
@@ -50,7 +56,7 @@ public final class EligibilityEvaluator {
         results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, facts, job, qualificationAsOf));
         results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, facts, job));
         var overall = results.values().stream().map(RuleResult::status).max(EligibilityEvaluator::compareSeverity).orElse(EligibilityStatus.UNCERTAIN);
-        return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), VERSION, assessedAt, candidate.profileVersion(), jobContentFingerprint);
+        return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), evaluatorVersion, assessedAt, candidate.profileVersion(), jobContentFingerprint);
     }
 
     RuleResult evaluateAge(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {

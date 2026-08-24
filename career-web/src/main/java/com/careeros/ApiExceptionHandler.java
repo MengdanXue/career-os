@@ -3,6 +3,7 @@ package com.careeros;
 import com.careeros.application.ExtractionExceptions;
 import com.careeros.application.DecisionExceptions;
 import com.careeros.application.CandidateProfileService;
+import com.careeros.application.personal.CandidateDecisionDiffService;
 import com.careeros.application.planning.CareerPlanService;
 import java.net.URI;
 import java.util.NoSuchElementException;
@@ -78,6 +79,11 @@ class ApiExceptionHandler {
     @ExceptionHandler(DecisionExceptions.DecisionNotFoundException.class)
     ResponseEntity<ProblemDetail> decisionMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "DECISION_NOT_FOUND", "Decision not found", exception.getMessage());
+    }
+    @ExceptionHandler(CandidateDecisionDiffService.DecisionComparisonConflictException.class)
+    ResponseEntity<ProblemDetail> decisionComparisonConflict(RuntimeException exception) {
+        return problem(HttpStatus.CONFLICT, "DECISION_COMPARISON_CONFLICT",
+            "Decision comparison conflict", exception.getMessage());
     }
 
     private static ResponseEntity<ProblemDetail> problem(

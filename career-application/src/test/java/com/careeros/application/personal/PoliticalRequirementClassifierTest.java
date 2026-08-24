@@ -16,6 +16,8 @@ class PoliticalRequirementClassifierTest {
         assertThat(classifier.hasHardRequirement(job("限中共党员", null, null))).isTrue();
         assertThat(classifier.hasHardRequirement(job(null, "政治面貌为中共党员", null))).isTrue();
         assertThat(classifier.hasHardRequirement(job(null, null, "报考人员须为中共党员"))).isTrue();
+        assertThat(classifier.hasHardRequirement(job(null, "中共党员，年龄不限", null))).isTrue();
+        assertThat(classifier.hasHardRequirement(job(null, "中共党员，具有相关经验者优先", null))).isTrue();
     }
 
     @Test void ignoresPreferencesUnrestrictedFieldsAndAlternativeAffiliations() {

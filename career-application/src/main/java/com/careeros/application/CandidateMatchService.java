@@ -90,9 +90,11 @@ public class CandidateMatchService {
         JobAdmission admission, FieldEvidenceCoverage evidenceCoverage, Instant now
     ) {
         var eligibilityResult = eligibility.evaluate(
-            candidate, facts, context.job(), context.contentFingerprint(), now);
+            candidate, facts, context.job(), context.contentFingerprint(),
+            context.event().applicationEndsOn(), now);
         var fitResult = fit.evaluate(
-            candidate, facts, context.job(), context.organization(), context.contentFingerprint(), now);
+            candidate, facts, context.job(), context.organization(), context.contentFingerprint(),
+            context.event().applicationEndsOn(), now);
         boolean identityConfirmed = context.job().employmentType() != EmploymentType.UNKNOWN;
         QualitySummary qualitySummary = qualitySummary(evidenceCoverage);
         var warnings = new LinkedHashSet<String>();

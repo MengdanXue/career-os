@@ -59,4 +59,15 @@ class DecisionChangeApiTest {
             .andExpect(jsonPath("$.newlyEligibleCount").doesNotExist())
             .andExpect(jsonPath("$.affectedJobs").isEmpty());
     }
+
+    @Test void returnsConflictWhenTheProfileChangesDuringComparison() throws Exception {
+        when(service.recompute(CANDIDATE_ID, "old-v1", LocalDate.of(2026, 8, 24)))
+            .thenThrow(new CandidateDecisionDiffService.DecisionComparisonConflictException(
+                "candidate profile changed during decision comparison"));
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/decision-change-summaries/{profileVersion}",
+                CANDIDATE_ID, "old-v1").param("asOf", "2026-08-24"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.code").value("DECISION_COMPARISON_CONFLICT"));
+    }
 }

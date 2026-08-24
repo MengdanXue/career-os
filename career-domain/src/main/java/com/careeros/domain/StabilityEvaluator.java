@@ -25,13 +25,19 @@ public final class StabilityEvaluator {
     );
 
     public Result evaluate(CandidateProfile candidate, JobPosting job, Organization organization, List<OrganizationStabilityFact> facts, String jobFingerprint, Instant now) {
+        return evaluate(candidate, job, organization, facts, jobFingerprint, now, VERSION);
+    }
+
+    public Result evaluate(CandidateProfile candidate, JobPosting job, Organization organization,
+                           List<OrganizationStabilityFact> facts, String jobFingerprint,
+                           Instant now, String evaluatorVersion) {
         var dimensions = new ArrayList<AssessmentDimension>();
         dimensions.add(employment(job));
         var byType = new EnumMap<AssessmentDimensionType,OrganizationStabilityFact>(AssessmentDimensionType.class);
         facts.stream().filter(f -> f.organizationId().equals(organization.id())).forEach(f -> byType.put(f.dimensionType(), f));
         ORGANIZATION_WEIGHTS.forEach((type, maximum) -> dimensions.add(fromFact(type, maximum, byType.get(type))));
         dimensions.add(contract(job));
-        var assessment = new StabilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), dimensions, VERSION, candidate.profileVersion(), jobFingerprint, now);
+        var assessment = new StabilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), dimensions, evaluatorVersion, candidate.profileVersion(), jobFingerprint, now);
         return new Result(assessment, tier(job, organization));
     }
 

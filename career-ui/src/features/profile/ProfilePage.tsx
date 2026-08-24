@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AsyncState } from '../../components/AsyncState'
 import type { CandidateEvidenceTask, CandidateEvidenceTasks } from '../personal/personalTypes'
@@ -112,6 +112,7 @@ export function ProfilePage() {
   const [decisionChangeError, setDecisionChangeError] = useState<Error | null>(null)
   const [decisionChangePending, setDecisionChangePending] = useState(false)
   const [changeRequest, setChangeRequest] = useState<{ candidateId: string; previousProfileVersion: string } | null>(null)
+  const saveBaselineVersion = useRef<string | null>(null)
 
   async function refreshDecisionChanges(request: { candidateId: string; previousProfileVersion: string }) {
     setDecisionChangePending(true)
@@ -126,6 +127,15 @@ export function ProfilePage() {
     }
   }
 
+  async function settleDecisionChanges(request: { candidateId: string; previousProfileVersion: string }) {
+    await refreshDecisionChanges(request)
+    await client.invalidateQueries({ predicate: query => query.queryKey[0] === 'decisions' || query.queryKey[0] === 'workbench' })
+    await Promise.all([
+      client.invalidateQueries({ queryKey: profileKeys.evidenceTasks(request.candidateId) }),
+      client.invalidateQueries({ predicate: query => query.queryKey[0] === 'personal-actions' || query.queryKey[0] === 'career-plan' }),
+    ])
+  }
+
   useEffect(() => {
     if (!editing || !requestedAnchor) return
     const target = document.getElementById(requestedAnchor)
@@ -138,12 +148,14 @@ export function ProfilePage() {
 
   const save = useMutation({
     mutationFn: async (update: CandidateProfileUpdate) => {
-      const previousProfileVersion = candidate!.profileVersion
+      const previousProfileVersion = saveBaselineVersion.current ?? candidate!.profileVersion
+      saveBaselineVersion.current = previousProfileVersion
       const updated = await updateCandidate(candidate!.id, update)
       setSavedCandidate(updated)
       return { snapshot: await confirmCandidateFacts(updated.id), previousProfileVersion }
     },
     onSuccess: async ({ snapshot, previousProfileVersion }) => {
+      saveBaselineVersion.current = null
       setSavedCandidate(snapshot.profile)
       setSavedFacts(snapshot)
       localStorage.setItem('career-os.selected-candidate', snapshot.profile.id)
@@ -152,12 +164,7 @@ export function ProfilePage() {
       client.setQueryData<CandidateProfile[]>(profileKeys.list, current => current?.map(item => item.id === snapshot.profile.id ? snapshot.profile : item) ?? [snapshot.profile])
       const request = { candidateId: snapshot.profile.id, previousProfileVersion }
       setChangeRequest(request)
-      await refreshDecisionChanges(request)
-      await client.invalidateQueries({ predicate: query => query.queryKey[0] === 'decisions' || query.queryKey[0] === 'workbench' })
-      await Promise.all([
-        client.invalidateQueries({ queryKey: profileKeys.evidenceTasks(snapshot.profile.id) }),
-        client.invalidateQueries({ predicate: query => query.queryKey[0] === 'personal-actions' || query.queryKey[0] === 'career-plan' }),
-      ])
+      await settleDecisionChanges(request)
     },
     onError: async () => {
       if (!candidate) return
@@ -169,6 +176,7 @@ export function ProfilePage() {
   })
 
   function beginEdit() {
+    saveBaselineVersion.current = candidate?.profileVersion ?? null
     save.reset()
     setDecisionChange(null)
     setDecisionChangeError(null)
@@ -177,6 +185,7 @@ export function ProfilePage() {
   }
 
   function handleEvidenceTask(task: CandidateEvidenceTask) {
+    saveBaselineVersion.current = candidate?.profileVersion ?? null
     save.reset()
     setRequestedAnchor(task.deepLink.split('#')[1] ?? null)
     setEditing(true)
@@ -197,7 +206,7 @@ export function ProfilePage() {
           {isConfirmed && decisionChangeError && <section className="decision-change-error" role="alert">
             <strong>{decisionChangeError.message}</strong>
             <p>资料已经保存并确认。</p><p>旧岗位结论不会被标记为当前结果。</p>
-            <button className="secondary-action" type="button" disabled={decisionChangePending || !changeRequest} onClick={() => changeRequest && refreshDecisionChanges(changeRequest)}>重新更新岗位结论</button>
+            <button className="secondary-action" type="button" disabled={decisionChangePending || !changeRequest} onClick={() => changeRequest && settleDecisionChanges(changeRequest)}>重新更新岗位结论</button>
           </section>}
           {isConfirmed && decisionChange && <DecisionChangePanel summary={decisionChange} />}
           {(!isConfirmed || editing || save.isPending || save.isError) ? <section className="profile-editing">

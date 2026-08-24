@@ -3,19 +3,26 @@ package com.careeros.application.personal;
 import static com.careeros.application.DecisionPorts.*;
 import static com.careeros.domain.DomainEnums.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.careeros.application.RepositoryPorts;
 import com.careeros.domain.*;
 import com.careeros.domain.EligibilityAssessment.RuleResult;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
 class CandidateDecisionDiffServiceTest {
     private static final UUID CANDIDATE_ID = UUID.randomUUID();
     private static final LocalDate AS_OF = LocalDate.of(2026, 8, 24);
+    private static final Instant NOW = Instant.parse("2026-08-24T15:27:31Z");
+    private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
     @Test
     void comparesTheSameJobsAndExplainsAllMaterialQualificationChanges() {
@@ -40,7 +47,7 @@ class CandidateDecisionDiffServiceTest {
         );
         var assessedJobs = new LinkedHashSet<UUID>();
         var service = new CandidateDecisionDiffService(candidates("current-v2"), snapshots(old),
-            (candidateId, jobId, now) -> { assessedJobs.add(jobId); return current.get(jobId); });
+            (candidateId, jobId, now) -> { assessedJobs.add(jobId); return current.get(jobId); }, CLOCK);
 
         var result = service.recompute(CANDIDATE_ID, "old-v1", AS_OF);
 
@@ -61,7 +68,7 @@ class CandidateDecisionDiffServiceTest {
     void reportsUnavailableHistoryWithoutInventingZeroDifferencesOrRecomputingJobs() {
         var calls = new AtomicInteger();
         var service = new CandidateDecisionDiffService(candidates("current-v2"), snapshots(List.of()),
-            (candidateId, jobId, now) -> { calls.incrementAndGet(); throw new AssertionError("must not assess"); });
+            (candidateId, jobId, now) -> { calls.incrementAndGet(); throw new AssertionError("must not assess"); }, CLOCK);
 
         var result = service.recompute(CANDIDATE_ID, "missing-v1", AS_OF);
 
@@ -74,17 +81,75 @@ class CandidateDecisionDiffServiceTest {
         assertThat(calls).hasValue(0);
     }
 
+    @Test
+    void usesTheRealAssessmentClockInsteadOfTheReportingDateMidnight() {
+        UUID jobId = UUID.randomUUID();
+        var observed = new AtomicReference<Instant>();
+        var current = bundle(jobId, "current-v2", EligibilityStatus.ELIGIBLE, Map.of());
+        var service = new CandidateDecisionDiffService(candidates("current-v2"),
+            snapshots(List.of(bundle(jobId, "old-v1", EligibilityStatus.UNCERTAIN, Map.of()))),
+            (candidateId, ignored, assessedAt) -> { observed.set(assessedAt); return current; }, CLOCK);
+
+        service.recompute(CANDIDATE_ID, "old-v1", AS_OF);
+
+        assertThat(observed).hasValue(NOW);
+    }
+
+    @Test
+    void refusesToAttributeJobOrQualificationSnapshotChangesToTheProfileEdit() {
+        UUID jobId = UUID.randomUUID();
+        var old = bundle(jobId, "old-v1", EligibilityStatus.UNCERTAIN, Map.of(),
+            "a".repeat(64), "decision-v3@qualification=2026-09-01");
+        var changedJob = bundle(jobId, "current-v2", EligibilityStatus.ELIGIBLE, Map.of(),
+            "b".repeat(64), "decision-v3@qualification=2026-09-15");
+        var service = new CandidateDecisionDiffService(candidates("current-v2"), snapshots(List.of(old)),
+            (candidateId, ignored, assessedAt) -> changedJob, CLOCK);
+
+        var result = service.recompute(CANDIDATE_ID, "old-v1", AS_OF);
+
+        assertThat(result.available()).isFalse();
+        assertThat(result.message()).contains("岗位").contains("截止日");
+        assertThat(result.newlyEligibleCount()).isNull();
+        assertThat(result.resolvedUncertaintyCount()).isNull();
+        assertThat(result.newlyIneligibleCount()).isNull();
+        assertThat(result.affectedJobs()).isEmpty();
+    }
+
+    @Test
+    void rejectsAComparisonWhenTheProfileChangesDuringRecomputation() {
+        UUID jobId = UUID.randomUUID();
+        var reads = new AtomicInteger();
+        var profiles = candidates(() -> reads.getAndIncrement() == 0 ? "current-v2" : "concurrent-v3");
+        var current = bundle(jobId, "current-v2", EligibilityStatus.ELIGIBLE, Map.of());
+        var service = new CandidateDecisionDiffService(profiles,
+            snapshots(List.of(bundle(jobId, "old-v1", EligibilityStatus.UNCERTAIN, Map.of()))),
+            (candidateId, ignored, assessedAt) -> current, CLOCK);
+
+        assertThatThrownBy(() -> service.recompute(CANDIDATE_ID, "old-v1", AS_OF))
+            .isInstanceOf(CandidateDecisionDiffService.DecisionComparisonConflictException.class)
+            .hasMessageContaining("profile changed");
+    }
+
     private static RepositoryPorts.CandidateProfiles candidates(String version) {
-        var candidate = new CandidateProfile(CANDIDATE_ID, "候选人", PartialDate.month(1992, 12),
-            EducationLevel.MASTER, Set.of("计算机科学"), 2027, 0, Set.of(), List.of("杭州"),
-            Set.of(EmploymentType.ESTABLISHMENT), version);
+        return candidates(() -> version);
+    }
+
+    private static RepositoryPorts.CandidateProfiles candidates(Supplier<String> version) {
         return new RepositoryPorts.CandidateProfiles() {
             public CandidateProfile save(CandidateProfile value) { return value; }
-            public Optional<CandidateProfile> findById(UUID id) { return id.equals(CANDIDATE_ID) ? Optional.of(candidate) : Optional.empty(); }
+            public Optional<CandidateProfile> findById(UUID id) {
+                return id.equals(CANDIDATE_ID) ? Optional.of(candidate(version.get())) : Optional.empty();
+            }
             public Optional<CandidateProfile> findByIdForUpdate(UUID id) { return findById(id); }
-            public List<CandidateProfile> findAll() { return List.of(candidate); }
+            public List<CandidateProfile> findAll() { return List.of(candidate(version.get())); }
             public void deleteById(UUID id) { }
         };
+    }
+
+    private static CandidateProfile candidate(String version) {
+        return new CandidateProfile(CANDIDATE_ID, "候选人", PartialDate.month(1992, 12),
+            EducationLevel.MASTER, Set.of("计算机科学"), 2027, 0, Set.of(), List.of("杭州"),
+            Set.of(EmploymentType.ESTABLISHMENT), version);
     }
 
     private static DecisionSnapshots snapshots(List<DecisionBundle> old) {
@@ -100,6 +165,12 @@ class CandidateDecisionDiffServiceTest {
 
     private static DecisionBundle bundle(UUID jobId, String profileVersion, EligibilityStatus status,
                                          Map<RuleType, RuleResult> rules) {
+        return bundle(jobId, profileVersion, status, rules, "a".repeat(64), "test");
+    }
+
+    private static DecisionBundle bundle(UUID jobId, String profileVersion, EligibilityStatus status,
+                                         Map<RuleType, RuleResult> rules, String fingerprint,
+                                         String evaluatorVersion) {
         UUID organizationId = UUID.randomUUID();
         UUID eventId = UUID.randomUUID();
         Instant assessedAt = Instant.parse("2026-08-24T00:00:00Z");
@@ -114,17 +185,17 @@ class CandidateDecisionDiffServiceTest {
             AS_OF.minusDays(10), AS_OF.minusDays(5), AS_OF.plusDays(5), job.sourceUrl(),
             EmploymentType.ESTABLISHMENT, evidence);
         var eligibility = new EligibilityAssessment(UUID.randomUUID(), CANDIDATE_ID, jobId, status, rules,
-            evidence, "test", assessedAt, profileVersion, "a".repeat(64));
-        var fit = new FitAssessment(UUID.randomUUID(), CANDIDATE_ID, jobId, List.of(), "test",
-            profileVersion, "a".repeat(64), assessedAt);
-        var stability = new StabilityAssessment(UUID.randomUUID(), CANDIDATE_ID, jobId, List.of(), "test",
-            profileVersion, "a".repeat(64), assessedAt);
+            evidence, evaluatorVersion, assessedAt, profileVersion, fingerprint);
+        var fit = new FitAssessment(UUID.randomUUID(), CANDIDATE_ID, jobId, List.of(), evaluatorVersion,
+            profileVersion, fingerprint, assessedAt);
+        var stability = new StabilityAssessment(UUID.randomUUID(), CANDIDATE_ID, jobId, List.of(), evaluatorVersion,
+            profileVersion, fingerprint, assessedAt);
         var decision = new DecisionAssessment(UUID.randomUUID(), CANDIDATE_ID, jobId, eligibility.id(), fit.id(),
             stability.id(), status, status == EligibilityStatus.INELIGIBLE ? OpportunityTier.EXCLUDED : OpportunityTier.T1,
             status == EligibilityStatus.INELIGIBLE ? RecommendationStatus.EXCLUDED : RecommendationStatus.REVIEW,
-            fit.score(), stability.score(), 0, "test", profileVersion, "a".repeat(64), assessedAt);
+            fit.score(), stability.score(), 0, evaluatorVersion, profileVersion, fingerprint, assessedAt);
         return new DecisionBundle(eligibility, fit, stability, decision,
-            new JobContext(job, organization, event, "a".repeat(64), true));
+            new JobContext(job, organization, event, fingerprint, true));
     }
 
     private static RuleResult rule(EligibilityStatus status, String explanation) {

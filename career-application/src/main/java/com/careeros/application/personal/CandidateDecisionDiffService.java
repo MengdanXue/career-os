@@ -6,21 +6,24 @@ import static com.careeros.domain.DomainEnums.*;
 import com.careeros.application.CandidateProfileService;
 import com.careeros.application.RepositoryPorts;
 import com.careeros.domain.EligibilityAssessment.RuleResult;
+import java.time.Clock;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.*;
 
 public final class CandidateDecisionDiffService {
     private final RepositoryPorts.CandidateProfiles candidates;
     private final DecisionSnapshots snapshots;
     private final DecisionAssessor assessor;
+    private final Clock clock;
 
     public CandidateDecisionDiffService(RepositoryPorts.CandidateProfiles candidates,
                                         DecisionSnapshots snapshots,
-                                        DecisionAssessor assessor) {
+                                        DecisionAssessor assessor,
+                                        Clock clock) {
         this.candidates = Objects.requireNonNull(candidates);
         this.snapshots = Objects.requireNonNull(snapshots);
         this.assessor = Objects.requireNonNull(assessor);
+        this.clock = Objects.requireNonNull(clock);
     }
 
     public DecisionChangeSummary recompute(UUID candidateId, String previousProfileVersion, LocalDate asOf) {
@@ -39,8 +42,24 @@ public final class CandidateDecisionDiffService {
         }
 
         var current = new LinkedHashMap<UUID, DecisionBundle>();
-        var assessedAt = asOf.atStartOfDay(ZoneOffset.UTC).toInstant();
-        previous.keySet().forEach(jobId -> current.put(jobId, assessor.assess(candidateId, jobId, assessedAt)));
+        var assessedAt = clock.instant();
+        for (UUID jobId : previous.keySet()) {
+            var result = assessor.assess(candidateId, jobId, assessedAt);
+            if (!currentCandidate.profileVersion().equals(result.decision().profileVersion())) {
+                throw new DecisionComparisonConflictException("candidate profile changed during decision comparison");
+            }
+            current.put(jobId, result);
+        }
+        var finalCandidate = candidates.findById(candidateId).orElseThrow(() ->
+            new CandidateProfileService.CandidateProfileNotFoundException("Candidate not found: " + candidateId));
+        if (!currentCandidate.profileVersion().equals(finalCandidate.profileVersion())) {
+            throw new DecisionComparisonConflictException("candidate profile changed during decision comparison");
+        }
+        if (!compatibleSnapshots(previous, current)) {
+            return new DecisionChangeSummary(candidateId, previousProfileVersion,
+                currentCandidate.profileVersion(), asOf, false,
+                "岗位内容或资格截止日已变化，不能把差异归因于本次资料修改。", null, null, null, List.of());
+        }
 
         int newlyEligible = 0;
         int resolvedUncertainty = 0;
@@ -69,6 +88,17 @@ public final class CandidateDecisionDiffService {
         return new DecisionChangeSummary(candidateId, previousProfileVersion,
             currentCandidate.profileVersion(), asOf, true, null,
             newlyEligible, resolvedUncertainty, newlyIneligible, affected);
+    }
+
+    private static boolean compatibleSnapshots(Map<UUID, DecisionBundle> previous,
+                                               Map<UUID, DecisionBundle> current) {
+        for (var entry : previous.entrySet()) {
+            var before = entry.getValue().decision();
+            var after = current.get(entry.getKey()).decision();
+            if (!before.jobContentFingerprint().equals(after.jobContentFingerprint())
+                || !before.evaluatorVersion().equals(after.evaluatorVersion())) return false;
+        }
+        return true;
     }
 
     private static Map<UUID, DecisionBundle> latestByJob(List<DecisionBundle> values) {
@@ -126,5 +156,9 @@ public final class CandidateDecisionDiffService {
             case PROFESSIONAL_TITLE -> "职称";
             case OTHER -> "其他条件";
         };
+    }
+
+    public static final class DecisionComparisonConflictException extends RuntimeException {
+        public DecisionComparisonConflictException(String message) { super(message); }
     }
 }
