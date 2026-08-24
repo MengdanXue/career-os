@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
 
@@ -25,6 +26,40 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
             .filter(link -> include.matcher(link.title()).find())
             .filter(link -> !exclude.matcher(link.title()).find())
             .toList();
+    }
+
+    public List<DiscoveredLink> discover(OfficialSourceCatalog.SourceDefinition source, byte[] html) {
+        Objects.requireNonNull(source, "source");
+        if (!source.enabled() || source.strategy() == OfficialSourceCatalog.DiscoveryStrategy.UNSUPPORTED) {
+            throw new IllegalArgumentException("Source is not enabled for deterministic discovery: " + source.code());
+        }
+        URI pageUri = URI.create(source.listingUrl());
+        Pattern article = Pattern.compile(source.articleUrlRegex());
+        Pattern include = Pattern.compile(source.titleIncludeRegex());
+        Pattern exclude = Pattern.compile(source.titleExcludeRegex());
+        var distinct = new LinkedHashMap<URI, DiscoveredLink>();
+        var document = Jsoup.parse(htmlPayload(html), pageUri.toString());
+        for (var element : document.select(source.linkSelector())) {
+            String href = element.attr("href").trim();
+            if (href.isEmpty()) continue;
+            URI resolved;
+            try {
+                resolved = CanonicalUri.normalize(pageUri.resolve(href));
+            } catch (IllegalArgumentException exception) {
+                continue;
+            }
+            String title = element.attr("title").strip();
+            if (title.isEmpty()) title = element.text().strip();
+            if (!"https".equalsIgnoreCase(resolved.getScheme())
+                || !pageUri.getHost().equalsIgnoreCase(resolved.getHost())
+                || !article.matcher(resolved.toString()).matches()
+                || !include.matcher(title).find()
+                || exclude.matcher(title).find()) continue;
+            distinct.putIfAbsent(resolved, new DiscoveredLink(resolved, title));
+        }
+        var result = new ArrayList<>(distinct.values());
+        result.sort(java.util.Comparator.comparing(link -> link.uri().toString()));
+        return List.copyOf(result);
     }
 
     @Override

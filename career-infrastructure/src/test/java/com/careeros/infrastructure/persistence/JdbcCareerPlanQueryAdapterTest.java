@@ -71,6 +71,8 @@ class JdbcCareerPlanQueryAdapterTest {
         assertThat(data.targetSources()).filteredOn(source -> source.connectionStatus().name().equals("CONNECTED"))
             .extracting(source -> source.code())
             .containsExactlyInAnyOrder("ZJ_HRSS_INSTITUTION", "HZ_HRSS_INSTITUTION");
+        assertThat(data.targetSources()).anyMatch(source -> source.code().equals("ZJGSU_RECRUITMENT")
+            && source.connectionStatus().name().equals("PARTIAL"));
     }
 
     private static void insertJob(UUID event, String jobId, String organization, String organizationType, String title,

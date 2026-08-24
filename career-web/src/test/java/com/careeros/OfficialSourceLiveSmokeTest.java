@@ -8,6 +8,7 @@ import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
 import com.careeros.infrastructure.acquisition.JavaHttpDocumentFetcher;
 import com.careeros.infrastructure.acquisition.MediaTypeDetector;
+import com.careeros.infrastructure.acquisition.OfficialSourceCatalog;
 import com.careeros.infrastructure.acquisition.StaticHtmlSourceDiscoverer;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -48,6 +49,22 @@ class OfficialSourceLiveSmokeTest {
             "https://hrss.hangzhou.gov.cn/col/col1229782005/index.html",
             "https://hrss.hangzhou.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=3163&tplSetId=clJESumZainQpjpBI3Qsd&pageType=column&tagId=%E5%88%86%E9%A1%B5%E5%88%97%E8%A1%A8&editType=null&pageId=1229782005",
             "^https://hrss\\.hangzhou\\.gov\\.cn(?:/col/col[0-9]+)?/art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\\.html$"));
+    }
+
+    @Test
+    void auditedStaticCatalogListingsStillExposeOfficialRecruitmentLinks() {
+        var sources = OfficialSourceCatalog.load().sources().stream()
+            .filter(OfficialSourceCatalog.SourceDefinition::enabled)
+            .filter(source -> source.strategy() == OfficialSourceCatalog.DiscoveryStrategy.STATIC_HTML)
+            .toList();
+        assertThat(sources).isNotEmpty();
+        sources.forEach(source -> {
+            URI listing = URI.create(source.listingUrl());
+            var fetched = fetcher.fetch(new FetchRequest(listing, Set.of(listing.getHost()),
+                null, null, Duration.ofSeconds(20), 26_214_400));
+            assertThat(fetched.status()).as(source.code()).isEqualTo(200);
+            assertThat(discoverer.discover(source, fetched.content())).as(source.code()).isNotEmpty();
+        });
     }
 
     private void assertCompatible(RecruitmentSource source) {

@@ -1,0 +1,157 @@
+sources:
+  - code: ZJ_HRSS_INSTITUTION
+    name: 浙江省人力资源和社会保障厅事业单位招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://rlsbt.zj.gov.cn/
+    listingUrl: https://rlsbt.zj.gov.cn/col/col1229743683/index.html
+    strategy: JCMS_LISTING
+    historicalYears: [2024, 2025, 2026]
+    enabled: true
+    articleUrlRegex: '^https://rlsbt\.zj\.gov\.cn(?:/col/col[0-9]+)?/art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+  - code: HZ_HRSS_INSTITUTION
+    name: 杭州市人力资源和社会保障局事业单位招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://hrss.hangzhou.gov.cn/
+    listingUrl: https://hrss.hangzhou.gov.cn/col/col1229782005/index.html
+    strategy: JCMS_LISTING
+    historicalYears: [2024, 2025, 2026]
+    enabled: true
+    articleUrlRegex: '^https://hrss\.hangzhou\.gov\.cn(?:/col/col[0-9]+)?/art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+  - code: HZ_BINJIANG_GOV
+    name: 杭州高新区（滨江）政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.hhtz.gov.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: HZ_YUHANG_GOV
+    name: 余杭区政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.yuhang.gov.cn/
+    listingUrl: https://www.yuhang.gov.cn/col/col1229176178/index.html
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+    articleUrlRegex: '^https://www\.yuhang\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
+  - code: HZ_QIANTANG_GOV
+    name: 钱塘区政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.qiantang.gov.cn/
+    listingUrl: https://www.qiantang.gov.cn/col/col1657687/index.html
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+    articleUrlRegex: '^https://www\.qiantang\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
+  - code: HZ_XIAOSHAN_GOV
+    name: 萧山区政府事业单位考试
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.xiaoshan.gov.cn/
+    listingUrl: https://www.xiaoshan.gov.cn/col/col1229292680/index.html
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+    articleUrlRegex: '^https://www\.xiaoshan\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
+  - code: HZ_LINPING_GOV
+    name: 临平区政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.linping.gov.cn/
+    listingUrl: https://www.linping.gov.cn/col/col1229597298/index.html
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+    articleUrlRegex: '^https://www\.linping\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
+  - code: HDU_RECRUITMENT
+    name: 杭州电子科技大学招聘
+    routeCode: UNIVERSITY_HOSPITAL_IT
+    officialRootUrl: https://renshi.hdu.edu.cn/
+    listingUrl: https://renshi.hdu.edu.cn/rczp/list.htm
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+    articleUrlRegex: '^https://renshi\.hdu\.edu\.cn/[0-9]{4}/[0-9]{4}/c[0-9]+a[0-9]+/page\.htm$'
+  - code: ZJUT_RECRUITMENT
+    name: 浙江工业大学招聘
+    routeCode: UNIVERSITY_HOSPITAL_IT
+    officialRootUrl: https://www.zjut.edu.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: ZJGSU_RECRUITMENT
+    name: 浙江工商大学招聘
+    routeCode: UNIVERSITY_HOSPITAL_IT
+    officialRootUrl: https://talents.zjgsu.edu.cn/
+    listingUrl: https://talents.zjgsu.edu.cn/rczp/list.htm
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026]
+    enabled: true
+    articleUrlRegex: '^https://talents\.zjgsu\.edu\.cn/[0-9]{4}/[0-9]{4}/c[0-9]+a[0-9]+/page\.htm$'
+  - code: HZNU_RECRUITMENT
+    name: 杭州师范大学招聘
+    routeCode: UNIVERSITY_HOSPITAL_IT
+    officialRootUrl: https://rsc.hznu.edu.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: HZ_FIRST_HOSPITAL
+    name: 杭州市第一人民医院招聘
+    routeCode: UNIVERSITY_HOSPITAL_IT
+    officialRootUrl: https://zp.hz-hospital.com/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: HZ_CHILDRENS_HOSPITAL
+    name: 杭州市儿童医院招聘
+    routeCode: UNIVERSITY_HOSPITAL_IT
+    officialRootUrl: https://www.hzch.org.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: HZ_XIXI_HOSPITAL
+    name: 杭州市西溪医院招聘
+    routeCode: UNIVERSITY_HOSPITAL_IT
+    officialRootUrl: https://www.xixih.net/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: HZ_TCM_HOSPITAL
+    name: 杭州市中医院招聘
+    routeCode: UNIVERSITY_HOSPITAL_IT
+    officialRootUrl: https://www.hztcm.net/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: UCAS_HANGZHOU
+    name: 国科大杭州高等研究院招聘
+    routeCode: RESEARCH_SUPPORT
+    officialRootUrl: https://hias.ucas.ac.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: WESTLAKE_RESEARCH
+    name: 西湖大学科研技术岗位
+    routeCode: RESEARCH_SUPPORT
+    officialRootUrl: https://www.westlake.edu.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: HZ_DATA_GROUP
+    name: 杭州数据集团招聘
+    routeCode: GOVERNMENT_SOE_DIGITAL
+    officialRootUrl: https://hr.hzfi.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: HZ_CAPITAL_GROUP
+    name: 杭州市国有资本投资运营有限公司招聘
+    routeCode: GOVERNMENT_SOE_DIGITAL
+    officialRootUrl: https://hr.hzfi.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
+  - code: HZ_METRO_GROUP
+    name: 杭州地铁集团招聘
+    routeCode: GOVERNMENT_SOE_DIGITAL
+    officialRootUrl: https://www.hzmetro.com/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026]
+    enabled: false
