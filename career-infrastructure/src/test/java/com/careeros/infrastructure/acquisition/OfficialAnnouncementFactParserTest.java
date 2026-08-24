@@ -1,5 +1,9 @@
 package com.careeros.infrastructure.acquisition;
 
+import static com.careeros.domain.GraduateEligibilityRule.CohortScope.CURRENT_YEAR;
+import static com.careeros.domain.GraduateEligibilityRule.CohortScope.PREVIOUS_YEAR;
+import static com.careeros.domain.GraduateEligibilityRule.CohortScope.TWO_YEARS_PRIOR;
+import static com.careeros.domain.GraduateEligibilityRule.EvidenceState.CONFIRMED;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.LocalDate;
@@ -24,7 +28,7 @@ class OfficialAnnouncementFactParserTest {
               <p>岗位要求的“工作经历”以签订的劳动（聘用）合同、社保缴费记录及其他有效证明为准。</p>
               <p>国外学历学位需取得教育部留学服务中心学历学位认证。</p>
               <p>笔试时间：2026年4月25日 上午9:00—11:30 《综合应用能力》 下午2:00—3:30 《职业能力倾向测验》。</p>
-              <p>考试包括笔试和面试。面试可包括专业知识测试、实际操作考试、结构化面试等形式。</p>
+              <p>考试包括笔试和面试。面试时间、地点另行通知，可包括专业知识测试、实际操作考试、结构化面试等形式。</p>
               <p>经公示无异议的，办理相关手续，签订聘用合同。</p>
             </div></body></html>
             """;
@@ -43,6 +47,13 @@ class OfficialAnnouncementFactParserTest {
         assertThat(facts.writtenExamOn()).isEqualTo(LocalDate.of(2026, 4, 25));
         assertThat(facts.writtenExamSubjects()).containsExactly("综合应用能力", "职业能力倾向测验");
         assertThat(facts.graduateRule()).contains("2024年、2025年和2026年").contains("2026年9月30日");
+        assertThat(facts.graduateEligibilityRule().cohorts())
+            .containsExactlyInAnyOrder(CURRENT_YEAR, PREVIOUS_YEAR, TWO_YEARS_PRIOR);
+        assertThat(facts.graduateEligibilityRule().includesOverseasGraduates()).isTrue();
+        assertThat(facts.graduateEligibilityRule().degreeDeadline()).isEqualTo(LocalDate.of(2026, 9, 30));
+        assertThat(facts.writtenExamState()).isEqualTo(CONFIRMED);
+        assertThat(facts.interviewState()).isEqualTo(CONFIRMED);
+        assertThat(facts.interviewOn()).isNull();
         assertThat(facts.overseasDegreeRule()).contains("教育部留学服务中心学历学位认证");
         assertThat(facts.experienceEvidenceRule()).contains("社保缴费记录");
         assertThat(facts.employmentStatement()).contains("签订聘用合同");

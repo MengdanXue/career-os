@@ -1,5 +1,8 @@
 package com.careeros.infrastructure.acquisition;
 
+import com.careeros.domain.GraduateEligibilityRule;
+import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
+import com.careeros.domain.GraduateEligibilityRule.RequirementTiming;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -22,6 +25,7 @@ public final class OfficialAnnouncementFactParser {
     private static final Pattern AGE_REFERENCE = Pattern.compile("(?:截止时间为|截止到|截至)(20\\d{2})年(\\d{1,2})月(\\d{1,2})日");
     private static final Pattern URL = Pattern.compile("网址[：:]\\s*(https?://[^\\s（(。；;]+)");
     private static final Pattern SUBJECT = Pattern.compile("《([^》]+)》");
+    private static final Pattern GRADUATION_YEAR = Pattern.compile("(20\\d{2})年");
 
     public OfficialAnnouncementFacts parse(String html, String sourceUrl) {
         if (html == null || html.isBlank()) throw new IllegalArgumentException("html is required");
@@ -46,6 +50,12 @@ public final class OfficialAnnouncementFactParser {
         String experience = sentence(text, "社保缴费记录");
         String employment = sentence(text, "签订聘用合同");
         String interview = joinSentences(text, "考试包括笔试和面试", "结构化面试");
+        GraduateEligibilityRule graduateEligibilityRule = graduateRule(published, graduate);
+        EvidenceState writtenExamState = processState(text, "笔试", examText, examDate != null || !subjects.isEmpty());
+        EvidenceState professionalTestState = professionalTestState(interview);
+        EvidenceState interviewState = processState(text, "面试", interview, interview != null);
+        String interviewSentence = sentence(text, "面试时间");
+        LocalDate interviewOn = firstChineseDate(interviewSentence);
         String ageSentence = sentence(text, "资格条件或工作经历的计算");
         LocalDate ageReference = date(ageSentence, AGE_REFERENCE);
         String applicationSentence = sentence(text, "报名时间");
@@ -60,7 +70,48 @@ public final class OfficialAnnouncementFactParser {
         return new OfficialAnnouncementFacts(
             published, application.start(), application.end(), review.end(), payment.end(), ageReference,
             match(text, URL), ticket.start(), ticket.end(), examDate, List.copyOf(subjects), graduate,
-            overseas, experience, employment, interview, Map.copyOf(excerpts));
+            overseas, experience, employment, interview, Map.copyOf(excerpts), graduateEligibilityRule,
+            writtenExamState, professionalTestState, interviewState, interviewOn, interview, null);
+    }
+
+    private static GraduateEligibilityRule graduateRule(LocalDate publishedOn, String rawRule) {
+        if (publishedOn == null || rawRule == null || rawRule.isBlank()) return null;
+        var years = new LinkedHashSet<Integer>();
+        var matcher = GRADUATION_YEAR.matcher(rawRule);
+        while (matcher.find()) years.add(Integer.parseInt(matcher.group(1)));
+        var base = GraduateEligibilityRule.fromExplicitYears(
+            publishedOn.getYear(), years, rawRule.contains("留学回国"), rawRule);
+        LocalDate degreeDeadline = firstChineseDate(sentence(rawRule, "取得相应证书的时限"));
+        return new GraduateEligibilityRule(
+            base.recruitmentYear(), base.explicitGraduationYears(), base.cohorts(),
+            base.includesOverseasGraduates(), RequirementTiming.UNSPECIFIED, degreeDeadline,
+            RequirementTiming.UNSPECIFIED, null, false, false, base.rawText(), base.evidenceState());
+    }
+
+    private static EvidenceState processState(
+        String allText,
+        String processName,
+        String processText,
+        boolean confirmed
+    ) {
+        if (allText.contains("不组织" + processName) || allText.contains("不设" + processName)) {
+            return EvidenceState.NOT_REQUIRED;
+        }
+        if (confirmed) return EvidenceState.CONFIRMED;
+        if (allText.contains(processName + "另行通知") || allText.contains(processName + "时间、地点另行通知")) {
+            return EvidenceState.NOT_PUBLISHED;
+        }
+        return processText == null ? EvidenceState.NOT_COLLECTED : EvidenceState.REVIEW_REQUIRED;
+    }
+
+    private static EvidenceState professionalTestState(String interviewRule) {
+        if (interviewRule == null || !interviewRule.contains("专业") && !interviewRule.contains("技能")) {
+            return EvidenceState.NOT_COLLECTED;
+        }
+        if (interviewRule.contains("可包括") || interviewRule.contains("可能")) {
+            return EvidenceState.REVIEW_REQUIRED;
+        }
+        return EvidenceState.CONFIRMED;
     }
 
     private static String before(String value, String... markers) {
@@ -185,11 +236,47 @@ public final class OfficialAnnouncementFactParser {
         String experienceEvidenceRule,
         String employmentStatement,
         String interviewRule,
-        Map<String, String> evidenceExcerpts
+        Map<String, String> evidenceExcerpts,
+        GraduateEligibilityRule graduateEligibilityRule,
+        EvidenceState writtenExamState,
+        EvidenceState professionalTestState,
+        EvidenceState interviewState,
+        LocalDate interviewOn,
+        String interviewMethod,
+        String scoreFormula
     ) {
+        public OfficialAnnouncementFacts(
+            LocalDate publishedOn,
+            OffsetDateTime applicationStartsAt,
+            OffsetDateTime applicationEndsAt,
+            OffsetDateTime qualificationReviewEndsOn,
+            OffsetDateTime paymentEndsOn,
+            LocalDate ageReferenceDate,
+            String registrationUrl,
+            LocalDate admissionTicketStartsOn,
+            LocalDate admissionTicketEndsOn,
+            LocalDate writtenExamOn,
+            List<String> writtenExamSubjects,
+            String graduateRule,
+            String overseasDegreeRule,
+            String experienceEvidenceRule,
+            String employmentStatement,
+            String interviewRule,
+            Map<String, String> evidenceExcerpts
+        ) {
+            this(publishedOn, applicationStartsAt, applicationEndsAt, qualificationReviewEndsOn, paymentEndsOn,
+                ageReferenceDate, registrationUrl, admissionTicketStartsOn, admissionTicketEndsOn, writtenExamOn,
+                writtenExamSubjects, graduateRule, overseasDegreeRule, experienceEvidenceRule, employmentStatement,
+                interviewRule, evidenceExcerpts, null, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN,
+                EvidenceState.UNKNOWN, null, null, null);
+        }
+
         public OfficialAnnouncementFacts {
             writtenExamSubjects = List.copyOf(writtenExamSubjects);
             evidenceExcerpts = Map.copyOf(evidenceExcerpts);
+            writtenExamState = writtenExamState == null ? EvidenceState.UNKNOWN : writtenExamState;
+            professionalTestState = professionalTestState == null ? EvidenceState.UNKNOWN : professionalTestState;
+            interviewState = interviewState == null ? EvidenceState.UNKNOWN : interviewState;
         }
     }
 }
