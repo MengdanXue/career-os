@@ -6,6 +6,8 @@ import static com.careeros.domain.DomainEnums.*;
 import com.careeros.application.RepositoryPorts;
 import com.careeros.application.planning.CareerPlanService.CandidateNotFoundException;
 import com.careeros.domain.CandidateFacts;
+import com.careeros.domain.GraduateEligibilityRule;
+import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
@@ -38,7 +40,9 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
                job.minimum_education, job.maximum_age, job.minimum_experience_years,
                job.required_professional_titles::text, job.candidate_scope,
                job.exact_majors::text, job.accepted_graduation_years::text, job.gender_requirement,
-               event.overseas_degree_rule,
+               event.overseas_degree_rule, event.graduate_rule_json::text, event.graduate_rule,
+               event.written_exam_state, event.professional_test_state, event.interview_state,
+               event.interview_on, event.interview_method, event.score_formula,
                concat_ws('；', job.major_requirement_text, job.education_requirement_text,
                          job.age_requirement_text, job.other_requirements, job.original_requirement_text) requirements,
                job.source_url,
@@ -75,7 +79,7 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
     private final JdbcTemplate jdbc;
     private final RepositoryPorts.CandidateProfiles candidates;
     private final RepositoryPorts.CandidateFactConfirmations confirmations;
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     public JdbcCareerPlanQueryAdapter(JdbcTemplate jdbc, RepositoryPorts.CandidateProfiles candidates) {
         this(jdbc, candidates, null);
@@ -129,7 +133,12 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
             rows.getString("candidate_scope"), rows.getString("requirements"), rows.getString("source_url"),
             rows.getBoolean("evidence_complete"), strings(rows.getString("exact_majors")),
             integers(rows.getString("accepted_graduation_years")), rows.getString("gender_requirement"),
-            rows.getString("overseas_degree_rule"));
+            rows.getString("overseas_degree_rule"), graduateRule(rows.getString("graduate_rule_json")),
+            rows.getString("graduate_rule"), EvidenceState.valueOf(rows.getString("written_exam_state")),
+            EvidenceState.valueOf(rows.getString("professional_test_state")),
+            EvidenceState.valueOf(rows.getString("interview_state")),
+            rows.getObject("interview_on", LocalDate.class), rows.getString("interview_method"),
+            rows.getString("score_formula"));
     }
 
     private CoverageSignal mapCoverage(ResultSet rows, int rowNumber) throws SQLException {
@@ -152,6 +161,15 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
             return mapper.readValue(json, INTEGER_LIST);
         } catch (Exception exception) {
             throw new SQLException("Invalid JSON integer array in career planning projection", exception);
+        }
+    }
+
+    private GraduateEligibilityRule graduateRule(String json) throws SQLException {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return mapper.readValue(json, GraduateEligibilityRule.class);
+        } catch (Exception exception) {
+            throw new SQLException("Invalid graduate eligibility rule in career planning projection", exception);
         }
     }
 

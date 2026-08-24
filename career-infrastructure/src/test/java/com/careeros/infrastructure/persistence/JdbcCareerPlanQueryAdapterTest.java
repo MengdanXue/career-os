@@ -34,7 +34,8 @@ class JdbcCareerPlanQueryAdapterTest {
         var dataSource = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
         jdbc = new JdbcTemplate(dataSource);
         UUID event = UUID.fromString("30000000-0000-0000-0000-000000000001");
-        jdbc.update("insert into recruitment_event(id,title,recruitment_year,event_type,published_on,application_starts_on,application_ends_on,written_exam_on,written_exam_subjects,source_url) values (?, '2026招聘', 2026, 'PUBLIC_INSTITUTION', '2026-03-20', '2026-03-25', '2026-03-31', '2026-04-25', '[\"职业能力倾向测验\"]'::jsonb, 'https://example.gov.cn/event')", event);
+        jdbc.update("insert into recruitment_event(id,title,recruitment_year,event_type,published_on,application_starts_on,application_ends_on,written_exam_on,written_exam_subjects,graduate_rule,graduate_rule_json,written_exam_state,professional_test_state,interview_state,interview_on,interview_method,score_formula,source_url) values (?, '2026招聘', 2026, 'PUBLIC_INSTITUTION', '2026-03-20', '2026-03-25', '2026-03-31', '2026-04-25', '[\"职业能力倾向测验\"]'::jsonb, '2024、2025、2026届，含留学回国人员', ?::jsonb, 'CONFIRMED', 'NOT_REQUIRED', 'CONFIRMED', '2026-05-10', '结构化面试', '笔试、面试成绩各占50%', 'https://example.gov.cn/event')",
+            event, "{\"recruitmentYear\":2026,\"explicitGraduationYears\":[2024,2025,2026],\"cohorts\":[\"CURRENT_YEAR\",\"PREVIOUS_YEAR\",\"TWO_YEARS_PRIOR\"],\"includesOverseasGraduates\":true,\"degreeTiming\":\"APPOINTMENT\",\"degreeDeadline\":\"2026-09-30\",\"credentialTiming\":\"APPOINTMENT\",\"credentialDeadline\":\"2026-09-30\",\"requiresNoEmployer\":false,\"restrictsSocialInsurance\":false,\"rawText\":\"2024、2025、2026届，含留学回国人员\",\"evidenceState\":\"CONFIRMED\"}");
         insertJob(event, "31000000-0000-0000-0000-000000000001", "杭州市信息中心", "PUBLIC_INSTITUTION", "信息技术", "SOFTWARE", "PUBLIC_INSTITUTION_FORMAL", "BACHELOR", "[\"计算机科学与技术\"]", "系统建设", 38);
         insertJob(event, "31000000-0000-0000-0000-000000000002", "浙江示例大学", "UNIVERSITY", "计算机教师", "RESEARCH", "PUBLIC_INSTITUTION_FORMAL", "DOCTORATE", "[\"计算机科学\"]", "教学科研", 35);
         insertJob(event, "31000000-0000-0000-0000-000000000003", "杭州数字中心", "PUBLIC_INSTITUTION", "软件开发", "SOFTWARE", "LABOR_DISPATCH", "BACHELOR", "[\"计算机科学\"]", "软件开发", 38);
@@ -50,6 +51,15 @@ class JdbcCareerPlanQueryAdapterTest {
 
         assertThat(data.jobs()).extracting(job -> job.title()).containsExactly("信息技术");
         assertThat(data.jobs().getFirst().organizationName()).isEqualTo("杭州市信息中心");
+        assertThat(data.jobs().getFirst().graduateEligibilityRule().acceptedYearsFor(2027))
+            .containsExactlyInAnyOrder(2025, 2026, 2027);
+        assertThat(data.jobs().getFirst().graduateRule()).contains("2026届", "留学回国人员");
+        assertThat(data.jobs().getFirst().writtenExamState().name()).isEqualTo("CONFIRMED");
+        assertThat(data.jobs().getFirst().professionalTestState().name()).isEqualTo("NOT_REQUIRED");
+        assertThat(data.jobs().getFirst().interviewState().name()).isEqualTo("CONFIRMED");
+        assertThat(data.jobs().getFirst().interviewOn()).isEqualTo(LocalDate.of(2026, 5, 10));
+        assertThat(data.jobs().getFirst().interviewMethod()).isEqualTo("结构化面试");
+        assertThat(data.jobs().getFirst().scoreFormula()).isEqualTo("笔试、面试成绩各占50%");
         assertThat(data.coverage()).anySatisfy(signal -> {
             assertThat(signal.sourceCode()).isEqualTo("HZ_HRSS_INSTITUTION");
             assertThat(signal.year()).isEqualTo(2026);
