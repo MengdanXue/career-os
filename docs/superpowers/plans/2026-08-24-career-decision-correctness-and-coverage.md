@@ -1,6 +1,6 @@
 # Career Decision Correctness and Coverage Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Correct 2027 overseas fresh-graduate decisions, expose complete recruitment/exam evidence, distinguish configured coverage from target-market coverage, connect the first 20 official source targets, and make the user's in-app plan actionable.
 
@@ -33,7 +33,7 @@
 - Produces: `GraduateEligibilityRule`, `CohortScope`, `EvidenceState`, and `RequirementTiming` for parsing, persistence, and planning.
 - Consumes: no new production interface.
 
-- [ ] **Step 1: Write the failing domain tests**
+- [x] **Step 1: Write the failing domain tests**
 
 ```java
 @Test
@@ -58,13 +58,13 @@ void refusesToProjectNonContiguousOrFutureYears() {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run: `./mvnw -pl career-domain -Dtest=GraduateEligibilityRuleTest test`
 
 Expected: compilation failure because `GraduateEligibilityRule` does not exist.
 
-- [ ] **Step 3: Implement the minimal immutable domain model**
+- [x] **Step 3: Implement the minimal immutable domain model**
 
 ```java
 public record GraduateEligibilityRule(
@@ -118,13 +118,13 @@ public enum EvidenceState { CONFIRMED, NOT_PUBLISHED, NOT_REQUIRED, NOT_COLLECTE
 public enum RequirementTiming { APPLICATION, QUALIFICATION_REVIEW, APPOINTMENT, REPORTING, UNSPECIFIED, NOT_REQUIRED }
 ```
 
-- [ ] **Step 4: Run the domain tests and verify GREEN**
+- [x] **Step 4: Run the domain tests and verify GREEN**
 
 Run: `./mvnw -pl career-domain -Dtest=GraduateEligibilityRuleTest test`
 
 Expected: all `GraduateEligibilityRuleTest` tests pass.
 
-- [ ] **Step 5: Run the full domain module and commit**
+- [x] **Step 5: Run the full domain module and commit**
 
 Run: `./mvnw -pl career-domain test`
 
@@ -143,7 +143,7 @@ Commit: `feat: model graduate cohort eligibility rules`
 - Consumes: `GraduateEligibilityRule` from Task 1.
 - Produces: `OfficialAnnouncementFacts.graduateEligibilityRule()`, explicit process evidence states, and parsed exam/interview facts.
 
-- [ ] **Step 1: Add a failing real-fixture parser test**
+- [x] **Step 1: Add a failing real-fixture parser test**
 
 ```java
 @Test
@@ -162,13 +162,13 @@ void parsesRelativeGraduateRuleAndCompleteExamProcess() {
 }
 ```
 
-- [ ] **Step 2: Run the parser test and verify RED**
+- [x] **Step 2: Run the parser test and verify RED**
 
 Run: `./mvnw -pl career-infrastructure -Dtest=OfficialAnnouncementFactParserTest test`
 
 Expected: compilation failures for the new structured facts.
 
-- [ ] **Step 3: Extend `OfficialAnnouncementFacts` and deterministic parsing**
+- [x] **Step 3: Extend `OfficialAnnouncementFacts` and deterministic parsing**
 
 Add fields:
 
@@ -184,13 +184,13 @@ String scoreFormula
 
 Parse only explicit text. Map “另行通知” to `NOT_PUBLISHED`, explicit “不组织笔试” to `NOT_REQUIRED`, missing sections to `NOT_COLLECTED`, and ambiguous conflicting clauses to `REVIEW_REQUIRED`.
 
-- [ ] **Step 4: Run the parser test and verify GREEN**
+- [x] **Step 4: Run the parser test and verify GREEN**
 
 Run: `./mvnw -pl career-infrastructure -Dtest=OfficialAnnouncementFactParserTest test`
 
 Expected: parser tests pass and existing registration/exam assertions remain green.
 
-- [ ] **Step 5: Commit the parser slice**
+- [x] **Step 5: Commit the parser slice**
 
 Commit: `feat: parse graduate and exam process evidence`
 
@@ -210,7 +210,7 @@ Commit: `feat: parse graduate and exam process evidence`
 - Consumes: structured facts from Task 2.
 - Produces: persisted event facts and a backward-compatible `RecruitmentEvent` domain record.
 
-- [ ] **Step 1: Write failing persistence tests**
+- [x] **Step 1: Write failing persistence tests**
 
 ```java
 @Test
@@ -225,13 +225,13 @@ void savesStructuredRuleAndDistinguishesNotPublishedFromNotCollected() {
 }
 ```
 
-- [ ] **Step 2: Run persistence tests and verify RED**
+- [x] **Step 2: Run persistence tests and verify RED**
 
 Run: `./mvnw -pl career-infrastructure -Dtest=OfficialAnnouncementFactServiceTest test`
 
 Expected: missing columns/fields cause compilation or assertion failure.
 
-- [ ] **Step 3: Add the Flyway migration**
+- [x] **Step 3: Add the Flyway migration**
 
 ```sql
 ALTER TABLE recruitment_event
@@ -258,17 +258,17 @@ ALTER TABLE recruitment_event
     (interview_state IN ('CONFIRMED','NOT_PUBLISHED','NOT_REQUIRED','NOT_COLLECTED','PARSE_FAILED','REVIEW_REQUIRED','UNKNOWN'));
 ```
 
-- [ ] **Step 4: Map the new fields through JPA and domain adapters**
+- [x] **Step 4: Map the new fields through JPA and domain adapters**
 
 Use `@JdbcTypeCode(SqlTypes.JSON)` for the JSON rule and preserve existing constructors with defaults so current API tests compile.
 
-- [ ] **Step 5: Run persistence tests and verify GREEN**
+- [x] **Step 5: Run persistence tests and verify GREEN**
 
 Run: `./mvnw -pl career-infrastructure -Dtest=OfficialAnnouncementFactServiceTest,OfficialExcelImportServiceTest test`
 
 Expected: both suites pass and workbook imports retain announcement facts.
 
-- [ ] **Step 6: Commit the persistence slice**
+- [x] **Step 6: Commit the persistence slice**
 
 Commit: `feat: persist graduate and recruitment process facts`
 
@@ -286,7 +286,7 @@ Commit: `feat: persist graduate and recruitment process facts`
 - Consumes: `GraduateEligibilityRule`, candidate education records, target year, and evaluation mode.
 - Produces: `GraduateTrackAssessment assess(CandidateProfile, CandidateFacts, GraduateEligibilityRule, EvaluationMode, int targetYear)`.
 
-- [ ] **Step 1: Write failing projection tests for the real user scenario**
+- [x] **Step 1: Write failing projection tests for the real user scenario**
 
 ```java
 @Test
@@ -310,13 +310,13 @@ void priorEmploymentDoesNotEraseCurrentCohortWithoutAnExplicitNoEmploymentRule()
 }
 ```
 
-- [ ] **Step 2: Run the projector test and verify RED**
+- [x] **Step 2: Run the projector test and verify RED**
 
 Run: `./mvnw -pl career-application -am -Dtest=GraduateEligibilityProjectorTest -Dsurefire.failIfNoSpecifiedTests=false test`
 
 Expected: compilation failure because projector types do not exist.
 
-- [ ] **Step 3: Implement the projector**
+- [x] **Step 3: Implement the projector**
 
 ```java
 enum EvaluationMode { HISTORICAL_ACTUAL, TARGET_YEAR_ANALOG }
@@ -326,17 +326,17 @@ record GraduateTrackAssessment(GraduateTrack track, QualificationOutcome outcome
 
 For `TARGET_YEAR_ANALOG`, call `rule.acceptedYearsFor(targetYear)`. Evaluate no-employer/social-insurance restrictions only when the structured rule explicitly requires them; prior employment before the new degree does not itself produce a failure.
 
-- [ ] **Step 4: Extend the planning query projection**
+- [x] **Step 4: Extend the planning query projection**
 
 Select and map `event.graduate_rule_json`, raw graduate rule, credential deadline fields, and process evidence states into `HistoricalJob` without removing current constructor overloads.
 
-- [ ] **Step 5: Run projector and query adapter tests and verify GREEN**
+- [x] **Step 5: Run projector and query adapter tests and verify GREEN**
 
 Run: `./mvnw -pl career-application,career-infrastructure -am -Dtest=GraduateEligibilityProjectorTest,JdbcCareerPlanQueryAdapterTest -Dsurefire.failIfNoSpecifiedTests=false test`
 
 Expected: projection and JDBC mapping tests pass.
 
-- [ ] **Step 6: Commit the projection slice**
+- [x] **Step 6: Commit the projection slice**
 
 Commit: `feat: project graduate rules into target year`
 
@@ -354,7 +354,7 @@ Commit: `feat: project graduate rules into target year`
 - Consumes: projector from Task 4.
 - Produces: `educationScenarios`, `graduateTrack`, historical actual outcome, target-year analog outcome, and algorithm version `career-plan-v3`.
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 ```java
 @Test
@@ -373,13 +373,13 @@ void representativeJobExposesActualAndTargetYearAnalogOutcomes() {
 }
 ```
 
-- [ ] **Step 2: Run service tests and verify RED**
+- [x] **Step 2: Run service tests and verify RED**
 
 Run: `./mvnw -pl career-application -Dtest=CareerPlanServiceTest test`
 
 Expected: assertions fail because the current label is “本科阶段” and analog outcomes are absent.
 
-- [ ] **Step 3: Update the plan contract and evaluation flow**
+- [x] **Step 3: Update the plan contract and evaluation flow**
 
 Add:
 
@@ -390,17 +390,17 @@ public record ProjectedJobOutcome(JobScenarioOutcome historicalActual, JobScenar
 
 Use `MASTER_IN_PROGRESS`, `DEGREE_PENDING_VERIFICATION`, and `MASTER_VERIFIED` as education stages. Keep JSON compatibility by retaining `currentScenario`/`futureScenarios`, but emit the corrected code and labels. Do not compare expected master year directly with historical absolute years in analog mode.
 
-- [ ] **Step 4: Update route scoring and absence handling**
+- [x] **Step 4: Update route scoring and absence handling**
 
 Score readiness from `targetYearAnalog`, not historical actual. Add `RouteRankingState` with `RANKED`, `LIMITED`, `NOT_COVERED`, `NO_TARGET_RECORDS`, and `DATA_FAILURE`; non-ranked routes expose `priorityScore: null` through a nullable `Integer`.
 
-- [ ] **Step 5: Run service and API tests and verify GREEN**
+- [x] **Step 5: Run service and API tests and verify GREEN**
 
 Run: `./mvnw -pl career-application,career-web -am -Dtest=CareerPlanServiceTest,CareerPlanApiTest -Dsurefire.failIfNoSpecifiedTests=false test`
 
 Expected: service and serialized API contract tests pass.
 
-- [ ] **Step 6: Commit the planner correction**
+- [x] **Step 6: Commit the planner correction**
 
 Commit: `fix: evaluate 2027 overseas graduate track correctly`
 
@@ -418,7 +418,7 @@ Commit: `fix: evaluate 2027 overseas graduate track correctly`
 **Interfaces:**
 - Produces: `ExamSummary`, `ProcessWindow`, and counts with explicit denominators and missing counts.
 
-- [ ] **Step 1: Write failing aggregate tests**
+- [x] **Step 1: Write failing aggregate tests**
 
 ```java
 @Test
@@ -432,13 +432,13 @@ void examSummaryCountsEventsAndKeepsUnknownSeparate() {
 }
 ```
 
-- [ ] **Step 2: Run service tests and verify RED**
+- [x] **Step 2: Run service tests and verify RED**
 
 Run: `./mvnw -pl career-application -Dtest=CareerPlanServiceTest test`
 
 Expected: `examSummary` is missing.
 
-- [ ] **Step 3: Implement event-deduplicated aggregates**
+- [x] **Step 3: Implement event-deduplicated aggregates**
 
 ```java
 public record ExamSummary(
@@ -451,17 +451,17 @@ public record ExamSummary(
 
 Use one row per `eventId`; compute application-to-written-exam intervals only when both dates exist. Keep month counts for notice, application, written exam, and interview separately.
 
-- [ ] **Step 4: Map process fields in `JdbcCareerPlanQueryAdapter`**
+- [x] **Step 4: Map process fields in `JdbcCareerPlanQueryAdapter`**
 
 Extend SQL and `HistoricalJob` with process evidence states, `interviewOn`, `interviewMethod`, and `scoreFormula`.
 
-- [ ] **Step 5: Run service and adapter tests and verify GREEN**
+- [x] **Step 5: Run service and adapter tests and verify GREEN**
 
 Run: `./mvnw -pl career-application,career-infrastructure -am -Dtest=CareerPlanServiceTest,JdbcCareerPlanQueryAdapterTest -Dsurefire.failIfNoSpecifiedTests=false test`
 
 Expected: aggregates and query projections pass.
 
-- [ ] **Step 6: Commit exam aggregates**
+- [x] **Step 6: Commit exam aggregates**
 
 Commit: `feat: expose complete historical exam patterns`
 
@@ -481,7 +481,7 @@ Commit: `feat: expose complete historical exam patterns`
 **Interfaces:**
 - Produces: `ConfiguredCoverage`, `TargetMarketCoverage`, `AnalysisCoverage`, and route-specific source coverage.
 
-- [ ] **Step 1: Write failing coverage tests**
+- [x] **Step 1: Write failing coverage tests**
 
 ```java
 @Test
@@ -500,13 +500,13 @@ assertThat(data.targetSources()).anyMatch(source -> source.routeCode().equals("R
     && source.connectionStatus() == NOT_CONNECTED);
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `./mvnw -pl career-domain,career-infrastructure -am -Dtest=TargetSourceTest,JdbcCareerPlanQueryAdapterTest -Dsurefire.failIfNoSpecifiedTests=false test`
 
 Expected: target source types/table are missing.
 
-- [ ] **Step 3: Create catalog schema and seed the approved first 20 targets**
+- [x] **Step 3: Create catalog schema and seed the approved first 20 targets**
 
 Schema:
 
@@ -564,7 +564,7 @@ HZ_METRO_GROUP       https://www.hzmetro.com/
 
 Mark only the existing two recruitment sources `CONNECTED` in V26. All other catalog targets start `NOT_CONNECTED`; Task 8 changes status only after validating official identity, listing URL, and deterministic discovery.
 
-- [ ] **Step 4: Implement three coverage records**
+- [x] **Step 4: Implement three coverage records**
 
 ```java
 record ConfiguredCoverage(boolean complete, int sourceYearCount, int completeSourceYearCount, List<String> gaps) {}
@@ -574,13 +574,13 @@ record AnalysisCoverage(int sourceCount, int eventCount, int jobCount, int evide
 
 Keep legacy `dataCoverage.complete` during one compatibility version but label it `configuredSourcesComplete` in explanations.
 
-- [ ] **Step 5: Run coverage tests and verify GREEN**
+- [x] **Step 5: Run coverage tests and verify GREEN**
 
 Run: `./mvnw -pl career-domain,career-infrastructure -am -Dtest=TargetSourceTest,JdbcCareerPlanQueryAdapterTest -Dsurefire.failIfNoSpecifiedTests=false test`
 
 Expected: catalog and coverage projections pass.
 
-- [ ] **Step 6: Commit catalog and coverage model**
+- [x] **Step 6: Commit catalog and coverage model**
 
 Commit: `feat: distinguish target market and configured coverage`
 
@@ -600,7 +600,7 @@ Commit: `feat: distinguish target market and configured coverage`
 - Consumes: target identities from Task 7.
 - Produces: validated discovery configuration, source audit report, and accurate connection statuses.
 
-- [ ] **Step 1: Write a failing catalog contract test**
+- [x] **Step 1: Write a failing catalog contract test**
 
 ```java
 @Test
@@ -614,13 +614,13 @@ void catalogContainsTwentyUniqueOfficialTargetsAcrossAllRoutes() {
 }
 ```
 
-- [ ] **Step 2: Run the catalog test and verify RED**
+- [x] **Step 2: Run the catalog test and verify RED**
 
 Run: `./mvnw -pl career-infrastructure -Dtest=OfficialSourceCatalogTest test`
 
 Expected: catalog loader/config are missing.
 
-- [ ] **Step 3: Add source definitions and deterministic discovery strategies**
+- [x] **Step 3: Add source definitions and deterministic discovery strategies**
 
 Each YAML item must provide:
 
@@ -637,7 +637,7 @@ Each YAML item must provide:
 
 For every target, verify the official identity and current recruitment/listing URL before marking it `enabled: true`. Unsupported dynamic or blocked targets stay in the target catalog as `NOT_CONNECTED`; never invent a successful connector.
 
-- [ ] **Step 4: Add the read-only audit script**
+- [x] **Step 4: Add the read-only audit script**
 
 The script must resolve each configured official URL, record HTTP status/final host/content type, reject cross-domain redirects, and emit JSON without mutating the database:
 
@@ -645,7 +645,7 @@ Run: `powershell -File scripts/audit_official_sources.ps1 -OutputPath target/sou
 
 Expected: output contains one record per target and returns nonzero only for malformed catalog definitions; individual inaccessible sites are recorded as `ACCESS_FAILED`.
 
-- [ ] **Step 5: Run deterministic tests and the live audit**
+- [x] **Step 5: Run deterministic tests and the live audit**
 
 Run: `./mvnw -pl career-infrastructure -Dtest=OfficialSourceCatalogTest,StaticHtmlSourceDiscovererTest test`
 
@@ -653,7 +653,7 @@ Run: `powershell -File scripts/audit_official_sources.ps1 -OutputPath target/sou
 
 Expected: unit tests pass; audit truthfully distinguishes connected, redirected, blocked, and inaccessible sources.
 
-- [ ] **Step 6: Update connection statuses from audit evidence and commit**
+- [x] **Step 6: Update connection statuses from audit evidence and commit**
 
 Only audited, parseable sources become `CONNECTED` or `PARTIAL`. Catalog entries without a working deterministic path remain `NOT_CONNECTED` and therefore suppress route ranking.
 
@@ -673,7 +673,7 @@ Commit: `feat: register and audit official target sources`
 - Consumes: plan v3 from Tasks 5–8.
 - Produces: backward-compatible JSON with graduate track, analog outcomes, exam summary, and three-layer coverage.
 
-- [ ] **Step 1: Write failing API assertions**
+- [x] **Step 1: Write failing API assertions**
 
 ```java
 mockMvc.perform(get("/api/v1/candidates/{id}/career-plan", candidateId)
@@ -686,23 +686,23 @@ mockMvc.perform(get("/api/v1/candidates/{id}/career-plan", candidateId)
     .andExpect(jsonPath("$.algorithmVersion").value("career-plan-v3"));
 ```
 
-- [ ] **Step 2: Run API tests and verify RED**
+- [x] **Step 2: Run API tests and verify RED**
 
 Run: `./mvnw -pl career-web -Dtest=CareerPlanApiTest,CareerPlanEndToEndTest test`
 
 Expected: new JSON paths are missing.
 
-- [ ] **Step 3: Complete API serialization and compatibility documentation**
+- [x] **Step 3: Complete API serialization and compatibility documentation**
 
 Keep existing fields for current clients, document nullable route scores and ranking states, and state that `configuredCoverage.complete` does not mean market complete.
 
-- [ ] **Step 4: Run API tests and verify GREEN**
+- [x] **Step 4: Run API tests and verify GREEN**
 
 Run: `./mvnw -pl career-web -Dtest=CareerPlanApiTest,CareerPlanEndToEndTest test`
 
 Expected: both API suites pass.
 
-- [ ] **Step 5: Commit the API contract**
+- [x] **Step 5: Commit the API contract**
 
 Commit: `feat: expose graduate track and market coverage`
 
@@ -720,7 +720,7 @@ Commit: `feat: expose graduate track and market coverage`
 - Consumes: Career Plan v3 API.
 - Produces: visible 2027 overseas fresh-graduate conclusion, fresh/social dual tracks, ranking-state-aware route cards, and explicit market coverage.
 
-- [ ] **Step 1: Write failing UI tests**
+- [x] **Step 1: Write failing UI tests**
 
 ```tsx
 expect(await screen.findByText('2027 届境外硕士应届生候选')).toBeVisible()
@@ -731,7 +731,7 @@ expect(screen.getByText('尚未接入目标来源，暂不排名')).toBeVisible(
 expect(screen.queryByText('路线 4')).not.toBeInTheDocument()
 ```
 
-- [ ] **Step 2: Run the planning page test and verify RED**
+- [x] **Step 2: Run the planning page test and verify RED**
 
 Run: `npm test -- CareerPlanPage.test.tsx`
 
@@ -739,11 +739,11 @@ Workdir: `career-ui`
 
 Expected: fresh-graduate and coverage labels are absent.
 
-- [ ] **Step 3: Update TypeScript contracts and page composition**
+- [x] **Step 3: Update TypeScript contracts and page composition**
 
 Add typed `GraduateTrackSummary`, `ExamSummary`, coverage records, nullable route score, and `RouteRankingState`. Render outcome-first sections in this order: candidate conclusion, two channels, key dates/exams, routes, coverage, evidence.
 
-- [ ] **Step 4: Implement explicit missing-state copy**
+- [x] **Step 4: Implement explicit missing-state copy**
 
 Map:
 
@@ -755,7 +755,7 @@ REVIEW_REQUIRED -> 官网规则存在歧义，等待复核
 UNKNOWN -> 当前证据无法判断
 ```
 
-- [ ] **Step 5: Run page tests and verify GREEN**
+- [x] **Step 5: Run page tests and verify GREEN**
 
 Run: `npm test -- CareerPlanPage.test.tsx`
 
@@ -763,7 +763,7 @@ Workdir: `career-ui`
 
 Expected: all planning page tests pass.
 
-- [ ] **Step 6: Commit the planning UI**
+- [x] **Step 6: Commit the planning UI**
 
 Commit: `feat: show fresh graduate and social application tracks`
 
@@ -783,7 +783,7 @@ Commit: `feat: show fresh graduate and social application tracks`
 - Consumes: process states and projected outcomes.
 - Produces: historical/analog decision panels, full process timeline, and baseline evidence/exam actions even when T1/T2/T3 are empty.
 
-- [ ] **Step 1: Write failing job-detail UI tests**
+- [x] **Step 1: Write failing job-detail UI tests**
 
 ```tsx
 expect(await screen.findByRole('heading', { name: '2027 同类岗位推演' })).toBeVisible()
@@ -793,7 +793,7 @@ expect(screen.getByText('笔试：2026-04-25')).toBeVisible()
 expect(screen.getByText('面试时间：官网说明另行通知')).toBeVisible()
 ```
 
-- [ ] **Step 2: Write a failing baseline-action service test**
+- [x] **Step 2: Write a failing baseline-action service test**
 
 ```java
 @Test
@@ -804,7 +804,7 @@ void emitsProfileAndExamPreparationActionsWhenTrustedPoolIsEmpty() {
 }
 ```
 
-- [ ] **Step 3: Run UI and service tests and verify RED**
+- [x] **Step 3: Run UI and service tests and verify RED**
 
 Run: `npm test -- PlanningJobDetailPage.test.tsx TodayPage.test.tsx` in `career-ui`.
 
@@ -812,11 +812,11 @@ Run: `./mvnw -pl career-application -Dtest=PersonalActionServiceTest test` from 
 
 Expected: projected panel and baseline actions are absent.
 
-- [ ] **Step 4: Implement the detail timeline and baseline actions**
+- [x] **Step 4: Implement the detail timeline and baseline actions**
 
 Display announcement, registration, review, payment, admission ticket, written exam, professional test, interview, physical exam/publication/employment text, each with its evidence state. Generate baseline actions from candidate evidence tasks and historical exam patterns independently of trusted opportunities; never create application/deadline actions without a live official event.
 
-- [ ] **Step 5: Run affected tests and verify GREEN**
+- [x] **Step 5: Run affected tests and verify GREEN**
 
 Run: `./mvnw -pl career-application -Dtest=PersonalActionServiceTest test`
 
@@ -824,7 +824,7 @@ Run: `npm test -- PlanningJobDetailPage.test.tsx TodayPage.test.tsx` in `career-
 
 Expected: all affected tests pass.
 
-- [ ] **Step 6: Commit the user workflow**
+- [x] **Step 6: Commit the user workflow**
 
 Commit: `feat: expose full recruitment workflow and baseline actions`
 
@@ -842,7 +842,7 @@ Commit: `feat: expose full recruitment workflow and baseline actions`
 - Consumes: all prior tasks.
 - Produces: repeatable end-to-end evidence for the real candidate and honest remaining source gaps.
 
-- [ ] **Step 1: Add failing acceptance assertions before changing data**
+- [x] **Step 1: Add failing acceptance assertions before changing data**
 
 The acceptance script must assert API values for candidate `01992f09-0000-7000-8000-000000000001`:
 
@@ -856,23 +856,23 @@ $plan.dataCoverage.targetMarketCoverage.targetCount | Should -BeGreaterOrEqual 2
 
 Also assert that at least one 2026 representative job has distinct historical actual and 2027 analog results and that exam subjects include `职业能力倾向测验` and `综合应用能力` when supported by official evidence.
 
-- [ ] **Step 2: Run acceptance and verify RED**
+- [x] **Step 2: Run acceptance and verify RED**
 
 Run: `powershell -File scripts/career_correctness_acceptance.ps1 -BaseUrl http://localhost:8080`
 
 Expected: current API returns `PRE_GRADUATION`, has no graduate track, and lacks target-market coverage.
 
-- [ ] **Step 3: Apply migrations and reprocess official event facts**
+- [x] **Step 3: Apply migrations and reprocess official event facts**
 
 Run the application normally so Flyway applies V25/V26. Re-run the existing official announcement fact fusion/import path for stored 2024–2026 notices; do not edit imported job facts by hand. Record inserted/updated/unchanged counts.
 
-- [ ] **Step 4: Run focused and full backend verification**
+- [x] **Step 4: Run focused and full backend verification**
 
 Run: `./mvnw test`
 
 Expected: all reactor tests pass with zero failures and zero errors.
 
-- [ ] **Step 5: Run full frontend verification and production build**
+- [x] **Step 5: Run full frontend verification and production build**
 
 Run: `npm run verify && npm run build`
 
@@ -880,7 +880,7 @@ Workdir: `career-ui`
 
 Expected: TypeScript, all Vitest tests, and Vite production build pass.
 
-- [ ] **Step 6: Run API acceptance and real browser acceptance**
+- [x] **Step 6: Run API acceptance and real browser acceptance**
 
 Run: `powershell -File scripts/career_correctness_acceptance.ps1 -BaseUrl http://localhost:8080`
 
@@ -899,11 +899,11 @@ Expected browser assertions:
 浏览器控制台 0 error
 ```
 
-- [ ] **Step 7: Update documentation with measured coverage, not aspirations**
+- [x] **Step 7: Update documentation with measured coverage, not aspirations**
 
 Record exact connected/partial/failed/not-connected source counts, exact verified event/job counts, test counts, and known gaps. Do not write “market complete” unless every target source and required year has supporting coverage evidence.
 
-- [ ] **Step 8: Commit the acceptance evidence**
+- [x] **Step 8: Commit the acceptance evidence**
 
 Commit: `test: verify career decision correctness end to end`
 

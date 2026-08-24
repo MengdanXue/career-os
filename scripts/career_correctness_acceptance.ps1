@@ -35,6 +35,7 @@ Assert-True ($null -ne $plan.configuredCoverage) 'configuredCoverage is missing'
 Assert-True ($null -ne $plan.targetMarketCoverage) 'targetMarketCoverage is missing'
 Assert-True ($null -ne $plan.analysisCoverage) 'analysisCoverage is missing'
 Assert-True ($plan.targetMarketCoverage.targetCount -ge 20) "target source count was '$($plan.targetMarketCoverage.targetCount)'"
+Assert-True (@($plan.jobProjections).Count -eq $plan.analysisCoverage.jobCount) "jobProjections count does not match analyzed jobs"
 
 $notCovered = @($plan.recommendedRoutes | Where-Object { $_.rankingState -eq 'NOT_COVERED' })
 Assert-True ($notCovered.Count -gt 0) 'no route is gated as NOT_COVERED'
@@ -49,6 +50,24 @@ $distinctProjection = @($representatives | Where-Object {
 })
 Assert-True ($distinctProjection.Count -gt 0) 'no 2026 representative job has distinct historicalActual and targetYearAnalog outcomes'
 
+$representativeIds = @($representatives | ForEach-Object { $_.jobId })
+$nonRepresentative = @($plan.jobProjections | Where-Object { $representativeIds -notcontains $_.jobId }) | Select-Object -First 1
+if ($null -ne $nonRepresentative) {
+    Assert-True ($null -ne $nonRepresentative.historicalActual) 'non-representative job has no historicalActual outcome'
+    Assert-True ($null -ne $nonRepresentative.targetYearAnalog) 'non-representative job has no targetYearAnalog outcome'
+    Assert-True (@($nonRepresentative.scenarioOutcomes).Count -gt 0) 'non-representative job has no scenario outcomes'
+}
+
+$processProjection = @($plan.jobProjections) | Select-Object -First 1
+if ($null -ne $processProjection) {
+    $job = Get-Json "/api/v1/jobs/$($processProjection.jobId)"
+    $event = Get-Json "/api/v1/recruitment-events/$($job.recruitmentEventId)"
+    Assert-True ($null -ne $event.processFacts) 'recruitment event is missing processFacts'
+    foreach ($stage in @('notice','application','qualificationReview','payment','admissionTicket','writtenExam','professionalTest','interview','physicalExam','investigation','publication','appointment')) {
+        Assert-True ($null -ne $event.processFacts.$stage.state) "process stage '$stage' has no evidence state"
+    }
+}
+
 $subjects = @($plan.examSummary.subjects | ForEach-Object { $_.subject })
 $careerAptitudeTest = -join ([char[]](32844, 19994, 33021, 21147, 20542, 21521, 27979, 39564))
 $comprehensiveApplication = -join ([char[]](32508, 21512, 24212, 29992, 33021, 21147))
@@ -57,7 +76,9 @@ Assert-True ($subjects -contains $comprehensiveApplication) 'official historical
 
 $actions = Get-Json "/api/v1/candidates/$CandidateId/personal-actions?asOf=$AsOf"
 $actionIds = @($actions.items | ForEach-Object { $_.id })
-if ($plan.analysisCoverage.jobCount -eq 0) {
+$workbench = Get-Json "/api/v1/candidates/$CandidateId/workbench-summary"
+$trustedTierCount = $workbench.tierCounts.t1 + $workbench.tierCounts.t2 + $workbench.tierCounts.t3
+if ($trustedTierCount -eq 0) {
     Assert-True ($actionIds -contains 'evidence:CONFIRM_MASTER_GRADUATION_MONTH') 'empty trusted pool lost the master graduation action'
     Assert-True ($actionIds -contains 'evidence:VERIFY_MASTER_CREDENTIAL') 'empty trusted pool lost the credential action'
     Assert-True ($actionIds -contains 'preparation:PREPARE_WRITTEN_EXAM_BASELINE') 'empty trusted pool lost the written-exam baseline action'
@@ -80,10 +101,12 @@ $result = [ordered]@{
         events = $plan.analysisCoverage.eventCount
         jobs = $plan.analysisCoverage.jobCount
         evidenceCompleteJobs = $plan.analysisCoverage.evidenceCompleteJobs
+        projectedJobs = @($plan.jobProjections).Count
     }
     distinctProjectedJobs = $distinctProjection.Count
     examSubjects = $subjects
     actionIds = $actionIds
+    trustedTierCount = $trustedTierCount
     status = 'PASS'
 }
 

@@ -78,12 +78,34 @@ def main() -> None:
         page.get_by_role("heading", name="能不能报，看这些原始条件", exact=True).wait_for()
         page.get_by_role("heading", name="从公告到聘用，站内查看完整流程", exact=True).wait_for()
         process_text = page.locator(".planning-process").inner_text()
-        for required in ("报名", "笔试", "专业测试", "面试", "证据状态"):
+        for required in ("报名", "资格初审", "缴费", "准考证", "笔试", "专业测试", "面试",
+                         "体检", "考察", "公示", "聘用", "证据状态"):
             if required not in process_text:
                 raise AssertionError(f"岗位详情招聘流程缺少：{required}")
         if page.locator(".planning-official-links a[href]").count() < 2:
             raise AssertionError("岗位详情没有同时保留官方公告与附件入口")
         screenshots.append(screenshot(page, "career-plan-job-detail-v3.png"))
+
+        plan_data = page.request.get(
+            f"{BASE_URL}/api/v1/candidates/01992f09-0000-7000-8000-000000000001/career-plan?targetYear=2027"
+        ).json()
+        representative_ids = {
+            item["jobId"]
+            for route in plan_data["recommendedRoutes"]
+            for item in route["representativeJobs"]
+        }
+        non_representative = next(
+            (item for item in plan_data["jobProjections"] if item["jobId"] not in representative_ids), None
+        )
+        if non_representative is None:
+            raise AssertionError("没有可用于直接下钻验收的非代表岗位")
+        direct_job = page.request.get(f"{BASE_URL}/api/v1/jobs/{non_representative['jobId']}").json()
+        page.goto(f"{BASE_URL}/jobs/{non_representative['jobId']}", wait_until="networkidle")
+        page.get_by_role("heading", name=direct_job["title"], exact=True).wait_for()
+        page.get_by_role("heading", name="2027 同类岗位推演", exact=True).wait_for()
+        if page.get_by_text("该岗位不在当前规划分析范围内", exact=False).count() > 0:
+            raise AssertionError("非代表岗位直接打开后丢失个人资格结论")
+        screenshots.append(screenshot(page, "career-plan-non-representative-job-v3.png"))
 
         page.goto(f"{BASE_URL}/", wait_until="networkidle")
         page.get_by_text("你的机会概览", exact=True).wait_for()
@@ -105,7 +127,8 @@ def main() -> None:
         "checks": [
             "2027 境外硕士应届结论", "应届/社会双通道", "境外硕士在读阶段",
             "未覆盖路线无伪 0 分", "三层覆盖说明", "历史实际/2027 类比岗位详情",
-            "完整招聘流程与状态", "官方公告与附件入口", "空机会池基础行动", "控制台无错误",
+            "完整招聘流程与状态", "非代表岗位直接下钻", "官方公告与附件入口",
+            "空机会池基础行动", "控制台无错误",
         ],
         "screenshots": screenshots,
     }, ensure_ascii=False, indent=2))

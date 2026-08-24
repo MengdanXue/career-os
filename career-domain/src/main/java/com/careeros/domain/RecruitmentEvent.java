@@ -21,7 +21,8 @@ public record RecruitmentEvent(
     String experienceEvidenceRule, String employmentStatement, String interviewRule,
     GraduateEligibilityRule graduateEligibilityRule,
     EvidenceState writtenExamState, EvidenceState professionalTestState, EvidenceState interviewState,
-    LocalDate interviewOn, String interviewMethod, String scoreFormula
+    LocalDate interviewOn, String interviewMethod, String scoreFormula,
+    RecruitmentProcessFacts processFacts
 ) {
     public RecruitmentEvent {
         Objects.requireNonNull(id);
@@ -45,6 +46,32 @@ public record RecruitmentEvent(
         writtenExamState = writtenExamState == null ? EvidenceState.UNKNOWN : writtenExamState;
         professionalTestState = professionalTestState == null ? EvidenceState.UNKNOWN : professionalTestState;
         interviewState = interviewState == null ? EvidenceState.UNKNOWN : interviewState;
+        processFacts = processFacts == null
+            ? RecruitmentProcessFacts.fromLegacy(writtenExamState, professionalTestState, interviewState)
+            : processFacts;
+    }
+
+    public RecruitmentEvent(
+        UUID id, String title, int recruitmentYear, EventType eventType, LocalDate publishedOn,
+        LocalDate applicationStartsOn, LocalDate applicationEndsOn, String sourceUrl,
+        EmploymentType defaultEmploymentType, List<UUID> evidenceIds,
+        OffsetDateTime applicationStartsAt, OffsetDateTime applicationEndsAt,
+        LocalDate ageReferenceDate, String registrationUrl,
+        OffsetDateTime qualificationReviewEndsOn, OffsetDateTime paymentEndsOn,
+        LocalDate admissionTicketStartsOn, LocalDate admissionTicketEndsOn, LocalDate writtenExamOn,
+        List<String> writtenExamSubjects, String graduateRule, String overseasDegreeRule,
+        String experienceEvidenceRule, String employmentStatement, String interviewRule,
+        GraduateEligibilityRule graduateEligibilityRule,
+        EvidenceState writtenExamState, EvidenceState professionalTestState, EvidenceState interviewState,
+        LocalDate interviewOn, String interviewMethod, String scoreFormula
+    ) {
+        this(id, title, recruitmentYear, eventType, publishedOn, applicationStartsOn, applicationEndsOn,
+            sourceUrl, defaultEmploymentType, evidenceIds, applicationStartsAt, applicationEndsAt,
+            ageReferenceDate, registrationUrl, qualificationReviewEndsOn, paymentEndsOn,
+            admissionTicketStartsOn, admissionTicketEndsOn, writtenExamOn, writtenExamSubjects,
+            graduateRule, overseasDegreeRule, experienceEvidenceRule, employmentStatement, interviewRule,
+            graduateEligibilityRule, writtenExamState, professionalTestState, interviewState, interviewOn,
+            interviewMethod, scoreFormula, null);
     }
 
     public RecruitmentEvent(
@@ -63,7 +90,7 @@ public record RecruitmentEvent(
             ageReferenceDate, registrationUrl, qualificationReviewEndsOn, paymentEndsOn,
             admissionTicketStartsOn, admissionTicketEndsOn, writtenExamOn, writtenExamSubjects,
             graduateRule, overseasDegreeRule, experienceEvidenceRule, employmentStatement, interviewRule,
-            null, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, null, null, null);
+            null, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, null, null, null, null);
     }
 
     public RecruitmentEvent(
@@ -75,7 +102,7 @@ public record RecruitmentEvent(
             applicationEndsOn, sourceUrl, defaultEmploymentType, evidenceIds,
             null, null, null, null, null, null, null, null, null,
             List.of(), null, null, null, null, null, null,
-            EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, null, null, null);
+            EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, null, null, null, null);
     }
 
     private static void require(String value, String field) {

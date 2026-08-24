@@ -62,6 +62,12 @@ export function PlanningJobDetailPage() {
   const jobIsAttachment = data ? looksLikeAttachment(data.job.sourceUrl) : false
   const noticeUrl = data ? (eventIsAttachment && !jobIsAttachment ? data.job.sourceUrl : data.event.sourceUrl) : ''
   const attachmentUrl = data ? (jobIsAttachment ? data.job.sourceUrl : eventIsAttachment ? data.event.sourceUrl : data.job.sourceUrl) : ''
+  const process = data?.event.processFacts
+  const noticeState = process?.notice.state ?? inferredState(data?.event.publishedOn)
+  const applicationState = process?.application.state ?? inferredState(applicationStarts)
+  const qualificationState = process?.qualificationReview.state ?? inferredState(data?.event.qualificationReviewEndsOn)
+  const paymentState = process?.payment.state ?? inferredState(data?.event.paymentEndsOn)
+  const ticketState = process?.admissionTicket.state ?? inferredState(data?.event.admissionTicketStartsOn)
 
   return <main className="planning-job-page page-frame wide-frame">
     <Link className="planning-back-link" to="/plan">← 返回我的规划</Link>
@@ -80,7 +86,7 @@ export function PlanningJobDetailPage() {
         </div><p className="conditional-note">同类岗位推演只平移相对届别规则；新公告的年龄、专业、认证和社保条件仍需重新计算。</p></section>}
 
         <section className="official-detail-block scenario-outcome-block"><header><p className="section-number">资格判断</p><h2>按你的三个阶段分别判断</h2></header>
-          {data.scenarioOutcomes.length > 0 ? <div className="job-scenario-outcomes">{data.scenarioOutcomes.map(value => <article key={value.scenarioCode} data-outcome={value.outcome.toLowerCase()}><span>{scenarioLabels[value.scenarioCode] ?? value.scenarioCode}</span><h3>{outcomeLabels[value.outcome] ?? value.outcome}</h3><ul>{value.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul></article>)}</div> : <p className="conditional-note">该岗位不在当前规划的代表样本中，暂不生成个人资格结论；下方仍展示全部官网事实。</p>}
+          {data.scenarioOutcomes.length > 0 ? <div className="job-scenario-outcomes">{data.scenarioOutcomes.map(value => <article key={value.scenarioCode} data-outcome={value.outcome.toLowerCase()}><span>{scenarioLabels[value.scenarioCode] ?? value.scenarioCode}</span><h3>{outcomeLabels[value.outcome] ?? value.outcome}</h3><ul>{value.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul></article>)}</div> : <p className="conditional-note">该岗位不在当前规划分析范围内，暂不生成个人资格结论；下方仍展示全部官网事实。</p>}
         </section>
 
         <section className="official-detail-block"><header><p className="section-number">01 · 岗位身份</p><h2>单位与用工</h2></header>
@@ -114,15 +120,18 @@ export function PlanningJobDetailPage() {
 
         <section className="official-detail-block"><header><p className="section-number">03 · 招聘流程</p><h2>从公告到聘用，站内查看完整流程</h2></header>
           <ol className="planning-process">
-            <li data-state={inferredState(data.event.publishedOn)}><span>公告</span><strong>公告发布：{data.event.publishedOn ?? '当前证据无法判断'}</strong><small>证据状态：{evidenceStateLabels[inferredState(data.event.publishedOn)]}</small></li>
-            <li data-state={inferredState(applicationStarts)}><span>报名</span><strong>报名：{dateRange(applicationStarts, applicationEnds)}</strong><small>证据状态：{evidenceStateLabels[inferredState(applicationStarts)]}</small>{data.event.registrationUrl && <a href={data.event.registrationUrl} target="_blank" rel="noreferrer">报名入口（历史）</a>}</li>
-            <li data-state={inferredState(data.event.qualificationReviewEndsOn)}><span>资格初审</span><strong>{processValue('资格初审截止', data.event.qualificationReviewEndsOn, inferredState(data.event.qualificationReviewEndsOn))}</strong><small>证据状态：{evidenceStateLabels[inferredState(data.event.qualificationReviewEndsOn)]}</small></li>
-            <li data-state={inferredState(data.event.paymentEndsOn)}><span>缴费</span><strong>{processValue('缴费截止', data.event.paymentEndsOn, inferredState(data.event.paymentEndsOn))}</strong><small>证据状态：{evidenceStateLabels[inferredState(data.event.paymentEndsOn)]}</small></li>
-            <li data-state={inferredState(data.event.admissionTicketStartsOn)}><span>准考证</span><strong>准考证：{dateRange(data.event.admissionTicketStartsOn, data.event.admissionTicketEndsOn)}</strong><small>证据状态：{evidenceStateLabels[inferredState(data.event.admissionTicketStartsOn)]}</small></li>
+            <li data-state={noticeState}><span>公告</span><strong>公告发布：{data.event.publishedOn ?? evidenceStateLabels[noticeState]}</strong><small>证据状态：{evidenceStateLabels[noticeState]}</small></li>
+            <li data-state={applicationState}><span>报名</span><strong>报名：{applicationStarts || applicationEnds ? dateRange(applicationStarts, applicationEnds) : evidenceStateLabels[applicationState]}</strong><small>证据状态：{evidenceStateLabels[applicationState]}</small>{data.event.registrationUrl && <a href={data.event.registrationUrl} target="_blank" rel="noreferrer">报名入口（历史）</a>}</li>
+            <li data-state={qualificationState}><span>资格初审</span><strong>{processValue('资格初审截止', data.event.qualificationReviewEndsOn, qualificationState)}</strong><small>证据状态：{evidenceStateLabels[qualificationState]}</small></li>
+            <li data-state={paymentState}><span>缴费</span><strong>{processValue('缴费截止', data.event.paymentEndsOn, paymentState)}</strong><small>证据状态：{evidenceStateLabels[paymentState]}</small></li>
+            <li data-state={ticketState}><span>准考证</span><strong>准考证：{data.event.admissionTicketStartsOn || data.event.admissionTicketEndsOn ? dateRange(data.event.admissionTicketStartsOn, data.event.admissionTicketEndsOn) : evidenceStateLabels[ticketState]}</strong><small>证据状态：{evidenceStateLabels[ticketState]}</small></li>
             <li data-state={data.event.writtenExamState}><span>笔试</span><strong>{processValue('笔试', data.event.writtenExamOn, data.event.writtenExamState)}</strong><small>证据状态：{evidenceStateLabels[data.event.writtenExamState]}</small><small>{values(data.event.writtenExamSubjects)}</small></li>
             <li data-state={data.event.professionalTestState}><span>专业测试</span><strong>专业测试：{evidenceStateLabels[data.event.professionalTestState]}</strong><small>证据状态：{evidenceStateLabels[data.event.professionalTestState]}</small>{data.job.professionalTestRequired && <small>岗位表标注需要专业测试</small>}</li>
             <li data-state={data.event.interviewState}><span>面试</span><strong>{processValue('面试时间', data.event.interviewOn, data.event.interviewState)}</strong><small>证据状态：{evidenceStateLabels[data.event.interviewState]}</small>{data.event.interviewMethod && <small>方式：{data.event.interviewMethod}</small>}{data.job.interviewRatio && <small>入围比例 {data.job.interviewRatio}</small>}{data.event.interviewRule && <small>{data.event.interviewRule}</small>}</li>
-            <li data-state={data.event.employmentStatement ? 'CONFIRMED' : 'UNKNOWN'}><span>体检 / 考察 / 公示 / 聘用</span><strong>{data.event.employmentStatement ?? '当前证据无法判断'}</strong><small>证据状态：{evidenceStateLabels[data.event.employmentStatement ? 'CONFIRMED' : 'UNKNOWN']}</small>{data.event.scoreFormula && <small>成绩：{data.event.scoreFormula}</small>}</li>
+            <li data-state={process?.physicalExam.state ?? 'NOT_COLLECTED'}><span>体检</span><strong>{process?.physicalExam.detail ?? evidenceStateLabels[process?.physicalExam.state ?? 'NOT_COLLECTED']}</strong><small>证据状态：{evidenceStateLabels[process?.physicalExam.state ?? 'NOT_COLLECTED']}</small></li>
+            <li data-state={process?.investigation.state ?? 'NOT_COLLECTED'}><span>考察</span><strong>{process?.investigation.detail ?? evidenceStateLabels[process?.investigation.state ?? 'NOT_COLLECTED']}</strong><small>证据状态：{evidenceStateLabels[process?.investigation.state ?? 'NOT_COLLECTED']}</small></li>
+            <li data-state={process?.publication.state ?? 'NOT_COLLECTED'}><span>公示</span><strong>{process?.publication.detail ?? evidenceStateLabels[process?.publication.state ?? 'NOT_COLLECTED']}</strong><small>证据状态：{evidenceStateLabels[process?.publication.state ?? 'NOT_COLLECTED']}</small></li>
+            <li data-state={process?.appointment.state ?? (data.event.employmentStatement ? 'CONFIRMED' : 'NOT_COLLECTED')}><span>聘用</span><strong>{process?.appointment.detail ?? data.event.employmentStatement ?? evidenceStateLabels.NOT_COLLECTED}</strong><small>证据状态：{evidenceStateLabels[process?.appointment.state ?? (data.event.employmentStatement ? 'CONFIRMED' : 'NOT_COLLECTED')]}</small>{data.event.scoreFormula && <small>成绩：{data.event.scoreFormula}</small>}</li>
           </ol>
         </section>
 

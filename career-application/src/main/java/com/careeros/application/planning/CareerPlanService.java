@@ -66,6 +66,7 @@ public final class CareerPlanService {
             annualSummary(jobs, data.coverage()), risks(candidate, coverage), actions(targetYear, asOf), coverage,
             configuredCoverage(coverage), targetMarketCoverage(data.targetSources()),
             analysisCoverage(jobs, data.coverage(), data.loadedAt()),
+            jobProjections(jobs, candidate, data.candidateFacts(), asOf, current, future, targetYear),
             clock.instant(), ALGORITHM_VERSION);
     }
 
@@ -215,7 +216,7 @@ public final class CareerPlanService {
 
     private static RouteRankingState rankingState(String routeCode, List<HistoricalJob> jobs,
         List<CoverageSignal> coverage, List<String> failedSections, List<TargetSource> targetSources) {
-        if (failedSections.contains("HISTORY")) return RouteRankingState.DATA_FAILURE;
+        if (!failedSections.isEmpty()) return RouteRankingState.DATA_FAILURE;
         if (!targetSources.isEmpty()) {
             List<TargetSource> routeTargets = targetSources.stream()
                 .filter(source -> source.routeCode().equals(routeCode)).toList();
@@ -295,8 +296,8 @@ public final class CareerPlanService {
 
     private static ProjectedJobOutcome projected(HistoricalJob job, CandidateProfile candidate, CandidateFacts facts,
         LocalDate asOf, String scenarioCode, int targetYear) {
-        JobScenarioOutcome historicalBase = evaluate(job, candidate, facts, asOf, scenarioCode, false);
-        JobScenarioOutcome analogBase = evaluate(job, candidate, facts, asOf, scenarioCode, true);
+        JobScenarioOutcome historicalBase = evaluate(job, candidate, facts, asOf, scenarioCode, false, targetYear);
+        JobScenarioOutcome analogBase = evaluate(job, candidate, facts, asOf, scenarioCode, true, targetYear);
         if (job.graduateEligibilityRule() == null) {
             return new ProjectedJobOutcome(
                 renamed(historicalBase, "HISTORICAL_ACTUAL"),
@@ -309,6 +310,19 @@ public final class CareerPlanService {
         return new ProjectedJobOutcome(
             merge(historicalBase, historicalGraduate.outcome(), historicalGraduate.reasons(), "HISTORICAL_ACTUAL"),
             merge(analogBase, analogGraduate.outcome(), analogGraduate.reasons(), "TARGET_YEAR_ANALOG"));
+    }
+
+    private static List<JobProjection> jobProjections(List<HistoricalJob> jobs, CandidateProfile candidate,
+        CandidateFacts facts, LocalDate asOf, Scenario current, List<Scenario> future, int targetYear) {
+        var scenarios = new ArrayList<Scenario>();
+        scenarios.add(current);
+        scenarios.addAll(future);
+        return jobs.stream().sorted(Comparator.comparing(HistoricalJob::jobId)).map(job -> {
+            var outcomes = scenarios.stream().map(scenario ->
+                evaluate(job, candidate, facts, asOf, scenario.code())).toList();
+            var value = projected(job, candidate, facts, asOf, current.code(), targetYear);
+            return new JobProjection(job.jobId(), outcomes, value.historicalActual(), value.targetYearAnalog());
+        }).toList();
     }
 
     private static JobScenarioOutcome renamed(JobScenarioOutcome value, String scenarioCode) {
@@ -325,11 +339,11 @@ public final class CareerPlanService {
 
     private static JobScenarioOutcome evaluate(HistoricalJob job, CandidateProfile candidate, CandidateFacts facts,
         LocalDate asOf, String scenarioCode) {
-        return evaluate(job, candidate, facts, asOf, scenarioCode, false);
+        return evaluate(job, candidate, facts, asOf, scenarioCode, false, job.year());
     }
 
     private static JobScenarioOutcome evaluate(HistoricalJob job, CandidateProfile candidate, CandidateFacts facts,
-        LocalDate asOf, String scenarioCode, boolean skipAbsoluteGraduationYears) {
+        LocalDate asOf, String scenarioCode, boolean targetYearAnalog, int targetYear) {
         QualificationOutcome outcome = QualificationOutcome.ELIGIBLE;
         var reasons = new ArrayList<String>();
         if (job.minimumEducation().ordinal() > EducationLevel.BACHELOR.ordinal()) {
@@ -384,7 +398,7 @@ public final class CareerPlanService {
                 }
             }
         }
-        if (!skipAbsoluteGraduationYears && !job.acceptedGraduationYears().isEmpty()) {
+        if (!targetYearAnalog && !job.acceptedGraduationYears().isEmpty()) {
             Integer graduationYear = scenarioCode.equals("PRE_GRADUATION") ? candidate.graduationYear() : expectedMasterYear(candidate);
             CandidateFactKey key = scenarioCode.equals("PRE_GRADUATION") ? CandidateFactKey.GRADUATION_YEAR : CandidateFactKey.EDUCATION_RECORDS;
             if (!facts.isConfirmed(key) || graduationYear == null) {
@@ -406,21 +420,26 @@ public final class CareerPlanService {
             }
         }
         if (job.maximumAge() != null) {
+            LocalDate referenceDate = targetYearAnalog
+                ? shiftByRecruitmentYears(job.ageReferenceDate(), job.year(), targetYear)
+                : job.ageReferenceDate();
             if (!facts.isConfirmed(CandidateFactKey.BIRTH_DATE)) {
                 outcome = worsen(outcome, QualificationOutcome.UNCERTAIN);
                 reasons.add("完整生日事实尚未确认，不能形成年龄硬结论");
-            } else if (job.ageReferenceDate() == null || candidate.birthDate().exactDate().isEmpty()) {
+            } else if (referenceDate == null || candidate.birthDate().exactDate().isEmpty()) {
                 outcome = worsen(outcome, QualificationOutcome.UNCERTAIN);
                 reasons.add("年龄参考日或完整生日缺失，不能精确判断");
             } else {
-                int age = Period.between(candidate.birthDate().exactDate().orElseThrow(), job.ageReferenceDate()).getYears();
+                int age = Period.between(candidate.birthDate().exactDate().orElseThrow(), referenceDate).getYears();
                 if (age > job.maximumAge()) {
                     outcome = QualificationOutcome.INELIGIBLE;
-                    reasons.add("公告参考日年龄 " + age + " 周岁，超过 " + job.maximumAge() + " 周岁上限");
+                    reasons.add((targetYearAnalog ? "目标年度参考日 " + referenceDate + " 年龄 " : "公告参考日年龄 ")
+                        + age + " 周岁，超过 " + job.maximumAge() + " 周岁上限");
                 }
             }
         }
-        int relevantYears = verifiedFullTimeYears(candidate, asOf, Set.of(job.jobFamily()));
+        LocalDate experienceAsOf = targetYearAnalog ? shiftToYear(asOf, targetYear) : asOf;
+        int relevantYears = verifiedFullTimeYears(candidate, experienceAsOf, Set.of(job.jobFamily()));
         if (job.minimumExperienceYears() != null) {
             if (!facts.isConfirmed(CandidateFactKey.EMPLOYMENT_HISTORY)) {
                 outcome = worsen(outcome, QualificationOutcome.UNCERTAIN);
@@ -472,6 +491,16 @@ public final class CareerPlanService {
         }
         if (reasons.isEmpty()) reasons.add("已采集硬条件未发现阻断项；报名时仍须以当年公告复核");
         return new JobScenarioOutcome(scenarioCode, outcome, reasons);
+    }
+
+    private static LocalDate shiftByRecruitmentYears(LocalDate value, int sourceYear, int targetYear) {
+        if (value == null || sourceYear < 2000 || sourceYear > 2100) return null;
+        return value.plusYears(targetYear - sourceYear);
+    }
+
+    private static LocalDate shiftToYear(LocalDate value, int targetYear) {
+        if (value == null) return null;
+        return value.plusYears(targetYear - value.getYear());
     }
 
     private static QualificationOutcome worsen(QualificationOutcome current, QualificationOutcome candidate) {
@@ -798,9 +827,12 @@ public final class CareerPlanService {
 
     private static AnalysisCoverage analysisCoverage(List<HistoricalJob> jobs, List<CoverageSignal> coverage,
         Instant loadedAt) {
-        return new AnalysisCoverage((int) coverage.stream().map(CoverageSignal::sourceCode).distinct().count(),
+        Instant analyzedLoadedAt = jobs.stream().map(HistoricalJob::sourceLoadedAt).filter(Objects::nonNull)
+            .max(Instant::compareTo).orElse(loadedAt);
+        return new AnalysisCoverage((int) jobs.stream().map(HistoricalJob::sourceCode)
+            .filter(value -> value != null && !value.isBlank()).distinct().count(),
             (int) jobs.stream().map(HistoricalJob::eventId).distinct().count(), jobs.size(),
-            (int) jobs.stream().filter(HistoricalJob::evidenceComplete).count(), loadedAt);
+            (int) jobs.stream().filter(HistoricalJob::evidenceComplete).count(), analyzedLoadedAt);
     }
 
     private static boolean complete(CoverageSignal signal) {

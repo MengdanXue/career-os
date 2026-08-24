@@ -62,6 +62,28 @@ public final class JpaModels {
         @Column(name = "interview_on") LocalDate interviewOn;
         @Column(name = "interview_method") String interviewMethod;
         @Column(name = "score_formula") String scoreFormula;
+        @Enumerated(EnumType.STRING) @Column(name = "notice_state", nullable = false)
+        EvidenceState noticeState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "application_state", nullable = false)
+        EvidenceState applicationState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "qualification_review_state", nullable = false)
+        EvidenceState qualificationReviewState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "payment_state", nullable = false)
+        EvidenceState paymentState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "admission_ticket_state", nullable = false)
+        EvidenceState admissionTicketState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "physical_exam_state", nullable = false)
+        EvidenceState physicalExamState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "investigation_state", nullable = false)
+        EvidenceState investigationState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "publication_state", nullable = false)
+        EvidenceState publicationState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "appointment_state", nullable = false)
+        EvidenceState appointmentState = EvidenceState.UNKNOWN;
+        @Column(name = "physical_exam_rule") String physicalExamRule;
+        @Column(name = "investigation_rule") String investigationRule;
+        @Column(name = "publication_rule") String publicationRule;
+        @Column(name = "appointment_rule") String appointmentRule;
         @Column(name = "legacy_workbook_snapshot", nullable = false) boolean legacyWorkbookSnapshot;
         @Column(name = "workbook_identity") String workbookIdentity;
         @Column(name = "source_url", nullable = false) String sourceUrl;

@@ -98,6 +98,97 @@ class CareerPlanServiceTest {
     }
 
     @Test
+    void targetYearAnalogProjectsTheAgeReferenceDateInsteadOfReusingTheHistoricalDate() {
+        var ageBoundary = job("20000000-0000-0000-0000-000000000099",
+            UUID.fromString("10000000-0000-0000-0000-000000000099"), "年龄边界单位",
+            OrganizationType.PUBLIC_INSTITUTION, "信息技术", JobFamily.INFORMATION_SYSTEMS,
+            EmploymentType.ESTABLISHMENT, EducationLevel.BACHELOR, 33, null, Set.of(), "不限", true);
+        var service = new CareerPlanService((id, from, to, asOf) -> new CareerPlanData(
+            candidate(), List.of(ageBoundary), coverage(), LOADED_AT, List.of(), CandidateFacts.confirmed(candidate())));
+
+        var representative = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22))
+            .recommendedRoutes().stream().filter(route -> route.code().equals("PUBLIC_TECH"))
+            .findFirst().orElseThrow().representativeJobs().getFirst();
+
+        assertThat(representative.historicalActual().outcome()).isEqualTo(CareerPlan.QualificationOutcome.ELIGIBLE);
+        assertThat(representative.targetYearAnalog().outcome()).isEqualTo(CareerPlan.QualificationOutcome.INELIGIBLE);
+        assertThat(representative.targetYearAnalog().reasons()).anyMatch(reason -> reason.contains("2027") && reason.contains("34 周岁"));
+    }
+
+    @Test
+    void targetYearAnalogUsesExperienceMaturedByTheTargetYear() {
+        var employment = List.of(new CandidateEmploymentRecord("技术公司", "信息系统开发",
+            LocalDate.of(2025, 10, 1), null, EmploymentMode.FULL_TIME,
+            VerificationStatus.VERIFIED, Set.of("合同", "社保")));
+        var value = candidate(employment, null);
+        var experienceBoundary = job("20000000-0000-0000-0000-000000000097",
+            UUID.fromString("10000000-0000-0000-0000-000000000097"), "经历边界单位",
+            OrganizationType.PUBLIC_INSTITUTION, "信息技术", JobFamily.INFORMATION_SYSTEMS,
+            EmploymentType.ESTABLISHMENT, EducationLevel.BACHELOR, 38, 1, Set.of(), "社会人员", true);
+        var service = new CareerPlanService((id, from, to, asOf) -> new CareerPlanData(
+            value, List.of(experienceBoundary), coverage(), LOADED_AT, List.of(), CandidateFacts.confirmed(value)));
+
+        var representative = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22))
+            .recommendedRoutes().stream().filter(route -> route.code().equals("PUBLIC_TECH"))
+            .findFirst().orElseThrow().representativeJobs().getFirst();
+
+        assertThat(representative.historicalActual().outcome()).isEqualTo(CareerPlan.QualificationOutcome.INELIGIBLE);
+        assertThat(representative.targetYearAnalog().outcome()).isEqualTo(CareerPlan.QualificationOutcome.ELIGIBLE);
+    }
+
+    @Test
+    void unrestrictedGraduateRuleDoesNotBecomeFalseIneligibility() {
+        var base = jobs().get(1);
+        var unrestricted = new GraduateEligibilityRule(2026, Set.of(),
+            Set.of(GraduateEligibilityRule.CohortScope.UNRESTRICTED), true,
+            GraduateEligibilityRule.RequirementTiming.NOT_REQUIRED, null,
+            GraduateEligibilityRule.RequirementTiming.NOT_REQUIRED, null,
+            false, false, "毕业年份不限", EvidenceState.CONFIRMED);
+        var structured = new HistoricalJob(base.jobId(), base.eventId(), base.year(), base.publishedOn(),
+            base.applicationStartsOn(), base.applicationEndsOn(), base.writtenExamOn(), base.ageReferenceDate(),
+            base.writtenExamSubjects(), base.organizationName(), base.organizationType(), base.title(), base.jobFamily(),
+            base.employmentType(), base.minimumEducation(), base.maximumAge(), base.minimumExperienceYears(),
+            base.requiredProfessionalTitles(), base.candidateScope(), base.requirements(), base.sourceUrl(), true,
+            base.exactMajors(), List.of(), base.genderRequirement(), base.overseasDegreeRule(), unrestricted,
+            unrestricted.rawText(), EvidenceState.CONFIRMED, EvidenceState.NOT_REQUIRED,
+            EvidenceState.CONFIRMED, null, null, null);
+        var service = new CareerPlanService((id, from, to, asOf) -> new CareerPlanData(
+            candidate(), List.of(structured), coverage(), LOADED_AT, List.of(), CandidateFacts.confirmed(candidate())));
+
+        var representative = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22))
+            .recommendedRoutes().stream().filter(route -> route.code().equals("PUBLIC_TECH"))
+            .findFirst().orElseThrow().representativeJobs().getFirst();
+
+        assertThat(representative.historicalActual().outcome()).isNotEqualTo(CareerPlan.QualificationOutcome.INELIGIBLE);
+        assertThat(representative.targetYearAnalog().outcome()).isNotEqualTo(CareerPlan.QualificationOutcome.INELIGIBLE);
+        assertThat(representative.targetYearAnalog().reasons()).anyMatch(reason -> reason.contains("不限定届别"));
+    }
+
+    @Test
+    void exposesProjectionForAPlanningJobThatIsNotARepresentative() {
+        var rows = new ArrayList<>(jobs());
+        rows.add(job("20000000-0000-0000-0000-000000000098",
+            UUID.fromString("10000000-0000-0000-0000-000000000098"), "非代表样本单位",
+            OrganizationType.PUBLIC_INSTITUTION, "普通技术岗", JobFamily.INFORMATION_SYSTEMS,
+            EmploymentType.ESTABLISHMENT, EducationLevel.BACHELOR, 38, null, Set.of(), "不限", true));
+        var service = new CareerPlanService((id, from, to, asOf) -> new CareerPlanData(
+            candidate(), rows, coverage(), LOADED_AT, List.of(), CandidateFacts.confirmed(candidate())));
+
+        var plan = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22));
+        var publicRoute = plan.recommendedRoutes().stream().filter(route -> route.code().equals("PUBLIC_TECH"))
+            .findFirst().orElseThrow();
+
+        assertThat(publicRoute.representativeJobs()).hasSize(3);
+        assertThat(plan.jobProjections()).hasSize(4);
+        assertThat(plan.jobProjections()).filteredOn(value -> value.jobId().toString().endsWith("0098"))
+            .singleElement().satisfies(value -> {
+                assertThat(value.scenarioOutcomes()).isNotEmpty();
+                assertThat(value.historicalActual()).isNotNull();
+                assertThat(value.targetYearAnalog()).isNotNull();
+            });
+    }
+
+    @Test
     void examSummaryCountsDistinctEventsAndKeepsProcessEvidenceStatesSeparate() {
         var rows = List.of(
             processJob(jobs().get(0), UUID.fromString("10000000-0000-0000-0000-000000000021"),
@@ -304,6 +395,23 @@ class CareerPlanServiceTest {
         assertThat(plan.dataCoverage().failedSections()).containsExactly("HISTORY");
         assertThat(plan.dataCoverage().warnings()).anyMatch(value -> value.contains("空值不得解释为零招聘"));
         assertThat(plan.dataCoverage().complete()).isFalse();
+    }
+
+    @Test
+    void everyFailedRankingInputStopsRouteRanking() {
+        for (String failed : List.of("HISTORY", "COVERAGE", "TARGET_SOURCES")) {
+            var service = new CareerPlanService((id, from, to, asOf) -> new CareerPlanData(
+                candidate(), jobs(), coverage(), LOADED_AT, List.of(failed), CandidateFacts.confirmed(candidate()),
+                List.of(new TargetSource("HZ_HRSS_INSTITUTION", "杭州人社", "PUBLIC_TECH", "杭州",
+                    TargetSource.AuthorityLevel.OFFICIAL_AGGREGATOR, TargetSource.ConnectionStatus.CONNECTED,
+                    "https://hrss.hangzhou.gov.cn/"))));
+
+            var route = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22)).recommendedRoutes().stream()
+                .filter(value -> value.code().equals("PUBLIC_TECH")).findFirst().orElseThrow();
+
+            assertThat(route.rankingState()).as(failed).isEqualTo(CareerPlan.RouteRankingState.DATA_FAILURE);
+            assertThat(route.priorityScore()).as(failed).isNull();
+        }
     }
 
     @Test
@@ -582,7 +690,9 @@ class CareerPlanServiceTest {
             LocalDate.of(2026, 3, 25), LocalDate.of(2026, 3, 31), LocalDate.of(2026, 4, 25),
             LocalDate.of(2026, 3, 31), List.of("职业能力倾向测验", "综合应用能力"), organization,
             organizationType, title, family, employmentType, education, age, experience, titles, scope,
-            "计算机相关专业", "https://example.gov.cn/jobs/" + jobId, evidenceComplete);
+            "计算机相关专业", "https://example.gov.cn/jobs/" + jobId, evidenceComplete)
+            .withSource(organizationType == OrganizationType.UNIVERSITY ? "ZJ_HRSS_INSTITUTION" : "HZ_HRSS_INSTITUTION",
+                LOADED_AT);
     }
 
     private static HistoricalJob constrainedJob() {

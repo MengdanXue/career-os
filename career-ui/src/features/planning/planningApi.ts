@@ -5,6 +5,7 @@ export type QualificationOutcome = 'ELIGIBLE' | 'CONDITIONALLY_ELIGIBLE' | 'UNCE
 export type GraduateTrackSummary = { code: string; label: string; detail: string; outcome: QualificationOutcome }
 export type JobScenarioOutcome = { scenarioCode: string; outcome: QualificationOutcome; reasons: string[] }
 export type RepresentativeJob = { jobId: string; organizationName: string; title: string; year: number; sourceUrl: string; evidenceComplete: boolean; scenarioOutcomes: JobScenarioOutcome[]; historicalActual: JobScenarioOutcome; targetYearAnalog: JobScenarioOutcome }
+export type JobProjection = { jobId: string; scenarioOutcomes: JobScenarioOutcome[]; historicalActual: JobScenarioOutcome; targetYearAnalog: JobScenarioOutcome }
 export type ScenarioBreakdown = { scenarioCode: string; eligible: number; conditionallyEligible: number; uncertain: number; ineligible: number; notes: string[] }
 export type ScoreComponent = { code: string; label: string; score: number; weight: number; basis: string; evidenceBacked: boolean }
 export type RouteRankingState = 'RANKED' | 'LIMITED' | 'NOT_COVERED' | 'NO_TARGET_RECORDS' | 'DATA_FAILURE'
@@ -42,6 +43,7 @@ export type CareerPlan = {
   actionTimeline: { startsOn: string; endsOn: string; title: string; detail: string; status: string }[]
   dataCoverage: { complete: boolean; sourceYearCount: number; completeSourceYearCount: number; incompleteSourceYears: string[]; warnings: string[]; failedSections: string[]; loadedAt: string }
   configuredCoverage: ConfiguredCoverage; targetMarketCoverage: TargetMarketCoverage; analysisCoverage: AnalysisCoverage
+  jobProjections: JobProjection[]
   generatedAt: string; algorithmVersion: string
 }
 
@@ -73,8 +75,15 @@ export type PlanningEvent = {
   experienceEvidenceRule: string | null; employmentStatement: string | null; interviewRule: string | null
   writtenExamState: EvidenceState; professionalTestState: EvidenceState; interviewState: EvidenceState
   interviewOn: string | null; interviewMethod: string | null; scoreFormula: string | null
+  processFacts?: RecruitmentProcessFacts
 }
 export type EvidenceState = 'CONFIRMED' | 'NOT_REQUIRED' | 'NOT_PUBLISHED' | 'NOT_COLLECTED' | 'PARSE_FAILED' | 'REVIEW_REQUIRED' | 'UNKNOWN'
+export type ProcessStage = { state: EvidenceState; detail: string | null }
+export type RecruitmentProcessFacts = {
+  notice: ProcessStage; application: ProcessStage; qualificationReview: ProcessStage; payment: ProcessStage
+  admissionTicket: ProcessStage; writtenExam: ProcessStage; professionalTest: ProcessStage; interview: ProcessStage
+  physicalExam: ProcessStage; investigation: ProcessStage; publication: ProcessStage; appointment: ProcessStage
+}
 
 export type PlanningOrganization = {
   id: string; name: string; organizationType: string; province: string | null; city: string | null
@@ -97,13 +106,13 @@ export async function getPlanningJobDetail(jobId: string, candidateId: string, t
     requestJson<PlanningEvent>(`/api/v1/recruitment-events/${job.recruitmentEventId}`),
     requestJson<PlanningOrganization>(`/api/v1/organizations/${job.organizationId}`),
   ])
-  const representative = plan.recommendedRoutes.flatMap(route => route.representativeJobs)
+  const projection = plan.jobProjections
     .find(value => value.jobId === jobId)
   return {
     job, event, organization,
-    scenarioOutcomes: representative?.scenarioOutcomes ?? [],
-    historicalActual: representative?.historicalActual ?? null,
-    targetYearAnalog: representative?.targetYearAnalog ?? null,
+    scenarioOutcomes: projection?.scenarioOutcomes ?? [],
+    historicalActual: projection?.historicalActual ?? null,
+    targetYearAnalog: projection?.targetYearAnalog ?? null,
   }
 }
 

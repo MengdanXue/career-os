@@ -101,6 +101,14 @@ public class PersistenceAdaptersConfiguration {
         e.writtenExamState=value.writtenExamState(); e.professionalTestState=value.professionalTestState();
         e.interviewState=value.interviewState(); e.interviewOn=value.interviewOn();
         e.interviewMethod=value.interviewMethod(); e.scoreFormula=value.scoreFormula(); e.sourceUrl=value.sourceUrl();
+        var process=value.processFacts();
+        e.noticeState=process.notice().state(); e.applicationState=process.application().state();
+        e.qualificationReviewState=process.qualificationReview().state(); e.paymentState=process.payment().state();
+        e.admissionTicketState=process.admissionTicket().state();
+        e.physicalExamState=process.physicalExam().state(); e.physicalExamRule=process.physicalExam().detail();
+        e.investigationState=process.investigation().state(); e.investigationRule=process.investigation().detail();
+        e.publicationState=process.publication().state(); e.publicationRule=process.publication().detail();
+        e.appointmentState=process.appointment().state(); e.appointmentRule=process.appointment().detail();
         e.defaultEmploymentType=value.defaultEmploymentType(); e.evidenceIds=new ArrayList<>(value.evidenceIds());
         return e;
     }
@@ -112,7 +120,17 @@ public class PersistenceAdaptersConfiguration {
             e.writtenExamOn,e.writtenExamSubjects,e.graduateRule,e.overseasDegreeRule,
             e.experienceEvidenceRule,e.employmentStatement,e.interviewRule,e.graduateRuleJson,
             e.writtenExamState,e.professionalTestState,e.interviewState,e.interviewOn,
-            e.interviewMethod,e.scoreFormula);
+            e.interviewMethod,e.scoreFormula,new RecruitmentProcessFacts(
+                stage(e.noticeState,null),stage(e.applicationState,null),stage(e.qualificationReviewState,null),
+                stage(e.paymentState,null),stage(e.admissionTicketState,null),stage(e.writtenExamState,null),
+                stage(e.professionalTestState,null),stage(e.interviewState,e.interviewRule),
+                stage(e.physicalExamState,e.physicalExamRule),stage(e.investigationState,e.investigationRule),
+                stage(e.publicationState,e.publicationRule),stage(e.appointmentState,e.appointmentRule)));
+    }
+
+    private static RecruitmentProcessFacts.ProcessStage stage(
+        com.careeros.domain.GraduateEligibilityRule.EvidenceState state, String detail) {
+        return new RecruitmentProcessFacts.ProcessStage(state, detail);
     }
 
     private JpaModels.OrganizationEntity toOrganizationEntity(Organization value) { var e=new JpaModels.OrganizationEntity(); e.id=value.id(); e.name=value.name(); e.organizationType=value.organizationType(); e.administrativeLevel=value.administrativeLevel(); e.province=value.province(); e.city=value.city(); e.district=value.district(); e.parentOrganizationId=value.parentOrganizationId(); e.officialWebsite=value.officialWebsite(); return e; }

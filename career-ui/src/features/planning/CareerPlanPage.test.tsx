@@ -28,6 +28,7 @@ const plan = {
   configuredCoverage: { complete: false, sourceYearCount: 6, completeSourceYearCount: 4, gaps: ['HZ:2025（PARTIAL）'] },
   targetMarketCoverage: { targetCount: 20, connected: 2, partial: 1, failed: 0, notConnected: 17, routes: [{ routeCode: 'PUBLIC_TECH', targetCount: 7, connected: 2, partial: 0, failed: 0, notConnected: 5, marketComplete: false }, { routeCode: 'GOVERNMENT_SOE_DIGITAL', targetCount: 3, connected: 0, partial: 0, failed: 0, notConnected: 3, marketComplete: false }] },
   analysisCoverage: { sourceCount: 2, eventCount: 18, jobCount: 56, evidenceCompleteJobs: 43, loadedAt: '2026-08-22T12:00:00Z' },
+  jobProjections: [],
   generatedAt: '2026-08-22T12:00:00Z', algorithmVersion: 'career-plan-v3',
 }
 

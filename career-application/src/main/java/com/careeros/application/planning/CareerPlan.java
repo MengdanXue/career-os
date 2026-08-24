@@ -28,6 +28,7 @@ public record CareerPlan(
     ConfiguredCoverage configuredCoverage,
     TargetMarketCoverage targetMarketCoverage,
     AnalysisCoverage analysisCoverage,
+    List<JobProjection> jobProjections,
     Instant generatedAt,
     String algorithmVersion
 ) {
@@ -40,6 +41,7 @@ public record CareerPlan(
         futureScenarios = copy(futureScenarios); recommendedRoutes = copy(recommendedRoutes); ageWindows = copy(ageWindows);
         recruitmentWindows = copy(recruitmentWindows); examPatterns = copy(examPatterns); processWindows = copy(processWindows);
         historicalSummary = copy(historicalSummary); qualificationRisks = copy(qualificationRisks); actionTimeline = copy(actionTimeline);
+        jobProjections = copy(jobProjections);
     }
 
     private static <T> List<T> copy(List<T> values) { return values == null ? List.of() : List.copyOf(values); }
@@ -76,6 +78,20 @@ public record CareerPlan(
     }
 
     public record ProjectedJobOutcome(JobScenarioOutcome historicalActual, JobScenarioOutcome targetYearAnalog) {}
+
+    public record JobProjection(
+        UUID jobId,
+        List<JobScenarioOutcome> scenarioOutcomes,
+        JobScenarioOutcome historicalActual,
+        JobScenarioOutcome targetYearAnalog
+    ) {
+        public JobProjection {
+            Objects.requireNonNull(jobId);
+            scenarioOutcomes = copy(scenarioOutcomes);
+            Objects.requireNonNull(historicalActual);
+            Objects.requireNonNull(targetYearAnalog);
+        }
+    }
 
     public record JobScenarioOutcome(
         String scenarioCode, QualificationOutcome outcome, List<String> reasons

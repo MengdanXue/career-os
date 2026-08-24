@@ -15,11 +15,12 @@ describe('PlanningJobDetailPage', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/career-plan?targetYear=')) return json({
-        recommendedRoutes: [{ representativeJobs: [{ jobId: 'job-1', historicalActual: { scenarioCode: 'HISTORICAL_ACTUAL', outcome: 'INELIGIBLE', reasons: ['2026 公告仅限当届毕业生'] }, targetYearAnalog: { scenarioCode: 'TARGET_YEAR_ANALOG', outcome: 'CONDITIONALLY_ELIGIBLE', reasons: ['投影到 2027 届后进入当届范围，仍需按时取得学位和留服认证'] }, scenarioOutcomes: [
+        recommendedRoutes: [{ representativeJobs: [] }],
+        jobProjections: [{ jobId: 'job-1', historicalActual: { scenarioCode: 'HISTORICAL_ACTUAL', outcome: 'INELIGIBLE', reasons: ['2026 公告仅限当届毕业生'] }, targetYearAnalog: { scenarioCode: 'TARGET_YEAR_ANALOG', outcome: 'CONDITIONALLY_ELIGIBLE', reasons: ['投影到 2027 届后进入当届范围，仍需按时取得学位和留服认证'] }, scenarioOutcomes: [
           { scenarioCode: 'PRE_GRADUATION', outcome: 'UNCERTAIN', reasons: ['工作经历事实尚未确认'] },
           { scenarioCode: 'DEGREE_PENDING_VERIFICATION', outcome: 'CONDITIONALLY_ELIGIBLE', reasons: ['硕士已取得但留服认证待完成'] },
           { scenarioCode: 'MASTER_VERIFIED', outcome: 'ELIGIBLE', reasons: ['已采集硬条件未发现阻断项'] },
-        ] }] }],
+        ] }],
       })
       if (url.endsWith('/api/v1/jobs/job-1')) return json({
         id: 'job-1', recruitmentEventId: 'event-1', organizationId: 'org-1', externalJobCode: 'A101',
@@ -43,6 +44,16 @@ describe('PlanningJobDetailPage', () => {
         writtenExamOn: '2026-04-25', writtenExamSubjects: ['职业能力倾向测验', '综合应用能力'],
         writtenExamState: 'CONFIRMED', professionalTestState: 'CONFIRMED', interviewState: 'NOT_PUBLISHED',
         interviewOn: null, interviewMethod: '结构化面试', scoreFormula: '笔试50% + 面试50%',
+        processFacts: {
+          notice: { state: 'CONFIRMED', detail: null }, application: { state: 'CONFIRMED', detail: null },
+          qualificationReview: { state: 'CONFIRMED', detail: null }, payment: { state: 'CONFIRMED', detail: null },
+          admissionTicket: { state: 'CONFIRMED', detail: null }, writtenExam: { state: 'CONFIRMED', detail: null },
+          professionalTest: { state: 'CONFIRMED', detail: null }, interview: { state: 'NOT_PUBLISHED', detail: null },
+          physicalExam: { state: 'NOT_PUBLISHED', detail: '体检时间另行通知' },
+          investigation: { state: 'NOT_COLLECTED', detail: null },
+          publication: { state: 'CONFIRMED', detail: '考察合格人员进入公示' },
+          appointment: { state: 'CONFIRMED', detail: '签订事业单位聘用合同' },
+        },
         graduateRule: null, overseasDegreeRule: '境外学历须完成认证', experienceEvidenceRule: '工作经历须提供证明',
         employmentStatement: '签订事业单位聘用合同', interviewRule: '按笔试成绩1:3入围',
       })
@@ -75,6 +86,9 @@ describe('PlanningJobDetailPage', () => {
     expect(screen.getByText(/资格初审截止：2026-03-29/)).toBeVisible()
     expect(screen.getByText(/缴费截止：2026-03-30/)).toBeVisible()
     expect(screen.getByText(/准考证：2026-04-20 至 2026-04-25/)).toBeVisible()
+    expect(screen.getByText('体检时间另行通知')).toBeVisible()
+    expect(screen.getByText('考察合格人员进入公示')).toBeVisible()
+    expect(screen.getAllByText('签订事业单位聘用合同').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('工作经历事实尚未确认')).toBeInTheDocument()
     expect(screen.getByText('硕士已取得但留服认证待完成')).toBeInTheDocument()
     expect(screen.getByText('已采集硬条件未发现阻断项')).toBeInTheDocument()

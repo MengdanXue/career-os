@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OfficialAnnouncementFactService {
-    private static final String VERSION = "official-announcement-v2";
+    private static final String VERSION = "official-announcement-v3";
     private final RecruitmentEventJpaRepository events;
     private final JdbcTemplate jdbc;
     private final Clock clock;
@@ -91,6 +91,20 @@ public class OfficialAnnouncementFactService {
         event.interviewOn = preferIncoming(event.interviewOn, facts.interviewOn());
         event.interviewMethod = preferIncoming(event.interviewMethod, facts.interviewMethod());
         event.scoreFormula = preferIncoming(event.scoreFormula, facts.scoreFormula());
+        var process = facts.processFacts();
+        event.noticeState = preferState(event.noticeState, process.notice().state());
+        event.applicationState = preferState(event.applicationState, process.application().state());
+        event.qualificationReviewState = preferState(event.qualificationReviewState, process.qualificationReview().state());
+        event.paymentState = preferState(event.paymentState, process.payment().state());
+        event.admissionTicketState = preferState(event.admissionTicketState, process.admissionTicket().state());
+        event.physicalExamState = preferState(event.physicalExamState, process.physicalExam().state());
+        event.investigationState = preferState(event.investigationState, process.investigation().state());
+        event.publicationState = preferState(event.publicationState, process.publication().state());
+        event.appointmentState = preferState(event.appointmentState, process.appointment().state());
+        event.physicalExamRule = preferIncoming(event.physicalExamRule, process.physicalExam().detail());
+        event.investigationRule = preferIncoming(event.investigationRule, process.investigation().detail());
+        event.publicationRule = preferIncoming(event.publicationRule, process.publication().detail());
+        event.appointmentRule = preferIncoming(event.appointmentRule, process.appointment().detail());
         var parsedEmploymentType = facts.employmentStatement() == null
             ? (event.defaultEmploymentType == null ? UNKNOWN : event.defaultEmploymentType)
             : eventType == PUBLIC_INSTITUTION && facts.employmentStatement().contains("签订聘用合同")
@@ -188,6 +202,12 @@ public class OfficialAnnouncementFactService {
     private static EvidenceState preferState(EvidenceState existing, EvidenceState incoming) {
         if (incoming == null || incoming == EvidenceState.UNKNOWN) {
             return existing == null ? EvidenceState.UNKNOWN : existing;
+        }
+        if (incoming == EvidenceState.NOT_COLLECTED
+            && existing != null
+            && existing != EvidenceState.UNKNOWN
+            && existing != EvidenceState.NOT_COLLECTED) {
+            return existing;
         }
         return incoming;
     }

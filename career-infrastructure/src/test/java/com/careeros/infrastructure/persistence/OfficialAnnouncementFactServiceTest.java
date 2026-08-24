@@ -16,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import com.careeros.infrastructure.acquisition.OfficialAnnouncementFactParser.OfficialAnnouncementFacts;
 import com.careeros.domain.GraduateEligibilityRule;
+import com.careeros.domain.RecruitmentProcessFacts;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -49,6 +50,11 @@ class OfficialAnnouncementFactServiceTest {
         assertThat(event.interviewOn).isNull();
         assertThat(event.interviewMethod).isEqualTo("结构化面试");
         assertThat(event.scoreFormula).isEqualTo("笔试、面试成绩各占50%");
+        assertThat(event.applicationState).isEqualTo(CONFIRMED);
+        assertThat(event.physicalExamState).isEqualTo(NOT_PUBLISHED);
+        assertThat(event.physicalExamRule).contains("体检时间另行通知");
+        assertThat(event.publicationState).isEqualTo(CONFIRMED);
+        assertThat(event.appointmentState).isEqualTo(CONFIRMED);
         assertThat(event.defaultEmploymentType).isEqualTo(PUBLIC_INSTITUTION_FORMAL);
         assertThat(event.evidenceIds).containsExactly(evidenceId);
     }
@@ -66,6 +72,8 @@ class OfficialAnnouncementFactServiceTest {
         existing.registrationUrl = "https://original.example.cn";
         existing.employmentStatement = "签订聘用合同";
         existing.defaultEmploymentType = PUBLIC_INSTITUTION_FORMAL;
+        existing.writtenExamState = CONFIRMED;
+        existing.physicalExamState = CONFIRMED;
         existing.evidenceIds = new java.util.ArrayList<>();
         when(events.findFirstBySourceUrl(existing.sourceUrl)).thenReturn(Optional.of(existing));
         when(events.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -84,6 +92,8 @@ class OfficialAnnouncementFactServiceTest {
         assertThat(saved.registrationUrl).isEqualTo("https://changed.example.cn");
         assertThat(saved.employmentStatement).isEqualTo("签订聘用合同");
         assertThat(saved.defaultEmploymentType).isEqualTo(PUBLIC_INSTITUTION_FORMAL);
+        assertThat(saved.writtenExamState).isEqualTo(CONFIRMED);
+        assertThat(saved.physicalExamState).isEqualTo(CONFIRMED);
         assertThat(saved.evidenceIds).containsExactly(newEvidence);
     }
 
@@ -99,7 +109,18 @@ class OfficialAnnouncementFactServiceTest {
             List.of("综合应用能力", "职业能力倾向测验"), "应届生规则", "留服认证规则",
             "经历证明规则", "签订聘用合同", "结构化面试", Map.of("employmentStatement", "签订聘用合同"),
             graduateRule(), CONFIRMED, REVIEW_REQUIRED, NOT_PUBLISHED, null,
-            "结构化面试", "笔试、面试成绩各占50%");
+            "结构化面试", "笔试、面试成绩各占50%", processFacts());
+    }
+
+    private static RecruitmentProcessFacts processFacts() {
+        var confirmed = new RecruitmentProcessFacts.ProcessStage(CONFIRMED, null);
+        var notPublished = new RecruitmentProcessFacts.ProcessStage(NOT_PUBLISHED, "体检时间另行通知");
+        return new RecruitmentProcessFacts(confirmed, confirmed, confirmed, confirmed, confirmed,
+            confirmed, new RecruitmentProcessFacts.ProcessStage(REVIEW_REQUIRED, null),
+            new RecruitmentProcessFacts.ProcessStage(NOT_PUBLISHED, "面试另行通知"), notPublished,
+            new RecruitmentProcessFacts.ProcessStage(NOT_PUBLISHED, "考察另行通知"),
+            new RecruitmentProcessFacts.ProcessStage(CONFIRMED, "经公示无异议"),
+            new RecruitmentProcessFacts.ProcessStage(CONFIRMED, "签订聘用合同"));
     }
 
     private static GraduateEligibilityRule graduateRule() {

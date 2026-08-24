@@ -4,8 +4,10 @@ import static com.careeros.domain.GraduateEligibilityRule.CohortScope.CURRENT_YE
 import static com.careeros.domain.GraduateEligibilityRule.CohortScope.PREVIOUS_YEAR;
 import static com.careeros.domain.GraduateEligibilityRule.CohortScope.TWO_YEARS_PRIOR;
 import static com.careeros.domain.GraduateEligibilityRule.EvidenceState.CONFIRMED;
+import static com.careeros.domain.GraduateEligibilityRule.RequirementTiming.QUALIFICATION_REVIEW;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.careeros.domain.GraduateEligibilityRule;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
@@ -59,6 +61,16 @@ class OfficialAnnouncementFactParserTest {
         assertThat(facts.employmentStatement()).contains("签订聘用合同");
         assertThat(facts.interviewRule()).contains("结构化面试");
         assertThat(facts.evidenceExcerpts()).containsKeys("applicationPeriod", "ageReferenceDate", "overseasDegreeRule", "employmentStatement");
+        assertThat(facts.processFacts().notice().state()).isEqualTo(CONFIRMED);
+        assertThat(facts.processFacts().application().state()).isEqualTo(CONFIRMED);
+        assertThat(facts.processFacts().qualificationReview().state()).isEqualTo(CONFIRMED);
+        assertThat(facts.processFacts().payment().state()).isEqualTo(CONFIRMED);
+        assertThat(facts.processFacts().admissionTicket().state()).isEqualTo(CONFIRMED);
+        assertThat(facts.processFacts().physicalExam().state()).isEqualTo(GraduateEligibilityRule.EvidenceState.NOT_COLLECTED);
+        assertThat(facts.processFacts().investigation().state()).isEqualTo(GraduateEligibilityRule.EvidenceState.NOT_COLLECTED);
+        assertThat(facts.processFacts().publication().state()).isEqualTo(CONFIRMED);
+        assertThat(facts.processFacts().publication().detail()).contains("公示无异议");
+        assertThat(facts.processFacts().appointment().state()).isEqualTo(CONFIRMED);
     }
 
     @Test
@@ -82,5 +94,27 @@ class OfficialAnnouncementFactParserTest {
         assertThat(facts.admissionTicketEndsOn()).isEqualTo(LocalDate.of(2026, 4, 25));
         assertThat(facts.writtenExamOn()).isEqualTo(LocalDate.of(2026, 4, 25));
         assertThat(facts.writtenExamSubjects()).containsExactly("综合应用能力", "职业能力倾向测验");
+    }
+
+    @Test
+    void parsesGeneric2027GraduateWordingAndExplicitEmploymentRestrictions() {
+        String html = """
+            <html><head><meta name="PubDate" content="2027-02-18 09:00"></head><body>
+              <p>招聘对象包括2027届、2026届及2025届普通高校毕业生，以及同期国（境）外高校毕业生。</p>
+              <p>上述人员资格复审前须取得相应学历学位证书及教育部留学服务中心认证。</p>
+              <p>要求未落实工作单位、未缴纳社会保险。</p>
+            </body></html>
+            """;
+
+        var facts = parser.parse(html, "https://example.gov.cn/2027-notice.html");
+
+        assertThat(facts.graduateEligibilityRule()).isNotNull();
+        assertThat(facts.graduateEligibilityRule().cohorts())
+            .containsExactlyInAnyOrder(CURRENT_YEAR, PREVIOUS_YEAR, TWO_YEARS_PRIOR);
+        assertThat(facts.graduateEligibilityRule().includesOverseasGraduates()).isTrue();
+        assertThat(facts.graduateEligibilityRule().degreeTiming()).isEqualTo(QUALIFICATION_REVIEW);
+        assertThat(facts.graduateEligibilityRule().credentialTiming()).isEqualTo(QUALIFICATION_REVIEW);
+        assertThat(facts.graduateEligibilityRule().requiresNoEmployer()).isTrue();
+        assertThat(facts.graduateEligibilityRule().restrictsSocialInsurance()).isTrue();
     }
 }

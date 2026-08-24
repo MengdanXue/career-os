@@ -51,10 +51,20 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
                job.source_url,
                (job.employment_type <> 'UNKNOWN'
                     and jsonb_array_length(job.exact_majors) > 0
-                    and coalesce(job.original_requirement_text, job.major_requirement_text, job.duties, '') <> '') evidence_complete
+                    and coalesce(job.original_requirement_text, job.major_requirement_text, job.duties, '') <> '') evidence_complete,
+               analyzed_source.source_code, analyzed_source.source_loaded_at
         from job_posting job
         join recruitment_event event on event.id = job.recruitment_event_id
         join organization organization on organization.id = job.organization_id
+        left join lateral (
+            select source.code source_code,
+                   greatest(document.last_seen_at, document.last_changed_at) source_loaded_at
+            from acquired_document document
+            join recruitment_source source on source.id = document.source_id
+            where document.canonical_uri in (event.source_url, job.source_url)
+            order by (document.canonical_uri = job.source_url) desc, document.last_seen_at desc
+            limit 1
+        ) analyzed_source on true
         where event.recruitment_year between ? and ?
           and job.active
           and job.minimum_education in ('BACHELOR', 'MASTER')
@@ -155,7 +165,8 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
             EvidenceState.valueOf(rows.getString("professional_test_state")),
             EvidenceState.valueOf(rows.getString("interview_state")),
             rows.getObject("interview_on", LocalDate.class), rows.getString("interview_method"),
-            rows.getString("score_formula"));
+            rows.getString("score_formula"), rows.getString("source_code"),
+            rows.getTimestamp("source_loaded_at") == null ? null : rows.getTimestamp("source_loaded_at").toInstant());
     }
 
     private CoverageSignal mapCoverage(ResultSet rows, int rowNumber) throws SQLException {

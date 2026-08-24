@@ -25,7 +25,8 @@ import java.util.Set;
 public final class GraduateEligibilityProjector {
     public enum EvaluationMode { HISTORICAL_ACTUAL, TARGET_YEAR_ANALOG }
     public enum GraduateTrack {
-        TARGET_YEAR_GRADUATE, RECENT_GRADUATE_WINDOW, NOT_IN_GRADUATE_SCOPE, CONDITIONAL, UNKNOWN
+        TARGET_YEAR_GRADUATE, RECENT_GRADUATE_WINDOW, UNRESTRICTED,
+        NOT_IN_GRADUATE_SCOPE, CONDITIONAL, UNKNOWN
     }
 
     public record GraduateTrackAssessment(
@@ -70,7 +71,8 @@ public final class GraduateEligibilityProjector {
         Set<Integer> acceptedYears = mode == EvaluationMode.HISTORICAL_ACTUAL
             ? rule.explicitGraduationYears() : rule.acceptedYearsFor(targetYear);
         var reasons = new ArrayList<String>();
-        if (!acceptedYears.contains(graduationYear)) {
+        boolean unrestricted = rule.cohorts().contains(GraduateEligibilityRule.CohortScope.UNRESTRICTED);
+        if (!unrestricted && !acceptedYears.contains(graduationYear)) {
             String reason = mode == EvaluationMode.HISTORICAL_ACTUAL
                 ? graduationYear + " 届不属于 " + rule.recruitmentYear() + " 年公告的历史实际毕业生范围"
                 : graduationYear + " 届不属于 " + targetYear + " 目标年度类比范围";
@@ -78,9 +80,9 @@ public final class GraduateEligibilityProjector {
                 List.of(reason));
         }
 
-        GraduateTrack track = graduationYear == evaluationYear
+        GraduateTrack track = unrestricted ? GraduateTrack.UNRESTRICTED : graduationYear == evaluationYear
             ? GraduateTrack.TARGET_YEAR_GRADUATE : GraduateTrack.RECENT_GRADUATE_WINDOW;
-        reasons.add(graduationYear == evaluationYear
+        reasons.add(unrestricted ? "公告毕业生范围不限定届别" : graduationYear == evaluationYear
             ? graduationYear + " 届属于目标年度当届毕业生范围"
             : graduationYear + " 届属于目标年度近届毕业生窗口");
 

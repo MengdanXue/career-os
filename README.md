@@ -13,7 +13,7 @@
 - Phase 3A：浙江省、杭州市人社官方源定时增量采集；稳定公告键、SHA-256 内容指纹、条件请求、附件路由、PostgreSQL 分布式锁，以及新增/变更/下线变化流。
 - Phase 4A：确定性硬资格门槛、六维岗位匹配、证据感知稳定性、T1/T2/T3 分层、版本化决策快照、排名 API，以及带无模型回退的受控自然语言查询入口；这些能力只对已准入岗位运行。
 - Phase 4B：可运行的 React 决策工作台，覆盖资料入口、今日变化、机会池、岗位档案、岗位库更新、人工复核和 Agent 入口，并明确区分原始岗位库与可信机会池。
-- Phase 5A：个人半体制职业规划工作台。基于 1992-12-31 完整生日、计算机本科、境外计算机硕士在读且预计 2027 毕业等可核验事实，把本人明确识别为“2027 应届生 + 社会招聘”双通道，生成四条路线、逐年年龄窗口、2024—2026 历史实际条件、2027 类比判断、报名/资格审查/缴费/准考证/笔试/专业测试/面试流程和行动时间线。
+- Phase 5A：个人半体制职业规划工作台。基于 1992-12-31 完整生日、计算机本科、境外计算机硕士在读且预计 2027 毕业等可核验事实，把本人明确识别为“2027 应届生 + 社会招聘”双通道，生成四条路线、逐年年龄窗口、2024—2026 历史实际条件、2027 类比判断，以及公告、报名、资格审查、缴费、准考证、笔试、专业测试、面试、体检、考察、公示、聘用十二阶段流程和行动时间线。目标年类比会同步推进年龄参考日和已核验工作经历时长，不再沿用历史年份的年龄或经历结论。
 - Phase 5B Slice 1：个人事实与今日行动闭环。首页只展示零至三项与本人有关的截止、资格证据或目标岗位变化；画像页按岗位影响排序工作经历、政治面貌、预计毕业月份、留服认证、职称、技能和研究证据缺口。空值不会被确认成“明确没有”；硬资格只使用已确认、逐段核验的全职日期区间，并按官方资格参考日合并计算完整月份，旧的总工作年数仅作提示。
 - Phase 5B Slice 2：画像变更后的岗位差异闭环。保存并确认资料后，系统针对旧版本已有结论的同一批岗位、同一 `asOf` 重算，展示“新增可报 / 减少待确认 / 新增不可报”、受影响岗位和逐项原因。旧快照不存在时计数返回未知而不是伪造零；重算失败不回滚已保存画像，也不会把旧岗位结论标记为当前结果。
 - Opportunity Admission Gate（V9/V10）：持久化记录解析质量、目标范围、准入原因和人工核验状态；岗位内容变化后自动撤销旧准入，用工身份未知时禁止进入机会池，避免过期或不完整结论继续排名。
@@ -83,7 +83,7 @@ powershell -NoProfile -File scripts/career_correctness_acceptance.ps1 -BaseUrl h
 python scripts/planning_browser_acceptance.py
 ```
 
-2026-08-24 的验收基线为：27 个数据库迁移、355 个 Java 测试、43 个前端测试全部通过；真实数据库中目标来源 20 个（已接通 2、部分接通 1、未接通 17），已分析 2 个来源、26 个招聘事件、188 个岗位，其中 129 个岗位达到字段证据完整标准。T1/T2/T3 当前均为 0 是准入门与证据条件的真实结果，不代表没有采集到岗位，也不会阻止系统给出毕业月份、留服认证和笔试基线准备行动。
+2026-08-24 的验收基线为：28 个数据库迁移、361 个 Java 测试、43 个前端测试全部通过；真实数据库中目标来源 20 个（已接通 2、部分接通 1、未接通 17），已分析 2 个来源、26 个招聘事件、188 个岗位，其中 129 个岗位达到字段证据完整标准。T1/T2/T3 当前均为 0 是准入门与证据条件的真实结果，不代表没有采集到岗位，也不会阻止系统给出毕业月份、留服认证和笔试基线准备行动。规划接口会为纳入分析的每个岗位返回本人历史实际与 2027 类比结论，数据读取失败时暂停排名而不是把失败结果排入路线。
 
 官方源兼容性检查默认不访问公网，需要时显式运行：
 
@@ -110,6 +110,6 @@ java -jar career-web\target\career-web-0.1.0-SNAPSHOT.jar
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - 指标：`http://localhost:8080/actuator/metrics`
 
-个人行动接口为 `GET /api/v1/candidates/{candidateId}/personal-actions?asOf=YYYY-MM-DD`，画像证据任务接口为 `GET /api/v1/candidates/{candidateId}/evidence-tasks?asOf=YYYY-MM-DD`。画像保存并确认后，前端调用 `POST /api/v1/candidates/{candidateId}/decision-change-summaries/{previousProfileVersion}?asOf=YYYY-MM-DD` 重算旧版本所覆盖的同一批岗位。三者都由确定性规则生成；规划页和岗位详情已统一展示历史实际条件、2027 类比结果和完整招考流程，当前仍不包含完整申请跟踪。
+个人行动接口为 `GET /api/v1/candidates/{candidateId}/personal-actions?asOf=YYYY-MM-DD`，画像证据任务接口为 `GET /api/v1/candidates/{candidateId}/evidence-tasks?asOf=YYYY-MM-DD`。画像保存并确认后，前端调用 `POST /api/v1/candidates/{candidateId}/decision-change-summaries/{previousProfileVersion}?asOf=YYYY-MM-DD` 重算旧版本所覆盖的同一批岗位。三者都由确定性规则生成；规划页和任意已分析岗位详情已统一展示历史实际条件、2027 类比结果和十二阶段招考流程。后续体检、考察、公示等独立公告与原招聘事件的自动关联，以及完整申请跟踪，仍属于后续工作。
 
 接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md)、[Phase 3 增量采集 API](docs/PHASE3_API.md)、[Phase 4A 决策智能与 Agent API](docs/PHASE4A_API.md)、[Phase 4B 决策工作台](docs/PHASE4B_WORKBENCH.md) 和 [Phase 5A 半体制职业规划](docs/PHASE5A_CAREER_PLANNER.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。

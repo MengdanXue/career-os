@@ -96,8 +96,31 @@ public final class CareerPlanPorts {
         EvidenceState interviewState,
         LocalDate interviewOn,
         String interviewMethod,
-        String scoreFormula
+        String scoreFormula,
+        String sourceCode,
+        Instant sourceLoadedAt
     ) {
+        public HistoricalJob(
+            UUID jobId, UUID eventId, int year, LocalDate publishedOn,
+            LocalDate applicationStartsOn, LocalDate applicationEndsOn, LocalDate writtenExamOn,
+            LocalDate ageReferenceDate, List<String> writtenExamSubjects, String organizationName,
+            OrganizationType organizationType, String title, JobFamily jobFamily, EmploymentType employmentType,
+            EducationLevel minimumEducation, Integer maximumAge, Integer minimumExperienceYears,
+            Set<String> requiredProfessionalTitles, String candidateScope, String requirements,
+            String sourceUrl, boolean evidenceComplete, List<String> exactMajors,
+            List<Integer> acceptedGraduationYears, String genderRequirement, String overseasDegreeRule,
+            GraduateEligibilityRule graduateEligibilityRule, String graduateRule,
+            EvidenceState writtenExamState, EvidenceState professionalTestState, EvidenceState interviewState,
+            LocalDate interviewOn, String interviewMethod, String scoreFormula
+        ) {
+            this(jobId, eventId, year, publishedOn, applicationStartsOn, applicationEndsOn, writtenExamOn,
+                ageReferenceDate, writtenExamSubjects, organizationName, organizationType, title, jobFamily,
+                employmentType, minimumEducation, maximumAge, minimumExperienceYears, requiredProfessionalTitles,
+                candidateScope, requirements, sourceUrl, evidenceComplete, exactMajors, acceptedGraduationYears,
+                genderRequirement, overseasDegreeRule, graduateEligibilityRule, graduateRule, writtenExamState,
+                professionalTestState, interviewState, interviewOn, interviewMethod, scoreFormula, null, null);
+        }
+
         public HistoricalJob(
             UUID jobId, UUID eventId, int year, LocalDate publishedOn,
             LocalDate applicationStartsOn, LocalDate applicationEndsOn, LocalDate writtenExamOn,
@@ -113,7 +136,7 @@ public final class CareerPlanPorts {
                 employmentType, minimumEducation, maximumAge, minimumExperienceYears, requiredProfessionalTitles,
                 candidateScope, requirements, sourceUrl, evidenceComplete, exactMajors, acceptedGraduationYears,
                 genderRequirement, overseasDegreeRule, null, null, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN,
-                EvidenceState.UNKNOWN, null, null, null);
+                EvidenceState.UNKNOWN, null, null, null, null, null);
         }
 
         public HistoricalJob(UUID jobId, UUID eventId, int year, LocalDate publishedOn,
@@ -127,7 +150,8 @@ public final class CareerPlanPorts {
                 ageReferenceDate, writtenExamSubjects, organizationName, organizationType, title, jobFamily,
                 employmentType, minimumEducation, maximumAge, minimumExperienceYears, requiredProfessionalTitles,
                 candidateScope, requirements, sourceUrl, evidenceComplete, List.of(), List.of(), null, null,
-                null, null, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, null, null, null);
+                null, null, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, EvidenceState.UNKNOWN, null, null, null,
+                null, null);
         }
         public HistoricalJob {
             Objects.requireNonNull(jobId); Objects.requireNonNull(eventId);
@@ -140,6 +164,16 @@ public final class CareerPlanPorts {
             writtenExamState = writtenExamState == null ? EvidenceState.UNKNOWN : writtenExamState;
             professionalTestState = professionalTestState == null ? EvidenceState.UNKNOWN : professionalTestState;
             interviewState = interviewState == null ? EvidenceState.UNKNOWN : interviewState;
+        }
+
+        public HistoricalJob withSource(String code, Instant loadedAt) {
+            return new HistoricalJob(jobId, eventId, year, publishedOn, applicationStartsOn, applicationEndsOn,
+                writtenExamOn, ageReferenceDate, writtenExamSubjects, organizationName, organizationType, title,
+                jobFamily, employmentType, minimumEducation, maximumAge, minimumExperienceYears,
+                requiredProfessionalTitles, candidateScope, requirements, sourceUrl, evidenceComplete, exactMajors,
+                acceptedGraduationYears, genderRequirement, overseasDegreeRule, graduateEligibilityRule, graduateRule,
+                writtenExamState, professionalTestState, interviewState, interviewOn, interviewMethod, scoreFormula,
+                code, loadedAt);
         }
     }
 
