@@ -87,6 +87,11 @@ public class JpaDecisionStore implements JobContexts, OrganizationStabilityFacts
         return latestByJob.values().stream().map(this::bundle).toList();
     }
 
+    @Override public List<DecisionBundle> findByCandidateAndProfileVersion(UUID candidateId, String profileVersion) {
+        return decisions.findByCandidateProfileIdAndProfileVersionOrderByAssessedAtDesc(candidateId, profileVersion)
+            .stream().map(this::bundle).toList();
+    }
+
     private void saveDimensions(UUID decisionId, String kind, List<AssessmentDimension> values) {
         for (AssessmentDimension value : values) {
             var entity = new DecisionJpaModels.AssessmentDimensionEntity();

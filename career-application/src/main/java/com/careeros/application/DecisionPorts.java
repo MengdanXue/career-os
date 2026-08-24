@@ -48,6 +48,9 @@ public final class DecisionPorts {
         Optional<DecisionBundle> findByInput(DecisionInputKey input);
         DecisionBundle save(DecisionInputKey input, DecisionBundle bundle);
         List<DecisionBundle> findCurrentByCandidate(UUID candidateId);
+        default List<DecisionBundle> findByCandidateAndProfileVersion(UUID candidateId, String profileVersion) {
+            return List.of();
+        }
     }
 
     @FunctionalInterface
