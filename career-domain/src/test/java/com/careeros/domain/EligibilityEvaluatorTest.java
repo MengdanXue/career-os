@@ -77,6 +77,20 @@ class EligibilityEvaluatorTest {
         assertRule(evaluator.evaluate(candidate, facts, requiresTwo, "verified", Instant.parse("2026-08-23T00:00:00Z")), RuleType.EXPERIENCE, EligibilityStatus.ELIGIBLE);
     }
 
+    @Test void missingOfficialQualificationCutoffKeepsVerifiedExperienceUncertain() {
+        var requiresTwo = job(null, null, EducationLevel.MASTER, Set.of(), Set.of(), 2);
+        var candidate = candidateWithEmployment(List.of(new CandidateEmploymentRecord(
+            "杭州测试单位", "Java 工程师", LocalDate.of(2020, 1, 1), LocalDate.of(2025, 12, 31),
+            CandidateEmploymentRecord.EmploymentMode.FULL_TIME,
+            CandidateEmploymentRecord.VerificationStatus.VERIFIED, Set.of("劳动合同"))));
+
+        var result = evaluator.evaluate(candidate, CandidateFacts.confirmed(candidate), requiresTwo,
+            "verified", null, Instant.parse("2026-08-23T12:34:56Z"));
+
+        assertRule(result, RuleType.EXPERIENCE, EligibilityStatus.UNCERTAIN);
+        assertThat(result.assessedAt()).isEqualTo(Instant.parse("2026-08-23T12:34:56Z"));
+    }
+
     @Test void specificCandidateTitleSatisfiesAGenericRequiredLevel() {
         var candidate = new CandidateProfile(UUID.randomUUID(), "test", PartialDate.exact(LocalDate.of(1995, 1, 1)),
             EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5,

@@ -35,16 +35,22 @@ public final class EligibilityEvaluator {
     }
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job, String jobContentFingerprint, Instant now) {
+        return evaluate(candidate, facts, job, jobContentFingerprint,
+            now.atZone(java.time.ZoneOffset.UTC).toLocalDate(), now);
+    }
+
+    public EligibilityAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
+                                          String jobContentFingerprint, LocalDate qualificationAsOf,
+                                          Instant assessedAt) {
         var results = new EnumMap<RuleType, RuleResult>(RuleType.class);
         results.put(RuleType.AGE, evaluateAge(candidate, facts, job));
         results.put(RuleType.EDUCATION, evaluateEducation(candidate, facts, job));
         results.put(RuleType.EXACT_MAJOR, evaluateMajor(candidate, facts, job));
         results.put(RuleType.GRADUATE_YEAR, evaluateGraduation(candidate, facts, job));
-        results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, facts, job,
-            now.atZone(java.time.ZoneOffset.UTC).toLocalDate()));
+        results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, facts, job, qualificationAsOf));
         results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, facts, job));
         var overall = results.values().stream().map(RuleResult::status).max(EligibilityEvaluator::compareSeverity).orElse(EligibilityStatus.UNCERTAIN);
-        return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), VERSION, now, candidate.profileVersion(), jobContentFingerprint);
+        return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), VERSION, assessedAt, candidate.profileVersion(), jobContentFingerprint);
     }
 
     RuleResult evaluateAge(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
@@ -90,6 +96,7 @@ public final class EligibilityEvaluator {
 
     RuleResult evaluateExperience(CandidateProfile candidate, CandidateFacts facts, JobPosting job, LocalDate asOf) {
         if (job.minimumExperienceYears() == null || job.minimumExperienceYears() == 0) return eligible("岗位无最低工作年限要求");
+        if (asOf == null) return uncertain("岗位缺少官方资格计算截止日，无法核定工作年限");
         var verifiedYears = CandidateEmploymentExperience.completedYears(candidate, facts, asOf);
         if (verifiedYears.isEmpty()) return uncertain("缺少已确认、逐段核验的全职工作经历");
         return verifiedYears.getAsInt() >= job.minimumExperienceYears()

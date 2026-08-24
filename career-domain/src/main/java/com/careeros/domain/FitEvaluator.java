@@ -4,6 +4,7 @@ import static com.careeros.domain.DomainEnums.*;
 
 import java.text.Normalizer;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -20,20 +21,27 @@ public final class FitEvaluator {
     }
 
     public FitAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job, Organization organization, String jobFingerprint, Instant now) {
+        return evaluate(candidate, facts, job, organization, jobFingerprint,
+            now.atZone(java.time.ZoneOffset.UTC).toLocalDate(), now);
+    }
+
+    public FitAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
+                                  Organization organization, String jobFingerprint,
+                                  LocalDate qualificationAsOf, Instant assessedAt) {
         var dimensions = new ArrayList<AssessmentDimension>();
         dimensions.add(overlap(AssessmentDimensionType.MAJOR_FIT, 25, confirmed(facts, MAJORS, candidate.majors()), job.exactMajors(), job.evidenceIds(), "MAJOR"));
         dimensions.add(textOverlap(AssessmentDimensionType.SKILL_FIT, 20, confirmed(facts, SKILLS, candidate.skills()), jobText(job), job.evidenceIds(), "SKILL"));
-        dimensions.add(experience(candidate, facts, job, now));
+        dimensions.add(experience(candidate, facts, job, qualificationAsOf));
         dimensions.add(textOverlap(AssessmentDimensionType.RESEARCH_FIT, 10, confirmed(facts, RESEARCH_KEYWORDS, candidate.researchKeywords()), jobText(job), job.evidenceIds(), "RESEARCH"));
         dimensions.add(overlap(AssessmentDimensionType.PROFESSIONAL_TITLE_FIT, 10, confirmed(facts, PROFESSIONAL_TITLES, candidate.professionalTitles()), job.requiredProfessionalTitles(), job.evidenceIds(), "TITLE"));
         dimensions.add(preference(candidate, facts, job, organization));
-        return new FitAssessment(UUID.randomUUID(), candidate.id(), job.id(), dimensions, VERSION, candidate.profileVersion(), jobFingerprint, now);
+        return new FitAssessment(UUID.randomUUID(), candidate.id(), job.id(), dimensions, VERSION, candidate.profileVersion(), jobFingerprint, assessedAt);
     }
 
-    private AssessmentDimension experience(CandidateProfile candidate, CandidateFacts facts, JobPosting job, Instant now) {
+    private AssessmentDimension experience(CandidateProfile candidate, CandidateFacts facts, JobPosting job, LocalDate qualificationAsOf) {
         if (job.minimumExperienceYears() == null) return unknown(AssessmentDimensionType.EXPERIENCE_FIT, 20, "EXPERIENCE_REQUIREMENT_UNKNOWN");
-        var years = CandidateEmploymentExperience.completedYears(candidate, facts,
-            now.atZone(java.time.ZoneOffset.UTC).toLocalDate());
+        if (qualificationAsOf == null) return unknown(AssessmentDimensionType.EXPERIENCE_FIT, 20, "QUALIFICATION_CUTOFF_UNKNOWN");
+        var years = CandidateEmploymentExperience.completedYears(candidate, facts, qualificationAsOf);
         if (years.isEmpty()) return unknown(AssessmentDimensionType.EXPERIENCE_FIT, 20, "VERIFIED_EMPLOYMENT_UNKNOWN");
         int points = years.getAsInt() >= job.minimumExperienceYears() ? 20 : 0;
         return known(AssessmentDimensionType.EXPERIENCE_FIT, points, 20, "VERIFIED_EMPLOYMENT_INTERVALS",

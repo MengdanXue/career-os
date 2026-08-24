@@ -61,6 +61,23 @@ class FitEvaluatorTest {
             .hasMessageContaining("skills");
     }
 
+    @Test
+    void missingQualificationCutoffDoesNotUseAssessmentTimeForExperienceFit() {
+        var candidate = candidate(Set.of("Java"), Set.of("数据治理"));
+        var assessedAt = Instant.parse("2026-08-20T12:00:00Z");
+
+        var result = new FitEvaluator().evaluate(candidate, CandidateFacts.confirmed(candidate),
+            job(EmploymentType.ESTABLISHMENT, "Java 数据治理", List.of(UUID.randomUUID())),
+            organization(OrganizationType.PUBLIC_INSTITUTION), "d".repeat(64), null, assessedAt);
+
+        assertThat(result.dimensions()).filteredOn(d -> d.type() == AssessmentDimensionType.EXPERIENCE_FIT)
+            .singleElement().satisfies(d -> {
+                assertThat(d.factStatus()).isEqualTo(AssessmentFactStatus.UNKNOWN);
+                assertThat(d.reasonCode()).isEqualTo("QUALIFICATION_CUTOFF_UNKNOWN");
+            });
+        assertThat(result.assessedAt()).isEqualTo(assessedAt);
+    }
+
     private static CandidateProfile candidate(Set<String> skills, Set<String> research) {
         return new CandidateProfile(
             UUID.randomUUID(), "候选人", new PartialDate(1992, 12, null), EducationLevel.MASTER,

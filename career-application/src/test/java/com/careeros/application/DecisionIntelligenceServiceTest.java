@@ -124,6 +124,24 @@ class DecisionIntelligenceServiceTest {
         assertThat(fixture.inputLock.keys).allMatch(key -> key.matches("[0-9a-f]{64}"));
     }
 
+    @Test
+    void correctedApplicationDeadlineCreatesANewDecisionInput() {
+        var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
+        var first = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW);
+        var original = fixture.contexts.context;
+        var event = original.event();
+        fixture.contexts.context = new JobContext(original.job(), original.organization(),
+            new RecruitmentEvent(event.id(), event.title(), event.recruitmentYear(), event.eventType(),
+                event.publishedOn(), event.applicationStartsOn(), LocalDate.of(2026, 9, 15),
+                event.sourceUrl(), event.defaultEmploymentType(), event.evidenceIds()),
+            original.contentFingerprint(), original.active());
+
+        var corrected = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW.plusSeconds(60));
+
+        assertThat(corrected.decision().id()).isNotEqualTo(first.decision().id());
+        assertThat(fixture.snapshots.saved).isEqualTo(2);
+    }
+
     private static Fixture fixture(CandidateProfile initialCandidate) {
         return fixture(initialCandidate, EmploymentType.ESTABLISHMENT);
     }
@@ -152,7 +170,7 @@ class DecisionIntelligenceServiceTest {
                 CandidateFacts.CandidateFactSource.USER_CONFIRMED, NOW, NOW));
         }
         var service = new DecisionIntelligenceService(candidates, facts, assessments, contexts, organizationId1 -> List.of(), snapshots, admissions, inputLock, new EligibilityEvaluator(), new FitEvaluator(), new StabilityEvaluator());
-        return new Fixture(initialCandidate.id(), jobId, candidates, facts, snapshots, admissions, inputLock, service);
+        return new Fixture(initialCandidate.id(), jobId, candidates, facts, contexts, snapshots, admissions, inputLock, service);
     }
 
     private static CandidateProfile candidate(String version, Set<String> majors) {
@@ -165,7 +183,7 @@ class DecisionIntelligenceServiceTest {
             Set.of("Java", "PostgreSQL"), Set.of("数据治理"), Set.of(JobFamily.SOFTWARE), Set.of(OrganizationType.PUBLIC_INSTITUTION));
     }
 
-    private record Fixture(UUID candidateId, UUID jobId, MemoryCandidates candidates, MemoryFacts facts, MemorySnapshots snapshots, MemoryAdmissions admissions, SynchronizedDecisionInputLock inputLock, DecisionIntelligenceService service) {}
+    private record Fixture(UUID candidateId, UUID jobId, MemoryCandidates candidates, MemoryFacts facts, MemoryContexts contexts, MemorySnapshots snapshots, MemoryAdmissions admissions, SynchronizedDecisionInputLock inputLock, DecisionIntelligenceService service) {}
 
     private abstract static class MemoryRepository<T> implements RepositoryPorts.Repository<T> {
         final Map<UUID,T> values = new LinkedHashMap<>();
@@ -186,7 +204,7 @@ class DecisionIntelligenceServiceTest {
     }
     private static final class MemoryEligibility extends MemoryRepository<EligibilityAssessment> implements RepositoryPorts.EligibilityAssessments { UUID id(EligibilityAssessment value) { return value.id(); } }
     private static final class MemoryContexts implements JobContexts {
-        private final JobContext context;
+        private JobContext context;
         MemoryContexts(JobContext context) { this.context = context; }
         public Optional<JobContext> findByJobId(UUID id) { return context.job().id().equals(id) ? Optional.of(context) : Optional.empty(); }
         public List<JobContext> findActive() { return context.active() ? List.of(context) : List.of(); }
