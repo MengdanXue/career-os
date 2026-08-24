@@ -12,6 +12,7 @@ import com.careeros.domain.CandidateFacts;
 import com.careeros.domain.CandidateFacts.CandidateFactKey;
 import com.careeros.domain.EducationRecord.CompletionStatus;
 import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
+import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
 import java.time.Instant;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -59,6 +60,7 @@ public final class CareerPlanService {
             candidateId, targetYear, asOf, snapshot(candidate), current, future, graduateTrack,
             routes(jobs, candidate, data.candidateFacts(), asOf, current, future, targetYear,
                 data.coverage(), data.failedSections()), ageWindows(candidate, data.candidateFacts()), recruitmentWindows(jobs), examPatterns(jobs),
+            examSummary(jobs), processWindows(jobs),
             annualSummary(jobs, data.coverage()), risks(candidate, coverage), actions(targetYear, asOf), coverage,
             clock.instant(), ALGORITHM_VERSION);
     }
@@ -647,6 +649,73 @@ public final class CareerPlanService {
         return subjects.entrySet().stream()
             .sorted(Map.Entry.<String, Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
             .map(entry -> new ExamPattern(entry.getKey(), entry.getValue().intValue())).toList();
+    }
+
+    private static ExamSummary examSummary(List<HistoricalJob> jobs) {
+        List<HistoricalJob> events = List.copyOf(uniqueEvents(jobs).values());
+        var intervals = events.stream()
+            .filter(job -> job.writtenExamState() == EvidenceState.CONFIRMED)
+            .filter(job -> job.applicationStartsOn() != null && job.writtenExamOn() != null)
+            .mapToLong(job -> ChronoUnit.DAYS.between(job.applicationStartsOn(), job.writtenExamOn()))
+            .filter(days -> days >= 0).boxed().toList();
+        Integer averageInterval = intervals.isEmpty() ? null
+            : (int) Math.round(intervals.stream().mapToLong(Long::longValue).average().orElseThrow());
+        var methods = events.stream()
+            .filter(job -> job.interviewState() == EvidenceState.CONFIRMED)
+            .map(HistoricalJob::interviewMethod)
+            .filter(value -> value != null && !value.isBlank())
+            .collect(Collectors.groupingBy(value -> value, Collectors.counting())).entrySet().stream()
+            .sorted(Map.Entry.<String, Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+            .map(entry -> new ExamPattern(entry.getKey(), entry.getValue().intValue())).toList();
+        return new ExamSummary(events.size(),
+            stateCount(events, ProcessStateField.WRITTEN, EvidenceState.CONFIRMED),
+            stateCount(events, ProcessStateField.WRITTEN, EvidenceState.NOT_REQUIRED),
+            stateCount(events, ProcessStateField.WRITTEN, EvidenceState.NOT_PUBLISHED),
+            stateCount(events, ProcessStateField.WRITTEN, EvidenceState.NOT_COLLECTED),
+            stateCount(events, ProcessStateField.WRITTEN, EvidenceState.PARSE_FAILED),
+            stateCount(events, ProcessStateField.WRITTEN, EvidenceState.REVIEW_REQUIRED),
+            stateCount(events, ProcessStateField.WRITTEN, EvidenceState.UNKNOWN),
+            stateCount(events, ProcessStateField.PROFESSIONAL_TEST, EvidenceState.CONFIRMED),
+            stateCount(events, ProcessStateField.PROFESSIONAL_TEST, EvidenceState.NOT_REQUIRED),
+            stateCount(events, ProcessStateField.PROFESSIONAL_TEST, EvidenceState.NOT_PUBLISHED),
+            stateCount(events, ProcessStateField.PROFESSIONAL_TEST, EvidenceState.NOT_COLLECTED),
+            stateCount(events, ProcessStateField.PROFESSIONAL_TEST, EvidenceState.PARSE_FAILED),
+            stateCount(events, ProcessStateField.PROFESSIONAL_TEST, EvidenceState.REVIEW_REQUIRED),
+            stateCount(events, ProcessStateField.PROFESSIONAL_TEST, EvidenceState.UNKNOWN),
+            stateCount(events, ProcessStateField.INTERVIEW, EvidenceState.CONFIRMED),
+            stateCount(events, ProcessStateField.INTERVIEW, EvidenceState.NOT_REQUIRED),
+            stateCount(events, ProcessStateField.INTERVIEW, EvidenceState.NOT_PUBLISHED),
+            stateCount(events, ProcessStateField.INTERVIEW, EvidenceState.NOT_COLLECTED),
+            stateCount(events, ProcessStateField.INTERVIEW, EvidenceState.PARSE_FAILED),
+            stateCount(events, ProcessStateField.INTERVIEW, EvidenceState.REVIEW_REQUIRED),
+            stateCount(events, ProcessStateField.INTERVIEW, EvidenceState.UNKNOWN),
+            examPatterns(jobs), methods, intervals.size(), averageInterval);
+    }
+
+    private enum ProcessStateField { WRITTEN, PROFESSIONAL_TEST, INTERVIEW }
+
+    private static int stateCount(List<HistoricalJob> events, ProcessStateField field, EvidenceState state) {
+        return (int) events.stream().map(job -> switch (field) {
+            case WRITTEN -> job.writtenExamState();
+            case PROFESSIONAL_TEST -> job.professionalTestState();
+            case INTERVIEW -> job.interviewState();
+        }).filter(value -> value == state).count();
+    }
+
+    private static List<ProcessWindow> processWindows(List<HistoricalJob> jobs) {
+        List<HistoricalJob> events = List.copyOf(uniqueEvents(jobs).values());
+        var result = new ArrayList<ProcessWindow>();
+        addProcessWindows(result, "NOTICE", events.stream().map(HistoricalJob::publishedOn).toList());
+        addProcessWindows(result, "APPLICATION_START", events.stream().map(HistoricalJob::applicationStartsOn).toList());
+        addProcessWindows(result, "WRITTEN_EXAM", events.stream().map(HistoricalJob::writtenExamOn).toList());
+        addProcessWindows(result, "INTERVIEW", events.stream().map(HistoricalJob::interviewOn).toList());
+        return List.copyOf(result);
+    }
+
+    private static void addProcessWindows(List<ProcessWindow> target, String stage, List<LocalDate> dates) {
+        dates.stream().filter(Objects::nonNull).collect(Collectors.groupingBy(LocalDate::getMonthValue,
+                TreeMap::new, Collectors.counting()))
+            .forEach((month, count) -> target.add(new ProcessWindow(stage, month, count.intValue())));
     }
 
     private static List<AnnualSummary> annualSummary(List<HistoricalJob> jobs, List<CoverageSignal> coverage) {

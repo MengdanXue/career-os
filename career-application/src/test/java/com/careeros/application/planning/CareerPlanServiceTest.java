@@ -17,6 +17,7 @@ import com.careeros.domain.EducationRecord;
 import com.careeros.domain.EducationRecord.CompletionStatus;
 import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
 import com.careeros.domain.GraduateEligibilityRule;
+import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
 import com.careeros.domain.PartialDate;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -93,6 +94,46 @@ class CareerPlanServiceTest {
             .isEqualTo(CareerPlan.QualificationOutcome.CONDITIONALLY_ELIGIBLE);
         assertThat(representative.targetYearAnalog().reasons())
             .contains("2027 届属于目标年度当届毕业生范围");
+    }
+
+    @Test
+    void examSummaryCountsDistinctEventsAndKeepsProcessEvidenceStatesSeparate() {
+        var rows = List.of(
+            processJob(jobs().get(0), UUID.fromString("10000000-0000-0000-0000-000000000021"),
+                EvidenceState.CONFIRMED, EvidenceState.CONFIRMED, EvidenceState.NOT_PUBLISHED,
+                LocalDate.of(2026, 4, 25), List.of("职业能力倾向测验", "综合应用能力"), null, null),
+            processJob(jobs().get(1), UUID.fromString("10000000-0000-0000-0000-000000000022"),
+                EvidenceState.NOT_REQUIRED, EvidenceState.NOT_REQUIRED, EvidenceState.CONFIRMED,
+                null, List.of(), LocalDate.of(2026, 5, 16), "结构化面试"),
+            processJob(jobs().get(2), UUID.fromString("10000000-0000-0000-0000-000000000023"),
+                EvidenceState.NOT_COLLECTED, EvidenceState.REVIEW_REQUIRED, EvidenceState.PARSE_FAILED,
+                null, List.of(), null, null));
+        var service = new CareerPlanService((id, from, to, asOf) ->
+            new CareerPlanData(candidate(), rows, coverage(), LOADED_AT));
+
+        var plan = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22));
+        var summary = plan.examSummary();
+
+        assertThat(summary.totalEvents()).isEqualTo(3);
+        assertThat(summary.writtenExamConfirmed()).isEqualTo(1);
+        assertThat(summary.writtenExamNotRequired()).isEqualTo(1);
+        assertThat(summary.writtenExamNotCollected()).isEqualTo(1);
+        assertThat(summary.writtenExamUnknown()).isZero();
+        assertThat(summary.professionalTestConfirmed()).isEqualTo(1);
+        assertThat(summary.interviewConfirmed()).isEqualTo(1);
+        assertThat(summary.interviewNotPublished()).isEqualTo(1);
+        assertThat(summary.interviewParseFailed()).isEqualTo(1);
+        assertThat(summary.subjects()).contains(
+            new CareerPlan.ExamPattern("职业能力倾向测验", 1),
+            new CareerPlan.ExamPattern("综合应用能力", 1));
+        assertThat(summary.interviewMethods()).contains(new CareerPlan.ExamPattern("结构化面试", 1));
+        assertThat(summary.applicationToWrittenExamSamples()).isEqualTo(1);
+        assertThat(summary.averageApplicationToWrittenExamDays()).isEqualTo(31);
+        assertThat(plan.processWindows()).contains(
+            new CareerPlan.ProcessWindow("NOTICE", 3, 3),
+            new CareerPlan.ProcessWindow("APPLICATION_START", 3, 3),
+            new CareerPlan.ProcessWindow("WRITTEN_EXAM", 4, 1),
+            new CareerPlan.ProcessWindow("INTERVIEW", 5, 1));
     }
 
     @Test
@@ -450,6 +491,19 @@ class CareerPlanServiceTest {
             base.minimumEducation(), base.maximumAge(), base.minimumExperienceYears(), base.requiredProfessionalTitles(),
             base.candidateScope(), base.requirements(), base.sourceUrl(), base.evidenceComplete(), base.exactMajors(),
             base.acceptedGraduationYears(), base.genderRequirement(), rule);
+    }
+
+    private static HistoricalJob processJob(HistoricalJob base, UUID eventId,
+        EvidenceState writtenState, EvidenceState professionalState, EvidenceState interviewState,
+        LocalDate writtenOn, List<String> subjects, LocalDate interviewOn, String interviewMethod) {
+        return new HistoricalJob(base.jobId(), eventId, base.year(), base.publishedOn(),
+            base.applicationStartsOn(), base.applicationEndsOn(), writtenOn, base.ageReferenceDate(), subjects,
+            base.organizationName(), base.organizationType(), base.title(), base.jobFamily(), base.employmentType(),
+            base.minimumEducation(), base.maximumAge(), base.minimumExperienceYears(), base.requiredProfessionalTitles(),
+            base.candidateScope(), base.requirements(), base.sourceUrl(), base.evidenceComplete(), base.exactMajors(),
+            base.acceptedGraduationYears(), base.genderRequirement(), base.overseasDegreeRule(),
+            base.graduateEligibilityRule(), base.graduateRule(), writtenState, professionalState, interviewState,
+            interviewOn, interviewMethod, base.scoreFormula());
     }
 
     private static CareerPlan.JobScenarioOutcome outcomeFor(HistoricalJob job, CandidateProfile candidate,

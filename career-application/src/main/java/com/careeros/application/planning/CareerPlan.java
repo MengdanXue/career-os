@@ -19,6 +19,8 @@ public record CareerPlan(
     List<AgeWindow> ageWindows,
     List<RecruitmentWindow> recruitmentWindows,
     List<ExamPattern> examPatterns,
+    ExamSummary examSummary,
+    List<ProcessWindow> processWindows,
     List<AnnualSummary> historicalSummary,
     List<Risk> qualificationRisks,
     List<ActionItem> actionTimeline,
@@ -29,9 +31,9 @@ public record CareerPlan(
     public CareerPlan {
         Objects.requireNonNull(candidateId); Objects.requireNonNull(asOf); Objects.requireNonNull(candidateSnapshot);
         Objects.requireNonNull(currentScenario); Objects.requireNonNull(graduateTrack);
-        Objects.requireNonNull(dataCoverage); Objects.requireNonNull(generatedAt);
+        Objects.requireNonNull(examSummary); Objects.requireNonNull(dataCoverage); Objects.requireNonNull(generatedAt);
         futureScenarios = copy(futureScenarios); recommendedRoutes = copy(recommendedRoutes); ageWindows = copy(ageWindows);
-        recruitmentWindows = copy(recruitmentWindows); examPatterns = copy(examPatterns);
+        recruitmentWindows = copy(recruitmentWindows); examPatterns = copy(examPatterns); processWindows = copy(processWindows);
         historicalSummary = copy(historicalSummary); qualificationRisks = copy(qualificationRisks); actionTimeline = copy(actionTimeline);
     }
 
@@ -123,6 +125,24 @@ public record CareerPlan(
 
     public record RecruitmentWindow(int month, int eventCount, String label, String basis) {}
     public record ExamPattern(String subject, int eventCount) {}
+    public record ExamSummary(
+        int totalEvents,
+        int writtenExamConfirmed, int writtenExamNotRequired, int writtenExamNotPublished,
+        int writtenExamNotCollected, int writtenExamParseFailed, int writtenExamReviewRequired, int writtenExamUnknown,
+        int professionalTestConfirmed, int professionalTestNotRequired, int professionalTestNotPublished,
+        int professionalTestNotCollected, int professionalTestParseFailed, int professionalTestReviewRequired,
+        int professionalTestUnknown,
+        int interviewConfirmed, int interviewNotRequired, int interviewNotPublished,
+        int interviewNotCollected, int interviewParseFailed, int interviewReviewRequired, int interviewUnknown,
+        List<ExamPattern> subjects, List<ExamPattern> interviewMethods,
+        int applicationToWrittenExamSamples, Integer averageApplicationToWrittenExamDays
+    ) {
+        public ExamSummary {
+            subjects = copy(subjects);
+            interviewMethods = copy(interviewMethods);
+        }
+    }
+    public record ProcessWindow(String stage, int month, int eventCount) {}
     public record AnnualSummary(int year, int jobCount, int eventCount, int formalJobCount, boolean coverageComplete) {}
     public record Risk(String code, RiskSeverity severity, String title, String detail) {}
     public record ActionItem(LocalDate startsOn, LocalDate endsOn, String title, String detail, String status) {}
