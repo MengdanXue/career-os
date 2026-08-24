@@ -97,7 +97,10 @@ public class PersistenceAdaptersConfiguration {
         e.writtenExamOn=value.writtenExamOn(); e.writtenExamSubjects=new ArrayList<>(value.writtenExamSubjects());
         e.graduateRule=value.graduateRule(); e.overseasDegreeRule=value.overseasDegreeRule();
         e.experienceEvidenceRule=value.experienceEvidenceRule(); e.employmentStatement=value.employmentStatement();
-        e.interviewRule=value.interviewRule(); e.sourceUrl=value.sourceUrl();
+        e.interviewRule=value.interviewRule(); e.graduateRuleJson=value.graduateEligibilityRule();
+        e.writtenExamState=value.writtenExamState(); e.professionalTestState=value.professionalTestState();
+        e.interviewState=value.interviewState(); e.interviewOn=value.interviewOn();
+        e.interviewMethod=value.interviewMethod(); e.scoreFormula=value.scoreFormula(); e.sourceUrl=value.sourceUrl();
         e.defaultEmploymentType=value.defaultEmploymentType(); e.evidenceIds=new ArrayList<>(value.evidenceIds());
         return e;
     }
@@ -107,7 +110,9 @@ public class PersistenceAdaptersConfiguration {
             e.applicationStartsAt,e.applicationEndsAt,e.ageReferenceDate,e.registrationUrl,
             e.qualificationReviewEndsOn,e.paymentEndsOn,e.admissionTicketStartsOn,e.admissionTicketEndsOn,
             e.writtenExamOn,e.writtenExamSubjects,e.graduateRule,e.overseasDegreeRule,
-            e.experienceEvidenceRule,e.employmentStatement,e.interviewRule);
+            e.experienceEvidenceRule,e.employmentStatement,e.interviewRule,e.graduateRuleJson,
+            e.writtenExamState,e.professionalTestState,e.interviewState,e.interviewOn,
+            e.interviewMethod,e.scoreFormula);
     }
 
     private JpaModels.OrganizationEntity toOrganizationEntity(Organization value) { var e=new JpaModels.OrganizationEntity(); e.id=value.id(); e.name=value.name(); e.organizationType=value.organizationType(); e.administrativeLevel=value.administrativeLevel(); e.province=value.province(); e.city=value.city(); e.district=value.district(); e.parentOrganizationId=value.parentOrganizationId(); e.officialWebsite=value.officialWebsite(); return e; }

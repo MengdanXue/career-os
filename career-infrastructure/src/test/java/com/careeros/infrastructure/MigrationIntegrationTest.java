@@ -98,7 +98,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(24);
+        assertThat(result.migrationsExecuted).isEqualTo(25);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -136,12 +136,13 @@ class MigrationIntegrationTest {
                  where constraint_row.conname='candidate_fact_confirmation_pkey'
                    and namespace_row.nspname='public'
                  """);
-             var officialEventFacts = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='recruitment_event' and column_name in ('application_starts_at','application_ends_at','age_reference_date','registration_url','qualification_review_ends_on','payment_ends_on','admission_ticket_starts_on','admission_ticket_ends_on','written_exam_on','written_exam_subjects','graduate_rule','overseas_degree_rule','experience_evidence_rule','employment_statement','interview_rule','legacy_workbook_snapshot')");
+              var officialEventFacts = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='recruitment_event' and column_name in ('application_starts_at','application_ends_at','age_reference_date','registration_url','qualification_review_ends_on','payment_ends_on','admission_ticket_starts_on','admission_ticket_ends_on','written_exam_on','written_exam_subjects','graduate_rule','overseas_degree_rule','experience_evidence_rule','employment_statement','interview_rule','legacy_workbook_snapshot','graduate_rule_json','written_exam_state','professional_test_state','interview_state','interview_on','interview_method','score_formula')");
+              var processStateConstraints = connection.prepareStatement("select count(*) from pg_constraint constraint_row join pg_namespace namespace_row on namespace_row.oid=constraint_row.connamespace where namespace_row.nspname='public' and constraint_row.conname in ('ck_recruitment_event_written_exam_state','ck_recruitment_event_professional_test_state','ck_recruitment_event_interview_state')");
              var officialJobFacts = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='job_posting' and column_name in ('supervising_department','job_category','job_grade','education_requirement_text','degree_requirement','major_requirement_text','age_requirement_text','gender_requirement','candidate_scope','other_requirements','original_requirement_text','interview_ratio','professional_test_required','contact_phone')");
              var fieldEvidenceTable = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name='job_field_evidence'");
              var eventFieldEvidenceTable = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name='recruitment_event_field_evidence'");
              var fieldEvidenceIndex = connection.prepareStatement("select count(*) from pg_indexes where schemaname='public' and indexname='idx_job_field_evidence_fragment'");
-             var processorVersion = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='acquired_document' and column_name='last_processor_version'")) {
+              var processorVersion = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='acquired_document' and column_name='last_processor_version'")) {
             try (var rows = tables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(14); }
             try (var rows = candidates.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = pendingIndex.executeQuery()) {
@@ -178,7 +179,8 @@ class MigrationIntegrationTest {
             try (var rows = dimensionFkIndex.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = candidateFacts.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = candidateFactKey.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
-            try (var rows = officialEventFacts.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(16); }
+            try (var rows = officialEventFacts.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(23); }
+            try (var rows = processStateConstraints.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(3); }
             try (var rows = officialJobFacts.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(14); }
             try (var rows = fieldEvidenceTable.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = eventFieldEvidenceTable.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }

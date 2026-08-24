@@ -12,6 +12,7 @@ import com.careeros.application.JobUpsertService;
 import com.careeros.application.OfficialJobAdmissionService;
 import com.careeros.application.JobUpsertService.JobUpsertBatch;
 import com.careeros.application.JobUpsertService.JobUpsertResult;
+import com.careeros.domain.GraduateEligibilityRule;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
@@ -353,6 +354,13 @@ class OfficialExcelImportServiceTest {
         announcementEvent.defaultEmploymentType = EmploymentType.PUBLIC_INSTITUTION_FORMAL;
         announcementEvent.registrationUrl = "http://qssy.zjks.com";
         announcementEvent.employmentStatement = "经公示无异议，签订聘用合同。";
+        announcementEvent.graduateRuleJson = GraduateEligibilityRule.fromExplicitYears(
+            2026, java.util.Set.of(2025, 2026), true, "2025、2026届及留学回国人员");
+        announcementEvent.writtenExamState = GraduateEligibilityRule.EvidenceState.CONFIRMED;
+        announcementEvent.professionalTestState = GraduateEligibilityRule.EvidenceState.NOT_REQUIRED;
+        announcementEvent.interviewState = GraduateEligibilityRule.EvidenceState.NOT_PUBLISHED;
+        announcementEvent.interviewMethod = "结构化面试";
+        announcementEvent.scoreFormula = "笔试、面试成绩各占50%";
         when(events.findFirstBySourceUrl(announcementUrl)).thenReturn(Optional.of(announcementEvent));
         when(events.findFirstBySourceUrl(workbookUrl)).thenReturn(Optional.empty());
         when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -379,6 +387,15 @@ class OfficialExcelImportServiceTest {
         assertThat(savedEvent.getValue().ageReferenceDate).isEqualTo(LocalDate.of(2026, 3, 19));
         assertThat(savedEvent.getValue().registrationUrl).isEqualTo("http://qssy.zjks.com");
         assertThat(savedEvent.getValue().employmentStatement).contains("签订聘用合同");
+        assertThat(savedEvent.getValue().graduateRuleJson).isEqualTo(announcementEvent.graduateRuleJson);
+        assertThat(savedEvent.getValue().writtenExamState)
+            .isEqualTo(GraduateEligibilityRule.EvidenceState.CONFIRMED);
+        assertThat(savedEvent.getValue().professionalTestState)
+            .isEqualTo(GraduateEligibilityRule.EvidenceState.NOT_REQUIRED);
+        assertThat(savedEvent.getValue().interviewState)
+            .isEqualTo(GraduateEligibilityRule.EvidenceState.NOT_PUBLISHED);
+        assertThat(savedEvent.getValue().interviewMethod).isEqualTo("结构化面试");
+        assertThat(savedEvent.getValue().scoreFormula).isEqualTo("笔试、面试成绩各占50%");
         assertThat(savedEvent.getValue().defaultEmploymentType).isEqualTo(EmploymentType.PUBLIC_INSTITUTION_FORMAL);
         assertThat(batch.getValue().jobs().getFirst().ageReferenceDate()).isEqualTo(LocalDate.of(2026, 3, 19));
         assertThat(batch.getValue().jobs().getFirst().employmentType()).isEqualTo(EmploymentType.PUBLIC_INSTITUTION_FORMAL);

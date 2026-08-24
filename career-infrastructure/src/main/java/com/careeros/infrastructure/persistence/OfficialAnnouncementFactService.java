@@ -5,6 +5,7 @@ import static com.careeros.domain.DomainEnums.EmploymentType.UNKNOWN;
 import static com.careeros.domain.DomainEnums.EventType.PUBLIC_INSTITUTION;
 
 import com.careeros.domain.DomainEnums.EventType;
+import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
 import com.careeros.infrastructure.acquisition.OfficialAnnouncementFactParser.OfficialAnnouncementFacts;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -83,6 +84,13 @@ public class OfficialAnnouncementFactService {
         event.experienceEvidenceRule = preferIncoming(event.experienceEvidenceRule, facts.experienceEvidenceRule());
         event.employmentStatement = preferIncoming(event.employmentStatement, facts.employmentStatement());
         event.interviewRule = preferIncoming(event.interviewRule, facts.interviewRule());
+        event.graduateRuleJson = preferIncoming(event.graduateRuleJson, facts.graduateEligibilityRule());
+        event.writtenExamState = preferState(event.writtenExamState, facts.writtenExamState());
+        event.professionalTestState = preferState(event.professionalTestState, facts.professionalTestState());
+        event.interviewState = preferState(event.interviewState, facts.interviewState());
+        event.interviewOn = preferIncoming(event.interviewOn, facts.interviewOn());
+        event.interviewMethod = preferIncoming(event.interviewMethod, facts.interviewMethod());
+        event.scoreFormula = preferIncoming(event.scoreFormula, facts.scoreFormula());
         var parsedEmploymentType = facts.employmentStatement() == null
             ? (event.defaultEmploymentType == null ? UNKNOWN : event.defaultEmploymentType)
             : eventType == PUBLIC_INSTITUTION && facts.employmentStatement().contains("签订聘用合同")
@@ -175,5 +183,12 @@ public class OfficialAnnouncementFactService {
 
     private static <T> T preferIncoming(T existing, T incoming) {
         return incoming != null ? incoming : existing;
+    }
+
+    private static EvidenceState preferState(EvidenceState existing, EvidenceState incoming) {
+        if (incoming == null || incoming == EvidenceState.UNKNOWN) {
+            return existing == null ? EvidenceState.UNKNOWN : existing;
+        }
+        return incoming;
     }
 }

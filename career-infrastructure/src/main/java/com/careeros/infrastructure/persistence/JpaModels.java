@@ -8,6 +8,8 @@ import com.careeros.domain.CandidateEmploymentRecord.VerificationStatus;
 import com.careeros.domain.EducationRecord;
 import com.careeros.domain.EducationRecord.CompletionStatus;
 import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
+import com.careeros.domain.GraduateEligibilityRule;
+import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -49,6 +51,17 @@ public final class JpaModels {
         @Column(name = "experience_evidence_rule") String experienceEvidenceRule;
         @Column(name = "employment_statement") String employmentStatement;
         @Column(name = "interview_rule") String interviewRule;
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "graduate_rule_json", columnDefinition = "jsonb")
+        GraduateEligibilityRule graduateRuleJson;
+        @Enumerated(EnumType.STRING) @Column(name = "written_exam_state", nullable = false)
+        EvidenceState writtenExamState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "professional_test_state", nullable = false)
+        EvidenceState professionalTestState = EvidenceState.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "interview_state", nullable = false)
+        EvidenceState interviewState = EvidenceState.UNKNOWN;
+        @Column(name = "interview_on") LocalDate interviewOn;
+        @Column(name = "interview_method") String interviewMethod;
+        @Column(name = "score_formula") String scoreFormula;
         @Column(name = "legacy_workbook_snapshot", nullable = false) boolean legacyWorkbookSnapshot;
         @Column(name = "workbook_identity") String workbookIdentity;
         @Column(name = "source_url", nullable = false) String sourceUrl;
