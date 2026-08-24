@@ -1,6 +1,7 @@
 import { queryKeys, requestJson } from '../../api/http'
 import { candidateFactKeys, type CandidateProfile, type CandidateProfileFacts, type CandidateProfileUpdate } from './profileSchema'
 import type { CandidateEvidenceTasks } from '../personal/personalTypes'
+import type { DecisionChangeSummary } from './decisionChangeTypes'
 
 export function listCandidates() {
   return requestJson<CandidateProfile[]>('/api/v1/candidates')
@@ -26,6 +27,13 @@ export function confirmCandidateFacts(candidateId: string) {
 
 export function getCandidateEvidenceTasks(candidateId: string) {
   return requestJson<CandidateEvidenceTasks>(`/api/v1/candidates/${candidateId}/evidence-tasks`)
+}
+
+export function recomputeDecisionChanges(candidateId: string, previousProfileVersion: string, asOf: string) {
+  return requestJson<DecisionChangeSummary>(
+    `/api/v1/candidates/${candidateId}/decision-change-summaries/${encodeURIComponent(previousProfileVersion)}?asOf=${encodeURIComponent(asOf)}`,
+    { method: 'POST' },
+  )
 }
 
 export const profileKeys = {

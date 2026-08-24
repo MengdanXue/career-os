@@ -57,6 +57,14 @@ describe('ProfilePage', () => {
       if (url.endsWith('/facts') && !init?.method) return json(facts(candidate))
       if (init?.method === 'PUT') return json(saved)
       if (url.endsWith('/facts/confirm')) return json(facts(confirmed, 'CONFIRMED'))
+      if (url.includes('/decision-change-summaries/')) return json({
+        candidateId: candidate.id, previousProfileVersion: 'seed-v1', currentProfileVersion: 'profile-server-confirmed',
+        asOf: '2026-08-24', available: true, message: null, newlyEligibleCount: 1,
+        resolvedUncertaintyCount: 2, newlyIneligibleCount: 0,
+        affectedJobs: [{ jobId: 'job-1', title: '信息技术岗位', organizationName: '杭州市信息中心',
+          previousStatus: 'UNCERTAIN', currentStatus: 'ELIGIBLE',
+          reasons: ['工作经历：待确认 → 可报'], deepLink: '/opportunities/job-1' }],
+      })
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetch)
@@ -78,6 +86,10 @@ describe('ProfilePage', () => {
     expect(screen.getByText('已确认 16')).toBeInTheDocument()
     expect(screen.getByText(/本科 · 计算机科学与技术 · 2014 · 已毕业/)).toBeInTheDocument()
     expect(screen.getByText(/示例海外大学 · 硕士 · 计算机科学 · 2027 · 预计毕业/)).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '本次资料更新带来的变化' })).toBeInTheDocument()
+    expect(screen.getByText('新增可报 1')).toBeInTheDocument()
+    expect(screen.getByText('减少待确认 2')).toBeInTheDocument()
+    expect(screen.getByText('工作经历：待确认 → 可报')).toBeInTheDocument()
     expect(localStorage.getItem(`career-os.profile-confirmed.${candidate.id}`)).toBeNull()
     const confirmCall = fetch.mock.calls.find(([input]) => String(input).endsWith('/facts/confirm'))
     expect(JSON.parse(String(confirmCall?.[1]?.body)).factKeys).toEqual(factKeys)
@@ -86,6 +98,41 @@ describe('ProfilePage', () => {
     expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
       birthDay: 31, gender: 'FEMALE', politicalAffiliation: 'UNKNOWN', employmentRecords: [],
     })
+  })
+
+  it('keeps confirmed facts usable and offers decision retry when recomputation fails', async () => {
+    const updated = { ...candidate, skills: ['Java', 'Spring Boot'], profileVersion: 'current-v2' }
+    let diffAttempts = 0
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/candidates')) return json([candidate])
+      if (url.includes('/evidence-tasks')) return json(evidenceTasks())
+      if (url.endsWith('/facts') && !init?.method) return json(facts(candidate, 'CONFIRMED'))
+      if (init?.method === 'PUT') return json(updated)
+      if (url.endsWith('/facts/confirm')) return json(facts(updated, 'CONFIRMED'))
+      if (url.includes('/decision-change-summaries/')) {
+        diffAttempts += 1
+        if (diffAttempts === 1) return json({ title: 'Unavailable', detail: '岗位结论更新暂时失败' }, 503)
+        return json({ candidateId: candidate.id, previousProfileVersion: 'seed-v1', currentProfileVersion: 'current-v2',
+          asOf: '2026-08-24', available: true, message: null, newlyEligibleCount: 0,
+          resolvedUncertaintyCount: 1, newlyIneligibleCount: 0, affectedJobs: [] })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    render(<AppProviders><ProfilePage /></AppProviders>)
+    await userEvent.click(await screen.findByRole('button', { name: '修改资料' }))
+    fireEvent.change(screen.getByLabelText('技能关键词'), { target: { value: 'Java, Spring Boot' } })
+    await userEvent.click(screen.getByRole('button', { name: '保存并重新确认' }))
+
+    expect(await screen.findByRole('heading', { name: '资料已确认' })).toBeInTheDocument()
+    expect(screen.getByText('current-v2')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('岗位结论更新暂时失败')
+    expect(screen.getByText('旧岗位结论不会被标记为当前结果。')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '重新更新岗位结论' }))
+    expect(await screen.findByText('减少待确认 1')).toBeInTheDocument()
+    expect(diffAttempts).toBe(2)
   })
 
   it('keeps a failed server confirmation retryable and never sends a client profile version', async () => {

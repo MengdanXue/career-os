@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { AsyncState } from '../../components/AsyncState'
 import type { CandidateEvidenceTask, CandidateEvidenceTasks } from '../personal/personalTypes'
-import { confirmCandidateFacts, getCandidateEvidenceTasks, getCandidateFacts, listCandidates, profileKeys, updateCandidate } from './profileApi'
+import { confirmCandidateFacts, getCandidateEvidenceTasks, getCandidateFacts, listCandidates, profileKeys, recomputeDecisionChanges, updateCandidate } from './profileApi'
+import type { DecisionChangeSummary } from './decisionChangeTypes'
 import type { CandidateProfile, CandidateProfileFacts, CandidateProfileUpdate } from './profileSchema'
 import { ProfileForm } from './ProfileForm'
 
@@ -60,6 +62,30 @@ function skillSummary(candidate: CandidateProfile, facts: CandidateProfileFacts)
   return facts.statuses.SKILLS === 'CONFIRMED' ? '明确没有' : '尚未提供'
 }
 
+function localDate() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function DecisionChangePanel({ summary }: { summary: DecisionChangeSummary }) {
+  return <section className="decision-change-panel" aria-label="资料更新后的岗位变化">
+    <header><p className="eyebrow">DECISION DIFF · 同批岗位</p><h2>本次资料更新带来的变化</h2></header>
+    {!summary.available ? <p className="decision-change-unavailable">{summary.message}</p> : <>
+      <div className="decision-change-counts">
+        <strong>新增可报 {summary.newlyEligibleCount}</strong>
+        <strong>减少待确认 {summary.resolvedUncertaintyCount}</strong>
+        <strong>新增不可报 {summary.newlyIneligibleCount}</strong>
+      </div>
+      {summary.affectedJobs.length === 0 ? <p>同一批岗位的资格结论没有变化。</p> : <div className="decision-change-jobs">
+        {summary.affectedJobs.map(job => <article key={job.jobId}>
+          <h3><Link to={job.deepLink}>{job.title} · {job.organizationName}</Link></h3>
+          {job.reasons.map(reason => <p key={reason}>{reason}</p>)}
+        </article>)}
+      </div>}
+    </>}
+  </section>
+}
+
 export function ProfilePage() {
   const client = useQueryClient()
   const candidates = useQuery({ queryKey: profileKeys.list, queryFn: listCandidates })
@@ -82,6 +108,23 @@ export function ProfilePage() {
   const isConfirmed = facts?.decisionReady === true
   const [editing, setEditing] = useState(false)
   const [requestedAnchor, setRequestedAnchor] = useState<string | null>(null)
+  const [decisionChange, setDecisionChange] = useState<DecisionChangeSummary | null>(null)
+  const [decisionChangeError, setDecisionChangeError] = useState<Error | null>(null)
+  const [decisionChangePending, setDecisionChangePending] = useState(false)
+  const [changeRequest, setChangeRequest] = useState<{ candidateId: string; previousProfileVersion: string } | null>(null)
+
+  async function refreshDecisionChanges(request: { candidateId: string; previousProfileVersion: string }) {
+    setDecisionChangePending(true)
+    setDecisionChangeError(null)
+    setDecisionChange(null)
+    try {
+      setDecisionChange(await recomputeDecisionChanges(request.candidateId, request.previousProfileVersion, localDate()))
+    } catch (error) {
+      setDecisionChangeError(error instanceof Error ? error : new Error('岗位结论更新暂时失败'))
+    } finally {
+      setDecisionChangePending(false)
+    }
+  }
 
   useEffect(() => {
     if (!editing || !requestedAnchor) return
@@ -95,17 +138,21 @@ export function ProfilePage() {
 
   const save = useMutation({
     mutationFn: async (update: CandidateProfileUpdate) => {
+      const previousProfileVersion = candidate!.profileVersion
       const updated = await updateCandidate(candidate!.id, update)
       setSavedCandidate(updated)
-      return confirmCandidateFacts(updated.id)
+      return { snapshot: await confirmCandidateFacts(updated.id), previousProfileVersion }
     },
-    onSuccess: async snapshot => {
+    onSuccess: async ({ snapshot, previousProfileVersion }) => {
       setSavedCandidate(snapshot.profile)
       setSavedFacts(snapshot)
       localStorage.setItem('career-os.selected-candidate', snapshot.profile.id)
       setEditing(false)
       client.setQueryData<CandidateProfileFacts>(profileKeys.facts(snapshot.profile.id), snapshot)
       client.setQueryData<CandidateProfile[]>(profileKeys.list, current => current?.map(item => item.id === snapshot.profile.id ? snapshot.profile : item) ?? [snapshot.profile])
+      const request = { candidateId: snapshot.profile.id, previousProfileVersion }
+      setChangeRequest(request)
+      await refreshDecisionChanges(request)
       await client.invalidateQueries({ predicate: query => query.queryKey[0] === 'decisions' || query.queryKey[0] === 'workbench' })
       await Promise.all([
         client.invalidateQueries({ queryKey: profileKeys.evidenceTasks(snapshot.profile.id) }),
@@ -123,6 +170,9 @@ export function ProfilePage() {
 
   function beginEdit() {
     save.reset()
+    setDecisionChange(null)
+    setDecisionChangeError(null)
+    setChangeRequest(null)
     setEditing(true)
   }
 
@@ -143,6 +193,13 @@ export function ProfilePage() {
             {evidenceTasks.error instanceof Error ? evidenceTasks.error.message : '证据任务暂时无法读取'}
           </p>}
           {evidenceTasks.data && <EvidenceTaskPanel data={evidenceTasks.data} onSelect={handleEvidenceTask} />}
+          {isConfirmed && decisionChangePending && <p className="decision-change-progress" role="status">资料已保存，岗位结论正在更新…</p>}
+          {isConfirmed && decisionChangeError && <section className="decision-change-error" role="alert">
+            <strong>{decisionChangeError.message}</strong>
+            <p>资料已经保存并确认。</p><p>旧岗位结论不会被标记为当前结果。</p>
+            <button className="secondary-action" type="button" disabled={decisionChangePending || !changeRequest} onClick={() => changeRequest && refreshDecisionChanges(changeRequest)}>重新更新岗位结论</button>
+          </section>}
+          {isConfirmed && decisionChange && <DecisionChangePanel summary={decisionChange} />}
           {(!isConfirmed || editing || save.isPending || save.isError) ? <section className="profile-editing">
             <p className="eyebrow">PROFILE EVIDENCE · 决策资料</p>
             <h1>{isConfirmed ? '修改你的决策资料' : '先确认你的决策资料'}</h1>
