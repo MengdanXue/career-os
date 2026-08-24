@@ -5,6 +5,8 @@ sources:
     officialRootUrl: https://rlsbt.zj.gov.cn/
     listingUrl: https://rlsbt.zj.gov.cn/col/col1229743683/index.html
     strategy: JCMS_LISTING
+    historicalPaginationMode: JCMS_PARAM_JSON
+    adapterType: JCMS_LISTING
     historicalYears: [2024, 2025, 2026]
     enabled: true
     articleUrlRegex: '^https://rlsbt\.zj\.gov\.cn(?:/col/col[0-9]+)?/art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
@@ -14,6 +16,8 @@ sources:
     officialRootUrl: https://hrss.hangzhou.gov.cn/
     listingUrl: https://hrss.hangzhou.gov.cn/col/col1229782005/index.html
     strategy: JCMS_LISTING
+    historicalPaginationMode: JCMS_PARAM_JSON
+    adapterType: JCMS_LISTING
     historicalYears: [2024, 2025, 2026]
     enabled: true
     articleUrlRegex: '^https://hrss\.hangzhou\.gov\.cn(?:/col/col[0-9]+)?/art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
@@ -64,10 +68,12 @@ sources:
     name: 杭州电子科技大学招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
     officialRootUrl: https://renshi.hdu.edu.cn/
-    listingUrl: https://renshi.hdu.edu.cn/rczp/list.htm
+    listingUrl: https://renshi.hdu.edu.cn/13762/list.htm
     strategy: STATIC_HTML
     historicalYears: [2024, 2025, 2026]
-    enabled: false
+    enabled: true
+    historicalPaginationMode: STATIC_PAGE_SUFFIX
+    adapterType: STATIC_HTML
     articleUrlRegex: '^https://renshi\.hdu\.edu\.cn/[0-9]{4}/[0-9]{4}/c[0-9]+a[0-9]+/page\.htm$'
   - code: ZJUT_RECRUITMENT
     name: 浙江工业大学招聘
@@ -79,12 +85,14 @@ sources:
   - code: ZJGSU_RECRUITMENT
     name: 浙江工商大学招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
-    officialRootUrl: https://talents.zjgsu.edu.cn/
-    listingUrl: https://talents.zjgsu.edu.cn/rczp/list.htm
+    officialRootUrl: https://rsc.zjgsu.edu.cn/
+    listingUrl: https://rsc.zjgsu.edu.cn/938/list.htm
     strategy: STATIC_HTML
     historicalYears: [2024, 2025, 2026]
     enabled: true
-    articleUrlRegex: '^https://talents\.zjgsu\.edu\.cn/[0-9]{4}/[0-9]{4}/c[0-9]+a[0-9]+/page\.htm$'
+    historicalPaginationMode: STATIC_PAGE_SUFFIX
+    adapterType: STATIC_HTML
+    articleUrlRegex: '^https://rsc\.zjgsu\.edu\.cn/[0-9]{4}/[0-9]{4}/c[0-9]+a[0-9]+/page\.htm$'
   - code: HZNU_RECRUITMENT
     name: 杭州师范大学招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
@@ -95,10 +103,16 @@ sources:
   - code: HZ_FIRST_HOSPITAL
     name: 杭州市第一人民医院招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
-    officialRootUrl: https://zp.hz-hospital.com/
-    strategy: UNSUPPORTED
+    officialRootUrl: https://www.hz-hospital.com/
+    listingUrl: https://www.hz-hospital.com/
+    strategy: STATIC_HTML
     historicalYears: [2024, 2025, 2026]
-    enabled: false
+    enabled: true
+    historicalPaginationMode: FIXED_HTTPS_EVIDENCE
+    adapterType: HOSPITAL_OFFICIAL_EVIDENCE
+    articleUrlRegex: '^https://www\.hz-hospital\.com/content/details/id/[0-9]+(?:\?cid=[0-9]+)?$'
+    titleIncludeRegex: '招聘|招贤|人才'
+    titleExcludeRegex: '拟聘|公示|成绩|体检|递补'
   - code: HZ_CHILDRENS_HOSPITAL
     name: 杭州市儿童医院招聘
     routeCode: UNIVERSITY_HOSPITAL_IT

@@ -63,6 +63,26 @@ class JavaHttpDocumentFetcherTest {
             .hasMessageContaining("external.example");
     }
 
+    @Test void rejectsSameHostHttpRedirectTargetsBeforeSendingThem() {
+        var request = new FetchRequest(URI.create("https://official.example/notice"),
+            Set.of("official.example"), null, null, Duration.ofSeconds(20), 1024);
+
+        assertThatThrownBy(() -> JavaHttpDocumentFetcher.requireAllowed(
+            URI.create("http://official.example/file.pdf"), request))
+            .isInstanceOf(FetchRejectedException.class)
+            .hasMessageContaining("HTTPS");
+    }
+
+    @Test void rejectsNonDefaultPortForOfficialHosts() {
+        var request = new FetchRequest(URI.create("https://official.example/notice"),
+            Set.of("official.example"), null, null, Duration.ofSeconds(20), 1024);
+
+        assertThatThrownBy(() -> JavaHttpDocumentFetcher.requireAllowed(
+            URI.create("https://official.example:8443/file.pdf"), request))
+            .isInstanceOf(FetchRejectedException.class)
+            .hasMessageContaining("default port");
+    }
+
     @Test void abortsWhenResponseExceedsConfiguredLimit() {
         server.stubFor(get("/large").willReturn(ok().withBody(new byte[1025])));
 

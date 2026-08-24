@@ -7,6 +7,8 @@ import java.io.InputStream;
 import java.net.URI;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 
 public record OfficialSourceCatalog(List<SourceDefinition> sources) {
@@ -26,7 +28,9 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
         String articleUrlRegex,
         String linkSelector,
         String titleIncludeRegex,
-        String titleExcludeRegex
+        String titleExcludeRegex,
+        String historicalPaginationMode,
+        String adapterType
     ) {
         public SourceDefinition {
             code = required(code, "code");
@@ -45,6 +49,19 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
             linkSelector = optional(linkSelector) == null ? "a[href]" : linkSelector.trim();
             titleIncludeRegex = optional(titleIncludeRegex) == null ? "招聘|招考|选聘|引进" : titleIncludeRegex.trim();
             titleExcludeRegex = optional(titleExcludeRegex) == null ? "拟聘|公示|成绩|体检|递补" : titleExcludeRegex.trim();
+            historicalPaginationMode = optional(historicalPaginationMode);
+            adapterType = optional(adapterType);
+            if (enabled && (historicalPaginationMode == null || adapterType == null)) {
+                throw new IllegalArgumentException(code + " enabled source requires pagination and adapter contracts");
+            }
+        }
+
+        public Map<String, Object> configuration() {
+            Map<String, Object> values = new LinkedHashMap<>();
+            if (historicalPaginationMode != null) values.put("historicalPaginationMode", historicalPaginationMode);
+            if (adapterType != null) values.put("adapterType", adapterType);
+            values.put("historicalYears", historicalYears);
+            return Map.copyOf(values);
         }
     }
 

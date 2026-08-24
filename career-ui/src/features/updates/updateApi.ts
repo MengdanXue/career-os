@@ -1,10 +1,23 @@
 import { requestJson } from '../../api/http'
 import type { JobLibrarySummary } from '../../api/contracts'
 
+export type AcquisitionCoverage = {
+  sourceId: string; year: number; status: string; discoveredCount: number; fetchedCount: number; parsedCount: number;
+  targetJobCount: number; completionBasis: string | null; completedAt: string | null; updatedAt: string;
+  supportsAbsenceConclusion: boolean; listingPageCount: number; filteredCount: number; failedCount: number;
+  earliestPublishedOn: string | null; latestPublishedOn: string | null; stopReason: string | null
+}
+
+export type AcquisitionCheckpoint = {
+  sourceId: string; checkpoint: string; status: string; evidence: string | null; verifiedAt: string
+}
+
 export type AcquisitionSource = {
   id: string; code: string; name: string; entryUri: string; sourceType: string; region: string; crawlMode: string;
   enabled: boolean; cronExpression: string; timeZone: string; lastSuccessAt: string | null; lastFailureAt: string | null;
-  nextDueAt: string | null; consecutiveFailureCount: number
+  nextDueAt: string | null; consecutiveFailureCount: number;
+  connectionStatus: 'CONNECTED' | 'PARTIAL' | 'FAILED' | 'NOT_CONNECTED';
+  coverage: AcquisitionCoverage[]; checkpoints: AcquisitionCheckpoint[]; historicalFailureCount: number
 }
 
 export type AcquisitionRun = {

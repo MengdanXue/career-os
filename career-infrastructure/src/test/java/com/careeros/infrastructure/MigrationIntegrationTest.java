@@ -98,7 +98,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(28);
+        assertThat(result.migrationsExecuted).isEqualTo(35);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -112,6 +112,10 @@ class MigrationIntegrationTest {
                  """);
              var acquisitionTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_source','source_crawl_run','acquired_document','acquisition_change')");
              var sourceSeeds = connection.prepareStatement("select count(*) from recruitment_source where enabled and code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION')");
+             var waveOneSourceSeeds = connection.prepareStatement("select count(*) from recruitment_source where enabled and code in ('HDU_RECRUITMENT','ZJGSU_RECRUITMENT') and configuration ->> 'historicalPaginationMode'='STATIC_PAGE_SUFFIX' and configuration ->> 'adapterType'='STATIC_HTML'");
+             var waveOneTargetState = connection.prepareStatement("select count(*) from target_source_catalog where code in ('HDU_RECRUITMENT','ZJGSU_RECRUITMENT') and connection_status='PARTIAL' and recruitment_source_id is not null");
+             var legacyConnectedTargets = connection.prepareStatement("select count(*) from target_source_catalog where code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION') and connection_status='CONNECTED'");
+             var hospitalSource = connection.prepareStatement("select count(*) from recruitment_source where enabled and code='HZ_FIRST_HOSPITAL' and configuration ->> 'historicalPaginationMode'='FIXED_HTTPS_EVIDENCE' and configuration ->> 'adapterType'='HOSPITAL_OFFICIAL_EVIDENCE' and configuration::text not like '%http://zhaopin.hz-hospital.com:8080%'");
              var historicalPagination = connection.prepareStatement("""
                  select count(*) from recruitment_source
                  where code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION')
@@ -142,7 +146,9 @@ class MigrationIntegrationTest {
              var fieldEvidenceTable = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name='job_field_evidence'");
              var eventFieldEvidenceTable = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name='recruitment_event_field_evidence'");
              var fieldEvidenceIndex = connection.prepareStatement("select count(*) from pg_indexes where schemaname='public' and indexname='idx_job_field_evidence_fragment'");
-              var processorVersion = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='acquired_document' and column_name='last_processor_version'")) {
+              var processorVersion = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='acquired_document' and column_name='last_processor_version'");
+              var acquisitionAuditTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('source_onboarding_checkpoint','artifact_import_failure')");
+              var coverageAuditColumns = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='source_year_coverage' and column_name in ('listing_page_count','filtered_count','failed_count','earliest_published_on','latest_published_on','stop_reason')")) {
             try (var rows = tables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(14); }
             try (var rows = candidates.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = pendingIndex.executeQuery()) {
@@ -165,6 +171,10 @@ class MigrationIntegrationTest {
                 rows.next();
                 assertThat(rows.getInt(1)).isEqualTo(2);
             }
+            try (var rows = waveOneSourceSeeds.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
+            try (var rows = waveOneTargetState.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
+            try (var rows = legacyConnectedTargets.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isZero(); }
+            try (var rows = hospitalSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = historicalPagination.executeQuery()) {
                 rows.next();
                 assertThat(rows.getInt(1)).isEqualTo(2);
@@ -186,6 +196,8 @@ class MigrationIntegrationTest {
             try (var rows = eventFieldEvidenceTable.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = fieldEvidenceIndex.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = processorVersion.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+            try (var rows = acquisitionAuditTables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
+            try (var rows = coverageAuditColumns.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(6); }
         }
 
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -204,7 +216,7 @@ class MigrationIntegrationTest {
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("EXPECTED");
                 assertThat(rows.next()).isFalse();
             }
-            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(6); }
+            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(15); }
             try (var rows = educationFactConstraint.executeQuery()) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString(1)).contains("EDUCATION_RECORDS", "GENDER", "POLITICAL_AFFILIATION", "EMPLOYMENT_HISTORY");

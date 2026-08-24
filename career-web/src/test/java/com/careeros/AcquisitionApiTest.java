@@ -47,12 +47,27 @@ class AcquisitionApiTest {
 
     @Test void listsSourcesWithoutExposingSelectorConfiguration() throws Exception {
         when(store.findSources()).thenReturn(List.of(source()));
+        when(store.findTargetSourceStatus("ZJ_HRSS_INSTITUTION"))
+            .thenReturn(com.careeros.domain.acquisition.TargetSource.ConnectionStatus.PARTIAL);
+        when(store.findSourceYearCoverage(SOURCE_ID, null)).thenReturn(List.of(
+            new SourceYearCoverage(SOURCE_ID, 2024, CoverageStatus.PARTIAL,
+                3, 2, 2, 1, null, null, NOW, 2, 1, 1,
+                java.time.LocalDate.of(2024, 3, 1), java.time.LocalDate.of(2024, 8, 1), "DOCUMENT_FAILURE")));
+        when(store.findCheckpoints(SOURCE_ID)).thenReturn(List.of(new com.careeros.domain.acquisition.SourceOnboardingCheckpoint(
+            SOURCE_ID, com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.REGISTERED,
+            com.careeros.domain.acquisition.SourceOnboardingCheckpoint.CheckpointStatus.VERIFIED,
+            "官方来源已登记", NOW)));
+        when(store.countImportFailures(SOURCE_ID)).thenReturn(2L);
 
         mvc.perform(get("/api/acquisition/sources"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].code").value("ZJ_HRSS_INSTITUTION"))
             .andExpect(jsonPath("$[0].configuration").doesNotExist())
-            .andExpect(jsonPath("$[0].entryUri").value("https://rlsbt.zj.gov.cn/list"));
+            .andExpect(jsonPath("$[0].entryUri").value("https://rlsbt.zj.gov.cn/list"))
+            .andExpect(jsonPath("$[0].connectionStatus").value("PARTIAL"))
+            .andExpect(jsonPath("$[0].coverage[0].listingPageCount").value(2))
+            .andExpect(jsonPath("$[0].checkpoints[0].checkpoint").value("REGISTERED"))
+            .andExpect(jsonPath("$[0].historicalFailureCount").value(2));
     }
 
     @Test void manualTriggerReturnsAcceptedRunAndLocation() throws Exception {

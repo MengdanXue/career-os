@@ -14,6 +14,8 @@ import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.DocumentTransition.TransitionType;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
+import com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint;
+import com.careeros.domain.acquisition.SourceOnboardingCheckpoint.CheckpointStatus;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -31,12 +33,14 @@ public final class AcquisitionService {
     private final AcquisitionStore store;
     private final SourceRunLock lock;
     private final SourceDiscoverer discoverer;
+    private final SourceListingReader listings;
     private final DocumentFetcher fetcher;
     private final AttachmentDiscoverer attachments;
     private final AcquiredDocumentProcessor processor;
     private final ArtifactStore artifacts;
     private final NextRunCalculator nextRuns;
     private final AcquisitionObserver observer;
+    private final SourceConnectionProjector connectionProjector;
     private final Clock clock;
     private final long maxDocumentBytes;
 
@@ -52,8 +56,35 @@ public final class AcquisitionService {
         Clock clock,
         long maxDocumentBytes
     ) {
-        this(store, lock, discoverer, fetcher, attachments, processor, artifacts, nextRuns,
-            AcquisitionObserver.NOOP, clock, maxDocumentBytes);
+        this(store, lock, discoverer, null, fetcher, attachments, processor, artifacts, nextRuns,
+            AcquisitionObserver.NOOP, null, clock, maxDocumentBytes);
+    }
+
+    public AcquisitionService(
+        AcquisitionStore store,
+        SourceRunLock lock,
+        SourceDiscoverer discoverer,
+        SourceListingReader listings,
+        DocumentFetcher fetcher,
+        AttachmentDiscoverer attachments,
+        AcquiredDocumentProcessor processor,
+        ArtifactStore artifacts,
+        NextRunCalculator nextRuns,
+        AcquisitionObserver observer,
+        SourceConnectionProjector connectionProjector,
+        Clock clock,
+        long maxDocumentBytes
+    ) {
+        this.store=Objects.requireNonNull(store); this.lock=Objects.requireNonNull(lock);
+        this.discoverer=Objects.requireNonNull(discoverer); this.fetcher=Objects.requireNonNull(fetcher);
+        this.listings=listings;
+        this.attachments=Objects.requireNonNull(attachments); this.processor=Objects.requireNonNull(processor);
+        this.artifacts=Objects.requireNonNull(artifacts); this.nextRuns=Objects.requireNonNull(nextRuns);
+        this.observer=Objects.requireNonNull(observer);
+        this.connectionProjector=connectionProjector;
+        this.clock=Objects.requireNonNull(clock);
+        if (maxDocumentBytes < 1) throw new IllegalArgumentException("maxDocumentBytes must be positive");
+        this.maxDocumentBytes=maxDocumentBytes;
     }
 
     public AcquisitionService(
@@ -69,14 +100,26 @@ public final class AcquisitionService {
         Clock clock,
         long maxDocumentBytes
     ) {
-        this.store=Objects.requireNonNull(store); this.lock=Objects.requireNonNull(lock);
-        this.discoverer=Objects.requireNonNull(discoverer); this.fetcher=Objects.requireNonNull(fetcher);
-        this.attachments=Objects.requireNonNull(attachments); this.processor=Objects.requireNonNull(processor);
-        this.artifacts=Objects.requireNonNull(artifacts); this.nextRuns=Objects.requireNonNull(nextRuns);
-        this.observer=Objects.requireNonNull(observer);
-        this.clock=Objects.requireNonNull(clock);
-        if (maxDocumentBytes < 1) throw new IllegalArgumentException("maxDocumentBytes must be positive");
-        this.maxDocumentBytes=maxDocumentBytes;
+        this(store, lock, discoverer, null, fetcher, attachments, processor, artifacts, nextRuns,
+            observer, null, clock, maxDocumentBytes);
+    }
+
+    public AcquisitionService(
+        AcquisitionStore store,
+        SourceRunLock lock,
+        SourceDiscoverer discoverer,
+        SourceListingReader listings,
+        DocumentFetcher fetcher,
+        AttachmentDiscoverer attachments,
+        AcquiredDocumentProcessor processor,
+        ArtifactStore artifacts,
+        NextRunCalculator nextRuns,
+        AcquisitionObserver observer,
+        Clock clock,
+        long maxDocumentBytes
+    ) {
+        this(store, lock, discoverer, listings, fetcher, attachments, processor, artifacts, nextRuns,
+            observer, null, clock, maxDocumentBytes);
     }
 
     public SourceCrawlRun run(UUID sourceId, RunTrigger trigger) {
@@ -94,6 +137,7 @@ public final class AcquisitionService {
         }
         if (executed.isPresent()) {
             SourceCrawlRun result = executed.orElseThrow();
+            refreshConnection(sourceId);
             observer.runCompleted(source.code(), result);
             return result;
         }
@@ -122,12 +166,12 @@ public final class AcquisitionService {
             executed = lock.tryExecute(source.code(), Duration.ofSeconds(2),
                 () -> executeHistoricalLocked(source, runId, started, years));
         } catch (RuntimeException failure) {
-            saveCoverage(source.id(), years, SourceYearCoverage.CoverageStatus.ACCESS_FAILED,
-                Map.of(), null, null);
+            retainSuccessfulCoverageOrMarkFailed(source.id(), years);
             return failedBeforeDiscovery(source, runId, RunTrigger.MANUAL, started, failure);
         }
         if (executed.isPresent()) {
             SourceCrawlRun result = executed.orElseThrow();
+            refreshConnection(sourceId);
             observer.runCompleted(source.code(), result);
             return result;
         }
@@ -139,6 +183,10 @@ public final class AcquisitionService {
         return saved;
     }
 
+    private void refreshConnection(UUID sourceId) {
+        if (connectionProjector != null) connectionProjector.refresh(sourceId, clock.instant());
+    }
+
     private SourceCrawlRun executeHistoricalLocked(
         RecruitmentSource source, UUID runId, Instant started, Set<Integer> recruitmentYears
     ) {
@@ -146,21 +194,16 @@ public final class AcquisitionService {
         Counts counts = new Counts();
         Map<Integer, YearCounts> byYear = new LinkedHashMap<>();
         recruitmentYears.forEach(year -> byYear.put(year, new YearCounts()));
-        saveCoverage(source.id(), recruitmentYears, SourceYearCoverage.CoverageStatus.NOT_DISCOVERED,
-            byYear, null, null);
         try {
-            HistoricalListing listing = historicalDetails(source);
-            List<DiscoveredLink> details = listing.details().stream()
-                .filter(link -> linkYear(link).filter(recruitmentYears::contains).isPresent())
-                .toList();
+            ListingResult listing = historicalListing(source, recruitmentYears);
+            List<YearDiscoveredLink> details = listing.links();
             counts.discovered = details.size();
-            for (DiscoveredLink detail : details) {
-                linkYear(detail).map(byYear::get).ifPresent(value -> value.discovered++);
+            for (YearDiscoveredLink detail : details) {
+                byYear.get(detail.recruitmentYear()).discovered++;
             }
-            saveCoverage(source.id(), recruitmentYears,
-                SourceYearCoverage.CoverageStatus.DISCOVERED_NOT_FETCHED, byYear, null, null);
-            for (DiscoveredLink detail : details) {
-                YearCounts yearCounts = byYear.get(linkYear(detail).orElseThrow());
+            for (YearDiscoveredLink annualDetail : details) {
+                DiscoveredLink detail = annualDetail.link();
+                YearCounts yearCounts = byYear.get(annualDetail.recruitmentYear());
                 int failuresBefore = counts.failed;
                 DocumentOutcome outcome = acquire(source, runId, detail, null, DocumentKind.ANNOUNCEMENT,
                     detail.title(), counts);
@@ -177,39 +220,86 @@ public final class AcquisitionService {
                     yearCounts.record(attachmentOutcome, counts.failed - failuresBefore);
                 }
             }
-            String completionBasis = "official listing total=" + listing.total()
-                + "; traversed pages=" + listing.pages() + "; pageSize=" + listing.pageSize();
             for (var entry : byYear.entrySet()) {
                 int year = entry.getKey();
                 YearCounts values = entry.getValue();
+                ListingEvidence evidence = listing.evidenceByYear().get(year);
                 values.targetJobs = Math.toIntExact(store.countActiveTargetJobs(source.id(), year));
-                SourceYearCoverage.CoverageStatus coverageStatus = values.failed > 0
+                boolean traversalComplete = evidence != null && evidence.traversalComplete()
+                    && evidence.failedCount() == 0;
+                SourceYearCoverage.CoverageStatus coverageStatus = values.failed > 0 || !traversalComplete
                     ? SourceYearCoverage.CoverageStatus.PARTIAL
                     : values.targetJobs > 0
                         ? SourceYearCoverage.CoverageStatus.COMPLETE
-                        : values.discovered == 0
+                        : evidence.acceptedCount() == 0
                             ? SourceYearCoverage.CoverageStatus.NO_TARGET_RECORDS
                             : SourceYearCoverage.CoverageStatus.PARTIAL;
-                saveCoverage(source.id(), Set.of(year), coverageStatus, byYear,
-                    coverageStatus == SourceYearCoverage.CoverageStatus.PARTIAL ? null : completionBasis,
-                    coverageStatus == SourceYearCoverage.CoverageStatus.PARTIAL ? null : clock.instant());
+                boolean supportsConclusion = coverageStatus == SourceYearCoverage.CoverageStatus.COMPLETE
+                    || coverageStatus == SourceYearCoverage.CoverageStatus.NO_TARGET_RECORDS;
+                store.saveSourceYearCoverage(new SourceYearCoverage(source.id(), year, coverageStatus,
+                    values.discovered, values.fetched, values.parsed, values.targetJobs,
+                    supportsConclusion ? evidence.completionBasis() : null,
+                    supportsConclusion ? clock.instant() : null, clock.instant(),
+                    evidence == null ? 0 : evidence.pageCount(),
+                    evidence == null ? 0 : evidence.filteredCount(),
+                    values.failed + (evidence == null ? 0 : evidence.failedCount()),
+                    evidence == null ? null : evidence.earliestPublishedOn(),
+                    evidence == null ? null : evidence.latestPublishedOn(),
+                    evidence == null ? "LISTING_EVIDENCE_MISSING" : evidence.stopReason()));
             }
             RunStatus status = counts.failed == 0 ? RunStatus.SUCCEEDED
                 : counts.hasSuccess() ? RunStatus.PARTIALLY_SUCCEEDED : RunStatus.FAILED;
             SourceCrawlRun completed = terminal(runId, source.id(), RunTrigger.MANUAL, status, started, counts,
                 counts.failed == 0 ? null : "DOCUMENT_FAILURE",
                 counts.failed == 0 ? null : counts.failed + " document(s) failed");
-            updateSourceHealth(source, RunTrigger.MANUAL, status);
-            return store.saveRun(completed);
+            updateSourceHealth(source, RunTrigger.MANUAL, status, counts.sourceFailures > 0);
+            SourceCrawlRun saved = store.saveRun(completed);
+            if (counts.fetched > 0 && status != RunStatus.FAILED) {
+                verifyCheckpoint(source.id(), Checkpoint.LIVE_SMOKE_VERIFIED,
+                    "historical fetch succeeded; fetched=" + counts.fetched);
+            }
+            Set<Integer> requiredYears = Set.of(2024, 2025, 2026);
+            boolean allYearsConclusive = requiredYears.stream().allMatch(year ->
+                store.findSourceYearCoverage(source.id(), year).stream()
+                    .anyMatch(SourceYearCoverage::supportsAbsenceConclusion));
+            if (status == RunStatus.SUCCEEDED && allYearsConclusive) {
+                verifyCheckpoint(source.id(), Checkpoint.BACKFILL_COMPLETE,
+                    "verified years=" + requiredYears);
+            }
+            return saved;
         } catch (RuntimeException failure) {
             counts.failed++;
-            saveCoverage(source.id(), recruitmentYears, SourceYearCoverage.CoverageStatus.ACCESS_FAILED,
-                byYear, null, null);
+            recordFailure(runId, source.id(), null, listingFailureStage(failure),
+                failure.getClass().getSimpleName(), safeMessage(failure));
+            retainSuccessfulCoverageOrMarkFailed(source.id(), recruitmentYears);
+            failCheckpoint(source.id(), Checkpoint.LIVE_SMOKE_VERIFIED, safeMessage(failure));
             SourceCrawlRun failed = terminal(runId, source.id(), RunTrigger.MANUAL, RunStatus.FAILED,
                 started, counts, failure.getClass().getSimpleName(), safeMessage(failure));
-            updateSourceHealth(source, RunTrigger.MANUAL, RunStatus.FAILED);
+            updateSourceHealth(source, RunTrigger.MANUAL, RunStatus.FAILED, true);
             return store.saveRun(failed);
         }
+    }
+
+    private ListingResult historicalListing(RecruitmentSource source, Set<Integer> recruitmentYears) {
+        if (listings != null) {
+            return listings.read(source, new ListingQuery(recruitmentYears, true));
+        }
+        HistoricalListing legacy = historicalDetails(source);
+        List<YearDiscoveredLink> links = legacy.details().stream()
+            .map(link -> linkYear(link).map(year -> new YearDiscoveredLink(link, year)))
+            .flatMap(Optional::stream)
+            .filter(link -> recruitmentYears.contains(link.recruitmentYear()))
+            .toList();
+        Map<Integer, ListingEvidence> evidence = new LinkedHashMap<>();
+        String basis = "official listing total=" + legacy.total()
+            + "; traversed pages=" + legacy.pages() + "; pageSize=" + legacy.pageSize();
+        for (int year : recruitmentYears) {
+            int annual = (int) links.stream().filter(link -> link.recruitmentYear() == year).count();
+            evidence.put(year, new ListingEvidence(legacy.pages(), legacy.total(), annual,
+                Math.max(0, legacy.total() - links.size()), 0, null, null,
+                true, "REPORTED_TOTAL_REACHED", basis));
+        }
+        return new ListingResult(links, evidence);
     }
 
     private HistoricalListing historicalDetails(RecruitmentSource source) {
@@ -294,7 +384,9 @@ public final class AcquisitionService {
             YearCounts counts = values.getOrDefault(year, new YearCounts());
             store.saveSourceYearCoverage(new SourceYearCoverage(sourceId, year, status,
                 counts.discovered, counts.fetched, counts.parsed, counts.targetJobs,
-                completionBasis, completedAt, now));
+                completionBasis, completedAt, now, 0, 0, counts.failed,
+                null, null, status == SourceYearCoverage.CoverageStatus.ACCESS_FAILED
+                    ? "LISTING_ACCESS_FAILED" : null));
         }
     }
 
@@ -309,6 +401,12 @@ public final class AcquisitionService {
                 throw new FetchFailedException("List page did not return content: " + list.status());
             }
             List<DiscoveredLink> details = discoverer.discover(source, list.finalUri(), list.content());
+            if (details.isEmpty()) {
+                throw new FetchFailedException(
+                    "Incremental listing yielded zero candidate announcements; discovery contract is unverified");
+            }
+            verifyCheckpoint(source.id(), Checkpoint.CONTRACT_VERIFIED,
+                "incremental listing parsed candidates=" + details.size());
             counts.discovered = details.size();
             for (DiscoveredLink detail : details) {
                 DocumentOutcome outcome = acquire(source, runId, detail, null, DocumentKind.ANNOUNCEMENT,
@@ -326,13 +424,29 @@ public final class AcquisitionService {
             SourceCrawlRun completed = terminal(runId, source.id(), trigger, status, started, counts,
                 counts.failed == 0 ? null : "DOCUMENT_FAILURE",
                 counts.failed == 0 ? null : counts.failed + " document(s) failed");
-            updateSourceHealth(source, trigger, status);
-            return store.saveRun(completed);
+            updateSourceHealth(source, trigger, status, counts.sourceFailures > 0);
+            SourceCrawlRun saved = store.saveRun(completed);
+            if (counts.fetched > 0 && status != RunStatus.FAILED) {
+                verifyCheckpoint(source.id(), Checkpoint.LIVE_SMOKE_VERIFIED,
+                    "incremental fetch succeeded; fetched=" + counts.fetched);
+            }
+            boolean backfillVerified = store.findCheckpoints(source.id()).stream().anyMatch(value ->
+                value.checkpoint() == Checkpoint.BACKFILL_COMPLETE
+                    && value.status() == CheckpointStatus.VERIFIED);
+            if (backfillVerified && status == RunStatus.SUCCEEDED
+                && counts.added == 0 && counts.updated == 0 && counts.deactivated == 0) {
+                verifyCheckpoint(source.id(), Checkpoint.INCREMENTAL_VERIFIED,
+                    "idempotent incremental run=" + runId + "; unchanged=" + counts.unchanged);
+            }
+            return saved;
         } catch (RuntimeException failure) {
             counts.failed++;
+            recordFailure(runId, source.id(), null, listingFailureStage(failure),
+                failure.getClass().getSimpleName(), safeMessage(failure));
+            failCheckpoint(source.id(), Checkpoint.LIVE_SMOKE_VERIFIED, safeMessage(failure));
             SourceCrawlRun failed = terminal(runId, source.id(), trigger, RunStatus.FAILED, started, counts,
                 failure.getClass().getSimpleName(), safeMessage(failure));
-            updateSourceHealth(source, trigger, RunStatus.FAILED);
+            updateSourceHealth(source, trigger, RunStatus.FAILED, true);
             return store.saveRun(failed);
         }
     }
@@ -352,11 +466,19 @@ public final class AcquisitionService {
             response = fetchTimed(source, request(source, link.uri(), prior.orElse(null)));
         } catch (RuntimeException failure) {
             counts.failed++;
+            counts.sourceFailures++;
+            recordFailure(runId, source.id(), prior.map(AcquiredDocument::id).orElse(null),
+                ArtifactImportFailure.FailureStage.ARTIFACT_DOWNLOAD_FAILED,
+                failure.getClass().getSimpleName(), safeMessage(failure));
             observer.document(source.code(), "FETCH_FAILED");
             return new DocumentOutcome(prior.orElse(null), null, null, false);
         }
         if (prior.isEmpty() && response.gone()) {
             counts.failed++;
+            counts.sourceFailures++;
+            recordFailure(runId, source.id(), null,
+                ArtifactImportFailure.FailureStage.ARTIFACT_DOWNLOAD_FAILED,
+                "DOCUMENT_GONE", "Official document returned HTTP " + response.status());
             return new DocumentOutcome(null, response, null, false);
         }
         FetchObservation observation = observation(response, link.uri());
@@ -365,6 +487,9 @@ public final class AcquisitionService {
             transition = DocumentTransition.decide(prior.orElse(null), observation, clock.instant());
         } catch (RuntimeException failure) {
             counts.failed++;
+            recordFailure(runId, source.id(), prior.map(AcquiredDocument::id).orElse(null),
+                ArtifactImportFailure.FailureStage.DOCUMENT_PARSE_FAILED,
+                failure.getClass().getSimpleName(), safeMessage(failure));
             return new DocumentOutcome(prior.orElse(null), response, null, false);
         }
         AcquiredDocument document = transition.document();
@@ -415,6 +540,24 @@ public final class AcquisitionService {
                 case UPDATED -> counts.updated++;
                 case DEACTIVATED -> counts.deactivated++;
             }
+        }
+        if (processing != null && !processing.issues().isEmpty()) {
+            AcquiredDocument persistedDocument = document;
+            List<ArtifactImportFailure> failures = processing.issues().stream().map(issue ->
+                new ArtifactImportFailure(UUID.randomUUID(), runId, source.id(), persistedDocument.id(),
+                    issue.stage(), issue.sheetName(), issue.rowNumber(), issue.errorCode(),
+                    issue.safeMessage(), clock.instant())).toList();
+            store.saveImportFailures(failures);
+        }
+        if (processing != null && (processing.status() == AcquiredDocumentProcessor.ProcessingStatus.UNSUPPORTED
+            || processing.status() == AcquiredDocumentProcessor.ProcessingStatus.FAILED)) {
+            ArtifactImportFailure.FailureStage stage = processing.status()
+                == AcquiredDocumentProcessor.ProcessingStatus.UNSUPPORTED
+                ? ArtifactImportFailure.FailureStage.UNSUPPORTED_DOCUMENT
+                : ArtifactImportFailure.FailureStage.DOCUMENT_PARSE_FAILED;
+            recordFailure(runId, source.id(), document.id(), stage,
+                processing.errorCode() == null ? processing.status().name() : processing.errorCode(),
+                "Document processing ended with status " + processing.status());
         }
         counts.fetched++;
         observer.document(source.code(), transition.type().name());
@@ -480,7 +623,7 @@ public final class AcquisitionService {
         int year = published == null ? titleYear(link.title()).orElse(
             clock.instant().atZone(ZoneId.of(source.timeZone())).getYear()) : published.getYear();
         return new ProcessDocumentCommand(content, document.mediaType(), document.canonicalUri(), announcementUri,
-            announcementTitle, clock.instant(), year, published, source.region(), EventType.PUBLIC_INSTITUTION);
+            announcementTitle, clock.instant(), year, published, source.region(), eventType(source));
     }
 
     private byte[] readStored(AcquiredDocument document) {
@@ -490,10 +633,13 @@ public final class AcquisitionService {
         catch (IOException exception) { throw new IllegalStateException("Could not reopen acquired artifact", exception); }
     }
 
-    private void updateSourceHealth(RecruitmentSource source, RunTrigger trigger, RunStatus status) {
+    private void updateSourceHealth(
+        RecruitmentSource source, RunTrigger trigger, RunStatus status, boolean sourceFailure
+    ) {
         Instant now = clock.instant();
         Instant next = trigger == RunTrigger.MANUAL ? source.nextDueAt() : nextRuns.next(source, now);
-        store.saveSource(status == RunStatus.SUCCEEDED ? source.succeeded(now, next) : source.failed(now, next));
+        store.saveSource(status == RunStatus.FAILED || sourceFailure
+            ? source.failed(now, next) : source.succeeded(now, next));
     }
 
     private SourceCrawlRun failedBeforeDiscovery(
@@ -502,8 +648,12 @@ public final class AcquisitionService {
         Counts counts = new Counts(); counts.failed = 1;
         SourceCrawlRun run = terminal(runId, source.id(), trigger, RunStatus.FAILED, started, counts,
             failure.getClass().getSimpleName(), safeMessage(failure));
-        updateSourceHealth(source, trigger, RunStatus.FAILED);
+        updateSourceHealth(source, trigger, RunStatus.FAILED, true);
+        failCheckpoint(source.id(), Checkpoint.LIVE_SMOKE_VERIFIED, safeMessage(failure));
         SourceCrawlRun saved = store.saveRun(run);
+        recordFailure(runId, source.id(), null,
+            ArtifactImportFailure.FailureStage.REMOTE_ACCESS_FAILED,
+            failure.getClass().getSimpleName(), safeMessage(failure));
         observer.runCompleted(source.code(), saved);
         return saved;
     }
@@ -551,7 +701,67 @@ public final class AcquisitionService {
         catch (Exception exception) { throw new IllegalStateException("SHA-256 is unavailable", exception); }
     }
     private static String safeMessage(Throwable value) {
-        return value.getMessage() == null ? value.getClass().getName() : value.getMessage();
+        return ArtifactImportFailure.sanitize(
+            value.getMessage() == null ? value.getClass().getName() : value.getMessage());
+    }
+
+    private static EventType eventType(RecruitmentSource source) {
+        return switch (source.sourceType()) {
+            case OFFICIAL_UNIVERSITY -> EventType.UNIVERSITY;
+            case OFFICIAL_SOE -> EventType.STATE_OWNED_ENTERPRISE;
+            default -> source.code().contains("HOSPITAL") ? EventType.HOSPITAL : EventType.PUBLIC_INSTITUTION;
+        };
+    }
+
+    private void verifyCheckpoint(UUID sourceId, Checkpoint checkpoint, String evidence) {
+        store.saveCheckpoint(new SourceOnboardingCheckpoint(sourceId, checkpoint,
+            CheckpointStatus.VERIFIED, evidence, clock.instant()));
+    }
+
+    private void failCheckpoint(UUID sourceId, Checkpoint checkpoint, String evidence) {
+        boolean alreadyVerified = store.findCheckpoints(sourceId).stream().anyMatch(value ->
+            value.checkpoint() == checkpoint && value.status() == CheckpointStatus.VERIFIED);
+        if (alreadyVerified) return;
+        store.saveCheckpoint(new SourceOnboardingCheckpoint(sourceId, checkpoint,
+            CheckpointStatus.FAILED, evidence, clock.instant()));
+    }
+
+    private void retainSuccessfulCoverageOrMarkFailed(UUID sourceId, Set<Integer> years) {
+        for (int year : years) {
+            boolean retained = store.findSourceYearCoverage(sourceId, year).stream()
+                .anyMatch(SourceYearCoverage::supportsAbsenceConclusion);
+            if (!retained) {
+                saveCoverage(sourceId, Set.of(year), SourceYearCoverage.CoverageStatus.ACCESS_FAILED,
+                    Map.of(), null, null);
+            }
+        }
+    }
+
+    private void recordFailure(
+        UUID runId, UUID sourceId, UUID documentId, ArtifactImportFailure.FailureStage stage,
+        String errorCode, String message
+    ) {
+        store.saveImportFailures(List.of(new ArtifactImportFailure(UUID.randomUUID(), runId, sourceId,
+            documentId, stage, null, null, errorCode, message, clock.instant())));
+    }
+
+    private static ArtifactImportFailure.FailureStage listingFailureStage(Throwable failure) {
+        String message = failure.getMessage() == null ? "" : failure.getMessage();
+        if (failure instanceof FetchRejectedException
+            || causedBy(failure, java.io.IOException.class)
+            || message.contains("HTTP request") || message.contains("HTTP status")
+            || message.contains("did not return content") || message.contains("timed out")
+            || message.contains("TLS") || message.contains("SSL") || message.contains("DNS")) {
+            return ArtifactImportFailure.FailureStage.REMOTE_ACCESS_FAILED;
+        }
+        return ArtifactImportFailure.FailureStage.DISCOVERY_CONTRACT_CHANGED;
+    }
+
+    private static boolean causedBy(Throwable failure, Class<? extends Throwable> type) {
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (type.isInstance(current)) return true;
+        }
+        return false;
     }
 
     private record HistoricalListing(List<DiscoveredLink> details, int total, int pages, int pageSize) {}
@@ -567,7 +777,7 @@ public final class AcquisitionService {
         }
     }
     private static final class Counts {
-        int discovered, fetched, unchanged, added, updated, deactivated, failed;
+        int discovered, fetched, unchanged, added, updated, deactivated, failed, sourceFailures;
         boolean hasSuccess() { return fetched + unchanged + added + updated + deactivated > 0; }
     }
 }

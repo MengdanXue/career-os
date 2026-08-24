@@ -1,0 +1,180 @@
+package com.careeros.infrastructure.persistence;
+
+import com.careeros.application.JobUpsertService.NormalizedJob;
+import com.careeros.domain.DomainEnums.EducationLevel;
+import com.careeros.domain.DomainEnums.EmploymentType;
+import com.careeros.domain.DomainEnums.JobFamily;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
+
+@Component
+public final class OfficialJobFieldMapper {
+    private static final Pattern NUMBER = Pattern.compile("(\\d+)");
+    private static final Pattern YEAR = Pattern.compile("(20\\d{2})");
+
+    public NormalizedJob toNormalizedJob(RawOfficialJob row, ImportContext context) {
+        Objects.requireNonNull(row, "row");
+        Objects.requireNonNull(context, "context");
+        String requirements = join(row.educationText(), row.majorText(), row.ageText(), row.candidateScope());
+        return new NormalizedJob(
+            context.eventId(), context.organizationId(), context.organizationName(),
+            optional(row.externalJobCode()), required(row.title(), "title"),
+            jobFamily(row.title(), row.duties(), row.majorText(), row.department()),
+            employmentType(row.employmentText()), context.location(),
+            Math.max(1, number(row.headcountText(), 1)), education(row.educationText()),
+            splitMajors(row.majorText()), graduationYears(row.candidateScope()),
+            ageLimit(row.ageText()), context.ageReferenceDate(),
+            experienceYears(row.experienceText()), professionalTitles(row.professionalTitleText()),
+            optional(row.duties()), context.sourceUrl(), context.stableSourceUrl(), null,
+            context.evidenceIds(), row.department(), row.category(), null,
+            optional(row.educationText()), optional(row.educationText()), optional(row.majorText()),
+            optional(row.ageText()), null, optional(row.candidateScope()), null,
+            requirements, null, null, null);
+    }
+
+    static JobFamily jobFamily(String title, String duties, String majors, String department) {
+        String role = text(title) + text(duties) + text(department);
+        String all = role + text(majors);
+        if (role.contains("信息中心") || role.contains("信息管理") || role.contains("信息化")
+            || role.contains("信息系统")) return JobFamily.INFORMATION_SYSTEMS;
+        if (all.contains("人工智能") || all.contains("算法") || all.contains("机器学习")) return JobFamily.AI;
+        if (all.contains("数据")) return JobFamily.DATA;
+        if (all.contains("网络安全") || all.contains("信息安全") || all.contains("安全技术")) {
+            return JobFamily.CYBERSECURITY;
+        }
+        if (all.contains("软件") || all.contains("开发") || all.contains("Java")) return JobFamily.SOFTWARE;
+        if (all.contains("计算机")) return JobFamily.INFORMATION_SYSTEMS;
+        if (all.contains("数字")) return JobFamily.DIGITALIZATION;
+        if (all.contains("运维") || all.contains("网络") || all.contains("通信")) return JobFamily.IT_OPERATIONS;
+        if (all.contains("研究")) return JobFamily.RESEARCH;
+        return JobFamily.OTHER;
+    }
+
+    static EducationLevel education(String value) {
+        String text = text(value);
+        if (text.contains("博士")) return EducationLevel.DOCTORATE;
+        if (text.contains("硕士") || text.contains("研究生")) return EducationLevel.MASTER;
+        if (text.contains("本科")) return EducationLevel.BACHELOR;
+        if (text.contains("专科") || text.contains("大专")) return EducationLevel.ASSOCIATE;
+        return EducationLevel.UNKNOWN;
+    }
+
+    static EmploymentType employmentType(String value) {
+        String text = text(value);
+        if (text.contains("劳务派遣")) return EmploymentType.LABOR_DISPATCH;
+        if (text.contains("人事代理")) return EmploymentType.PERSONNEL_AGENCY;
+        if (text.contains("事业编") || text.contains("编制内")) return EmploymentType.ESTABLISHMENT;
+        if (text.contains("项目")) return EmploymentType.PROJECT_BASED;
+        if (text.contains("合同")) return EmploymentType.CONTRACT;
+        return EmploymentType.UNKNOWN;
+    }
+
+    static Set<String> splitMajors(String value) {
+        if (value == null || value.isBlank()) return Set.of();
+        String normalized = value.replaceAll("[\\s，,。；;：:]", "");
+        if (List.of("不限", "不限制", "无", "无要求", "专业不限").contains(normalized)) return Set.of();
+        Set<String> result = new LinkedHashSet<>();
+        for (String part : value.split("[、,，;；/\\n]")) {
+            String item = part.trim();
+            int restricted = Math.max(item.indexOf("（限"), item.indexOf("(限"));
+            if (restricted >= 0) item = item.substring(restricted + 2).trim();
+            item = item.replaceFirst("[）)]$", "").replaceFirst("方向$", "").trim();
+            if (!item.isBlank()) result.add(item);
+        }
+        return result;
+    }
+
+    static Set<Integer> graduationYears(String value) {
+        Set<Integer> result = new LinkedHashSet<>();
+        Matcher matcher = YEAR.matcher(text(value));
+        while (matcher.find()) result.add(Integer.parseInt(matcher.group(1)));
+        return result;
+    }
+
+    static Integer ageLimit(String value) {
+        return text(value).contains("岁") || text(value).contains("周岁") ? integer(value) : null;
+    }
+
+    static Integer experienceYears(String value) {
+        return text(value).matches(".*\\d+\\s*年.*") ? integer(value) : null;
+    }
+
+    static Set<String> professionalTitles(String value) {
+        Set<String> result = new LinkedHashSet<>();
+        for (String level : List.of("正高级", "副高级", "高级", "中级", "初级")) {
+            if (text(value).contains(level)) result.add(level);
+        }
+        return result;
+    }
+
+    private static int number(String value, int fallback) {
+        Integer parsed = integer(value);
+        return parsed == null ? fallback : parsed;
+    }
+
+    private static Integer integer(String value) {
+        Matcher matcher = NUMBER.matcher(text(value));
+        return matcher.find() ? Integer.valueOf(matcher.group(1)) : null;
+    }
+
+    private static String join(String... values) {
+        List<String> result = new ArrayList<>();
+        for (String value : values) if (value != null && !value.isBlank()) result.add(value.trim());
+        return result.isEmpty() ? null : String.join("；", result);
+    }
+
+    private static String required(String value, String field) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required");
+        return value.trim();
+    }
+
+    private static String optional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String text(String value) { return value == null ? "" : value; }
+
+    public record RawOfficialJob(
+        String externalJobCode,
+        String title,
+        String duties,
+        String majorText,
+        String educationText,
+        String employmentText,
+        String headcountText,
+        String candidateScope,
+        String ageText,
+        String experienceText,
+        String professionalTitleText,
+        String department,
+        String category
+    ) {}
+
+    public record ImportContext(
+        UUID eventId,
+        UUID organizationId,
+        String organizationName,
+        String location,
+        LocalDate ageReferenceDate,
+        String sourceUrl,
+        String stableSourceUrl,
+        List<UUID> evidenceIds
+    ) {
+        public ImportContext {
+            Objects.requireNonNull(eventId, "eventId");
+            Objects.requireNonNull(organizationId, "organizationId");
+            organizationName = required(organizationName, "organizationName");
+            sourceUrl = required(sourceUrl, "sourceUrl");
+            stableSourceUrl = required(stableSourceUrl, "stableSourceUrl");
+            evidenceIds = evidenceIds == null ? List.of() : List.copyOf(evidenceIds);
+        }
+    }
+}

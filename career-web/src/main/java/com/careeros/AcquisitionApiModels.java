@@ -7,11 +7,16 @@ import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.SourceCrawlRun;
 import com.careeros.domain.acquisition.SourceYearCoverage;
+import com.careeros.domain.acquisition.SourceOnboardingCheckpoint;
+import com.careeros.domain.acquisition.ArtifactImportFailure;
+import com.careeros.application.AcquisitionPorts.AcquisitionStore;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 final class AcquisitionApiModels {
@@ -20,13 +25,22 @@ final class AcquisitionApiModels {
     record SourceResponse(
         UUID id, String code, String name, String entryUri, String sourceType, String region,
         String crawlMode, boolean enabled, String cronExpression, String timeZone,
-        Instant lastSuccessAt, Instant lastFailureAt, Instant nextDueAt, int consecutiveFailureCount
+        Instant lastSuccessAt, Instant lastFailureAt, Instant nextDueAt, int consecutiveFailureCount,
+        String connectionStatus, List<CoverageResponse> coverage,
+        List<CheckpointResponse> checkpoints, long historicalFailureCount
     ) {
-        static SourceResponse from(RecruitmentSource value) {
+        static SourceResponse from(RecruitmentSource value, AcquisitionStore store) {
             return new SourceResponse(value.id(),value.code(),value.name(),value.entryUri().toString(),
                 value.sourceType().name(),value.region(),value.crawlMode().name(),value.enabled(),
                 value.cronExpression(),value.timeZone(),value.lastSuccessAt(),value.lastFailureAt(),
-                value.nextDueAt(),value.consecutiveFailureCount());
+                value.nextDueAt(),value.consecutiveFailureCount(),
+                Optional.ofNullable(store.findTargetSourceStatus(value.code()))
+                    .map(Enum::name).orElse("NOT_CONNECTED"),
+                store.findSourceYearCoverage(value.id(), null).stream()
+                    .sorted(java.util.Comparator.comparingInt(SourceYearCoverage::recruitmentYear))
+                    .map(CoverageResponse::from).toList(),
+                store.findCheckpoints(value.id()).stream().map(CheckpointResponse::from).toList(),
+                store.countImportFailures(value.id()));
         }
     }
 
@@ -72,12 +86,36 @@ final class AcquisitionApiModels {
     record CoverageResponse(
         UUID sourceId, int year, String status, int discoveredCount, int fetchedCount,
         int parsedCount, int targetJobCount, String completionBasis, Instant completedAt,
-        Instant updatedAt, boolean supportsAbsenceConclusion
+        Instant updatedAt, boolean supportsAbsenceConclusion, int listingPageCount,
+        int filteredCount, int failedCount, LocalDate earliestPublishedOn,
+        LocalDate latestPublishedOn, String stopReason
     ) {
         static CoverageResponse from(SourceYearCoverage value) {
             return new CoverageResponse(value.sourceId(), value.recruitmentYear(), value.status().name(),
                 value.discoveredCount(), value.fetchedCount(), value.parsedCount(), value.targetJobCount(),
-                value.completionBasis(), value.completedAt(), value.updatedAt(), value.supportsAbsenceConclusion());
+                value.completionBasis(), value.completedAt(), value.updatedAt(), value.supportsAbsenceConclusion(),
+                value.listingPageCount(), value.filteredCount(), value.failedCount(),
+                value.earliestPublishedOn(), value.latestPublishedOn(), value.stopReason());
+        }
+    }
+
+    record CheckpointResponse(
+        UUID sourceId, String checkpoint, String status, String evidence, Instant verifiedAt
+    ) {
+        static CheckpointResponse from(SourceOnboardingCheckpoint value) {
+            return new CheckpointResponse(value.sourceId(), value.checkpoint().name(), value.status().name(),
+                value.evidence(), value.verifiedAt());
+        }
+    }
+
+    record FailureResponse(
+        UUID id, UUID runId, UUID sourceId, UUID documentId, String stage,
+        String sheetName, Integer rowNumber, String errorCode, String safeMessage, Instant occurredAt
+    ) {
+        static FailureResponse from(ArtifactImportFailure value) {
+            return new FailureResponse(value.id(), value.runId(), value.sourceId(), value.documentId(),
+                value.stage().name(), value.sheetName(), value.rowNumber(), value.errorCode(),
+                value.safeMessage(), value.occurredAt());
         }
     }
 

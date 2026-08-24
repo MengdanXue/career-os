@@ -20,10 +20,19 @@
 .update-section h2 { margin: 6px 0 0; font: 500 27px Georgia, "Songti SC", serif; }
 .update-section > header > span { color: var(--muted); font-size: 12px; }
 .source-row { display: grid; grid-template-columns: 1fr auto; gap: 12px 20px; padding: 18px 22px; border-bottom: 1px solid var(--line); background: var(--paper); }
-.source-row > div > div { display: flex; gap: 9px; align-items: center; color: var(--muted); font-size: 12px; }
+.source-identity > div { display: flex; gap: 9px; align-items: center; color: var(--muted); font-size: 12px; }
 .source-row strong { display: block; margin: 9px 0 4px; font-size: 18px; }
 .source-row a { color: var(--muted); font-size: 12px; }
 .source-row > button { align-self: center; padding: 9px 13px; border: 1px solid var(--tide); background: transparent; color: var(--tide); font-weight: 700; cursor: pointer; }
+.source-evidence { display: grid; grid-column: 1 / -1; grid-template-columns: auto 1fr auto; gap: 10px 16px; align-items: center; padding-top: 12px; border-top: 1px solid #dedbd0; }
+.evidence-kicker { color: var(--muted); font: 700 10px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.coverage-rail { display: flex; flex-wrap: wrap; gap: 7px; }
+.coverage-year { padding: 5px 8px; border-left: 3px solid #9ea6a2; background: #efede6; color: #4d5653; font-size: 11px; }
+.coverage-year[data-status="complete"], .coverage-year[data-status="no_target_records"] { border-color: var(--eligible); background: #e8f2ed; }
+.coverage-year[data-status="partial"] { border-color: var(--caution); background: #fbf0df; }
+.coverage-year[data-status="access_failed"] { border-color: var(--blocker); background: #f8e9e6; }
+.coverage-limitation { color: var(--caution); font-size: 11px; }
+.source-health { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 12px; color: var(--blocker); font-size: 11px; font-weight: 650; }
 .run-result { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border-left: 3px solid var(--eligible); background: #e8f2ed; }
 .run-result.partially_succeeded { border-color: var(--caution); background: #fbf0df; }
 .run-result.failed { border-color: var(--blocker); background: #f8e9e6; }
@@ -61,5 +70,5 @@
 .review-actions button { padding: 9px 11px; border: 1px solid var(--tide); background: transparent; color: var(--tide); font-weight: 700; cursor: pointer; }
 .review-actions button:first-child { background: var(--tide); color: #fffaf0; }
 .review-actions button.reject { border-color: var(--blocker); color: var(--blocker); }
-@media (max-width: 900px) { .admission-pipeline { grid-template-columns: 1fr 1fr; } .admission-pipeline::before { display: none; } .admission-pipeline li:nth-child(2) { border-right: 0; } .admission-pipeline li:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .import-grid, .review-layout { grid-template-columns: 1fr; } .review-queue { border-right: 0; } }
+@media (max-width: 900px) { .admission-pipeline { grid-template-columns: 1fr 1fr; } .admission-pipeline::before { display: none; } .admission-pipeline li:nth-child(2) { border-right: 0; } .admission-pipeline li:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .source-evidence { grid-template-columns: 1fr; } .source-health { justify-content: flex-start; } .import-grid, .review-layout { grid-template-columns: 1fr; } .review-queue { border-right: 0; } }
 @media (max-width: 580px) { .admission-summary > header { display: block; } .admission-summary > header > p { margin-top: 10px; text-align: left; } .admission-pipeline { grid-template-columns: 1fr; } .admission-pipeline li, .admission-pipeline li:nth-child(2) { border-right: 0; border-bottom: 1px solid var(--line); } .admission-pipeline li:last-child { border-bottom: 0; } .admission-pipeline strong { min-height: 0; } .source-row { grid-template-columns: 1fr; } .source-row > button { justify-self: start; } .review-dossier { padding: 18px; } .review-dossier dl { grid-template-columns: 1fr; } }

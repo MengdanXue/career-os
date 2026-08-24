@@ -3,8 +3,10 @@ package com.careeros.application;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import java.net.URI;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -26,6 +28,61 @@ public final class AcquisitionHttpPorts {
 
     public interface AttachmentDiscoverer {
         List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html);
+    }
+
+    public interface SourceListingReader {
+        ListingResult read(RecruitmentSource source, ListingQuery query);
+    }
+
+    public record ListingQuery(Set<Integer> recruitmentYears, boolean historical) {
+        public ListingQuery {
+            recruitmentYears = recruitmentYears == null ? Set.of() : Set.copyOf(recruitmentYears);
+            if (historical && recruitmentYears.isEmpty()) {
+                throw new IllegalArgumentException("recruitmentYears is required for historical listing");
+            }
+        }
+    }
+
+    public record YearDiscoveredLink(DiscoveredLink link, int recruitmentYear) {
+        public YearDiscoveredLink {
+            Objects.requireNonNull(link, "link");
+            if (recruitmentYear < 2000 || recruitmentYear > 2100) {
+                throw new IllegalArgumentException("recruitmentYear is invalid");
+            }
+        }
+    }
+
+    public record ListingEvidence(
+        int pageCount,
+        int rawCount,
+        int acceptedCount,
+        int filteredCount,
+        int failedCount,
+        LocalDate earliestPublishedOn,
+        LocalDate latestPublishedOn,
+        boolean traversalComplete,
+        String stopReason,
+        String completionBasis
+    ) {
+        public ListingEvidence {
+            if (pageCount < 0 || rawCount < 0 || acceptedCount < 0 || filteredCount < 0 || failedCount < 0) {
+                throw new IllegalArgumentException("listing counters cannot be negative");
+            }
+            if (traversalComplete && (stopReason == null || stopReason.isBlank()
+                || completionBasis == null || completionBasis.isBlank())) {
+                throw new IllegalArgumentException("completed traversal requires stopReason and completionBasis");
+            }
+        }
+    }
+
+    public record ListingResult(
+        List<YearDiscoveredLink> links,
+        Map<Integer, ListingEvidence> evidenceByYear
+    ) {
+        public ListingResult {
+            links = links == null ? List.of() : List.copyOf(links);
+            evidenceByYear = evidenceByYear == null ? Map.of() : Map.copyOf(evidenceByYear);
+        }
     }
 
     public record DiscoveredLink(URI uri, String title) {

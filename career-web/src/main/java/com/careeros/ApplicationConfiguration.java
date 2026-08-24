@@ -120,7 +120,10 @@ class ApplicationConfiguration {
         VerifiedProposalWriter writer,UnitOfWork unitOfWork,Clock clock
     ) { return new ReviewService(persistence,validator,verifier,writer,unitOfWork,clock); }
 
-    @Bean StaticHtmlSourceDiscoverer sourceDiscoverer() { return new StaticHtmlSourceDiscoverer(); }
+    @Bean SourceDiscoverer sourceDiscoverer() {
+        return new RoutingSourceDiscoverer(
+            new StaticHtmlSourceDiscoverer(), new HospitalOfficialEvidenceDiscoverer());
+    }
     @Bean HtmlAttachmentDiscoverer attachmentDiscoverer() { return new HtmlAttachmentDiscoverer(); }
     @Bean MediaTypeDetector acquisitionMediaTypeDetector() { return new MediaTypeDetector(); }
     @Bean HttpClient acquisitionHttpClient() {
@@ -136,6 +139,11 @@ class ApplicationConfiguration {
         return new JavaHttpDocumentFetcher(acquisitionHttpClient, acquisitionMediaTypeDetector,
             JavaHttpDocumentFetcher.Sleeper.threadSleep(), "CareerOS/0.3 (" + suffix + ")", 5, 2);
     }
+    @Bean SourceListingReader sourceListingReader(
+        DocumentFetcher acquisitionDocumentFetcher, SourceDiscoverer sourceDiscoverer
+    ) {
+        return new ConfigurableSourceListingReader(acquisitionDocumentFetcher, sourceDiscoverer);
+    }
     @Bean NextRunCalculator nextRunCalculator() {
         return (source, after) -> {
             var cron = org.springframework.scheduling.support.CronExpression.parse(source.cronExpression());
@@ -144,15 +152,21 @@ class ApplicationConfiguration {
             return next.toInstant();
         };
     }
+    @Bean SourceConnectionProjector sourceConnectionProjector(AcquisitionStore store) {
+        return new SourceConnectionProjector(store, Duration.ofHours(48));
+    }
     @Bean AcquisitionService acquisitionService(
         AcquisitionStore store, SourceRunLock sourceRunLock, SourceDiscoverer sourceDiscoverer,
-        DocumentFetcher acquisitionDocumentFetcher, AttachmentDiscoverer attachmentDiscoverer,
+        SourceListingReader sourceListingReader, DocumentFetcher acquisitionDocumentFetcher,
+        AttachmentDiscoverer attachmentDiscoverer,
         AcquiredDocumentProcessor processor, ArtifactStore artifacts, NextRunCalculator nextRunCalculator,
-        AcquisitionObserver acquisitionObserver,
+        AcquisitionObserver acquisitionObserver, SourceConnectionProjector sourceConnectionProjector,
         Clock clock, @Value("${career-os.acquisition.max-document-bytes:26214400}") long maxDocumentBytes
     ) {
-        return new AcquisitionService(store, sourceRunLock, sourceDiscoverer, acquisitionDocumentFetcher,
-            attachmentDiscoverer, processor, artifacts, nextRunCalculator, acquisitionObserver, clock, maxDocumentBytes);
+        return new AcquisitionService(store, sourceRunLock, sourceDiscoverer, sourceListingReader,
+            acquisitionDocumentFetcher,
+            attachmentDiscoverer, processor, artifacts, nextRunCalculator, acquisitionObserver,
+            sourceConnectionProjector, clock, maxDocumentBytes);
     }
 
     private static QualificationImpact qualificationImpact(

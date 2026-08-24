@@ -231,6 +231,7 @@ class AcquisitionServiceTest {
         assertThat(coverage.status()).isEqualTo(SourceYearCoverage.CoverageStatus.PARTIAL);
         assertThat(coverage.completedAt()).isNull();
         assertThat(coverage.supportsAbsenceConclusion()).isFalse();
+        assertThat(fixture.store.source.consecutiveFailureCount()).isEqualTo(1);
     }
 
     @Test
@@ -247,6 +248,36 @@ class AcquisitionServiceTest {
                 org.assertj.core.groups.Tuple.tuple(2025, SourceYearCoverage.CoverageStatus.ACCESS_FAILED));
         assertThat(fixture.store.coverages.values()).allSatisfy(coverage ->
             assertThat(coverage.supportsAbsenceConclusion()).isFalse());
+        assertThat(fixture.store.importFailures).singleElement().satisfies(failure ->
+            assertThat(failure.stage()).isEqualTo(
+                ArtifactImportFailure.FailureStage.REMOTE_ACCESS_FAILED));
+    }
+
+    @Test
+    void oneRequestedYearCannotClaimTheThreeYearBackfillCheckpoint() {
+        Fixture fixture = historicalFixture();
+        fixture.store.targetJobs.put(2026, 1L);
+
+        fixture.service.backfill(SOURCE_ID, Set.of(2026));
+
+        assertThat(fixture.store.coverages.get(2026).supportsAbsenceConclusion()).isTrue();
+        assertThat(fixture.store.checkpoints).doesNotContainKey(
+            com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.BACKFILL_COMPLETE);
+    }
+
+    @Test
+    void failedBackfillRetainsLastConclusiveAnnualEvidence() {
+        Fixture fixture = historicalFixture();
+        fixture.store.targetJobs.put(2025, 1L);
+        fixture.service.backfill(SOURCE_ID, Set.of(2025));
+        SourceYearCoverage verified = fixture.store.coverages.get(2025);
+        fixture.fetcher.historicalListingStatus = 503;
+
+        fixture.service.backfill(SOURCE_ID, Set.of(2025));
+
+        assertThat(fixture.store.coverages.get(2025)).isEqualTo(verified);
+        assertThat(verified.status()).isEqualTo(SourceYearCoverage.CoverageStatus.COMPLETE);
+        assertThat(verified.supportsAbsenceConclusion()).isTrue();
     }
 
     @Test
@@ -260,9 +291,15 @@ class AcquisitionServiceTest {
 
         assertThat(first.status()).isEqualTo(RunStatus.PARTIALLY_SUCCEEDED);
         assertThat(second.status()).isEqualTo(RunStatus.PARTIALLY_SUCCEEDED);
+        assertThat(fixture.store.source.consecutiveFailureCount()).isZero();
         assertThat(fixture.store.coverages.get(2025).status())
             .isEqualTo(SourceYearCoverage.CoverageStatus.PARTIAL);
         assertThat(fixture.processor.calls).isEqualTo(2);
+        assertThat(fixture.store.importFailures).hasSize(2)
+            .allSatisfy(failure -> {
+                assertThat(failure.stage()).isEqualTo(ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED);
+                assertThat(failure.rowNumber()).isEqualTo(3);
+            });
         assertThat(fixture.store.documents.values()).allSatisfy(document -> {
             assertThat(document.lastProcessedFingerprint()).isEqualTo(document.contentFingerprint());
             assertThat(document.lastProcessorVersion()).endsWith(":partial");
@@ -299,6 +336,78 @@ class AcquisitionServiceTest {
         assertThat(run.discoveredCount()).isEqualTo(1);
         assertThat(fixture.fetcher.requested).contains(candidate.uri());
         assertThat(fixture.fetcher.requested).doesNotContain(excluded.uri());
+    }
+
+    @Test
+    void connectionLifecycleRequiresBackfillThenIdempotentIncrementalRun() {
+        Fixture fixture = historicalFixture();
+        fixture.store.targetJobs.put(2024, 1L);
+        fixture.store.targetJobs.put(2025, 1L);
+        fixture.store.targetJobs.put(2026, 1L);
+        fixture.discoverer.pages.put("<html>list</html>", List.of(
+            new DiscoveredLink(URI.create("https://official.example/art/2026/notice-c.html"),
+                "2026年公开招聘公告")));
+
+        fixture.service.backfill(SOURCE_ID, Set.of(2024, 2025, 2026));
+
+        assertThat(fixture.store.checkpoints.keySet())
+            .contains(com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.BACKFILL_COMPLETE)
+            .doesNotContain(com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.INCREMENTAL_VERIFIED);
+
+        fixture.fetcher.historicalListing = false;
+        fixture.service.run(SOURCE_ID, RunTrigger.SCHEDULED);
+
+        assertThat(fixture.store.checkpoints.keySet())
+            .contains(com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.INCREMENTAL_VERIFIED);
+        assertThat(fixture.store.checkpoints.get(
+            com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.INCREMENTAL_VERIFIED).verifiedAt())
+            .isAfterOrEqualTo(fixture.store.checkpoints.get(
+                com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.BACKFILL_COMPLETE).verifiedAt());
+    }
+
+    @Test
+    void zeroCandidateIncrementalListingFailsTheDiscoveryContract() {
+        Fixture fixture = new Fixture();
+        fixture.discoverer.pages.put("<html>list</html>", List.of());
+
+        SourceCrawlRun run = fixture.service.run(SOURCE_ID, RunTrigger.SCHEDULED);
+
+        assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(fixture.store.checkpoints.keySet())
+            .doesNotContain(com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.INCREMENTAL_VERIFIED);
+        assertThat(fixture.store.importFailures).singleElement().satisfies(failure ->
+            assertThat(failure.stage()).isEqualTo(
+                ArtifactImportFailure.FailureStage.DISCOVERY_CONTRACT_CHANGED));
+    }
+
+    @Test
+    void responseReadIoFailureIsClassifiedAsRemoteAccessFailure() {
+        Fixture fixture = new Fixture();
+        fixture.fetcher.listFailure = new AcquisitionHttpPorts.FetchFailedException(
+            "Could not read HTTP response", new java.io.IOException("connection reset"));
+
+        SourceCrawlRun run = fixture.service.run(SOURCE_ID, RunTrigger.SCHEDULED);
+
+        assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(fixture.store.importFailures).singleElement().satisfies(failure ->
+            assertThat(failure.stage()).isEqualTo(
+                ArtifactImportFailure.FailureStage.REMOTE_ACCESS_FAILED));
+    }
+
+    @Test
+    void laterRemoteFailureDoesNotEraseAPreviouslyVerifiedLiveCheckpoint() {
+        Fixture fixture = new Fixture();
+        fixture.service.run(SOURCE_ID, RunTrigger.SCHEDULED);
+        var checkpoint = fixture.store.checkpoints.get(
+            com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.LIVE_SMOKE_VERIFIED);
+        fixture.fetcher.failedUris.add(LIST_API);
+
+        SourceCrawlRun failed = fixture.service.run(SOURCE_ID, RunTrigger.SCHEDULED);
+
+        assertThat(failed.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(fixture.store.checkpoints.get(
+            com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.LIVE_SMOKE_VERIFIED))
+            .isEqualTo(checkpoint);
     }
 
     private static Fixture historicalFixture() {
@@ -374,9 +483,13 @@ class AcquisitionServiceTest {
         boolean historicalListing;
         int historicalListingStatus = 200;
         int historicalListingTotal = 3;
+        RuntimeException listFailure;
         final Set<URI> failedUris = new HashSet<>();
         @Override public FetchedDocument fetch(FetchRequest request) {
             requested.add(request.uri());
+            if (listFailure != null && (request.uri().equals(LIST) || request.uri().equals(LIST_API))) {
+                throw listFailure;
+            }
             if (historicalListing && request.uri().getPath().equals("/api/list")) {
                 int page = request.uri().getRawQuery().contains("pageNo%22%3A2") ? 2 : 1;
                 byte[] content = historicalListingStatus == 200
@@ -412,7 +525,10 @@ class AcquisitionServiceTest {
             commands.add(command);
             if (failNext) { failNext = false; return ProcessingResult.failed("TEST_FAILURE"); }
             if (rowErrors) return ProcessingResult.importedWithErrors(
-                UUID.nameUUIDFromBytes(command.content()), 1, 0, 0, 0, 1);
+                UUID.nameUUIDFromBytes(command.content()), 1, 0, 0, 0,
+                List.of(new AcquiredDocumentProcessor.ProcessingIssue(
+                    ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED,
+                    "岗位计划", 3, "MISSING_ORGANIZATION", "招聘单位为空")));
             return ProcessingResult.extracted(UUID.nameUUIDFromBytes(command.content()));
         }
     }
@@ -447,6 +563,10 @@ class AcquisitionServiceTest {
         final List<AcquisitionChange> changes = new ArrayList<>();
         final Map<Integer, SourceYearCoverage> coverages = new LinkedHashMap<>();
         final Map<Integer, Long> targetJobs = new HashMap<>();
+        final List<ArtifactImportFailure> importFailures = new ArrayList<>();
+        final Map<com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint,
+            com.careeros.domain.acquisition.SourceOnboardingCheckpoint> checkpoints = new EnumMap<>(
+                com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.class);
         InMemoryStore(RecruitmentSource source) { this.source = source; }
         @Override public List<RecruitmentSource> findDueSources(Instant now, int limit) { return List.of(source); }
         @Override public List<RecruitmentSource> findSources() { return List.of(source); }
@@ -454,6 +574,9 @@ class AcquisitionServiceTest {
         @Override public RecruitmentSource saveSource(RecruitmentSource value) { source=value; return value; }
         @Override public SourceCrawlRun saveRun(SourceCrawlRun run) { runs.put(run.id(), run); return run; }
         @Override public SourceCrawlRun findRun(UUID id) { return runs.get(id); }
+        @Override public Optional<SourceCrawlRun> findLatestRun(UUID sourceId) {
+            return runs.values().stream().max(java.util.Comparator.comparing(SourceCrawlRun::startedAt));
+        }
         @Override public RunPage findRuns(RunQuery query, int page, int size) { return new RunPage(List.copyOf(runs.values()),page,size,runs.size()); }
         @Override public Optional<AcquiredDocument> findDocument(UUID sourceId, URI uri) { return Optional.ofNullable(documents.get(uri)); }
         @Override public List<AcquiredDocument> findDocuments(UUID sourceId) { return List.copyOf(documents.values()); }
@@ -474,6 +597,29 @@ class AcquisitionServiceTest {
         @Override public com.careeros.domain.acquisition.SourceYearCoverage saveSourceYearCoverage(
             com.careeros.domain.acquisition.SourceYearCoverage coverage
         ) { coverages.put(coverage.recruitmentYear(), coverage); return coverage; }
+        @Override public com.careeros.domain.acquisition.SourceOnboardingCheckpoint saveCheckpoint(
+            com.careeros.domain.acquisition.SourceOnboardingCheckpoint checkpoint
+        ) { checkpoints.put(checkpoint.checkpoint(), checkpoint); return checkpoint; }
+        @Override public List<com.careeros.domain.acquisition.SourceOnboardingCheckpoint> findCheckpoints(
+            UUID sourceId
+        ) { return List.copyOf(checkpoints.values()); }
+        @Override public List<com.careeros.domain.acquisition.ArtifactImportFailure> saveImportFailures(
+            List<com.careeros.domain.acquisition.ArtifactImportFailure> failures
+        ) { importFailures.addAll(failures); return List.copyOf(failures); }
+        @Override public List<com.careeros.domain.acquisition.ArtifactImportFailure> findImportFailures(
+            UUID sourceId, UUID runId
+        ) { return importFailures.stream().filter(value -> value.sourceId().equals(sourceId)
+            && value.runId().equals(runId)).toList(); }
+        @Override public long countImportFailures(UUID sourceId) {
+            return importFailures.stream().filter(value -> value.sourceId().equals(sourceId)).count();
+        }
+        @Override public com.careeros.domain.acquisition.TargetSource.ConnectionStatus findTargetSourceStatus(
+            String sourceCode
+        ) { return com.careeros.domain.acquisition.TargetSource.ConnectionStatus.PARTIAL; }
+        @Override public void updateTargetSourceStatus(
+            String sourceCode, com.careeros.domain.acquisition.TargetSource.ConnectionStatus status,
+            UUID recruitmentSourceId, Instant updatedAt
+        ) {}
         @Override public long countActiveTargetJobs(UUID sourceId, int recruitmentYear) {
             return targetJobs.getOrDefault(recruitmentYear, 0L);
         }

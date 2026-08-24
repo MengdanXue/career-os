@@ -111,14 +111,14 @@ public class OfficialExcelImportService {
                         String contactPhone=value(row,header.columns(),formatter,"招聘单位咨询电话","咨询电话","联系电话");
                         String originalRequirementText=joinValues(educationText,degreeRequirement,majorText,ageText,conditions);
                         String location=value(row,header.columns(),formatter,"工作地点","地区","所在地");
-                        EmploymentType parsedEmployment=employmentType(employmentText);
+                        EmploymentType parsedEmployment=OfficialJobFieldMapper.employmentType(employmentText);
                         if(parsedEmployment==EmploymentType.UNKNOWN&&event.defaultEmploymentType!=null)parsedEmployment=event.defaultEmploymentType;
                         var evidenceIds=new LinkedHashSet<UUID>();if(event.evidenceIds!=null)evidenceIds.addAll(event.evidenceIds);if(workbookEvidenceId!=null)evidenceIds.add(workbookEvidenceId);
                         var normalized=new NormalizedJob(
-                            event.id,organization.id,organizationName,emptyToNull(code),title,jobFamily(title,duties,majorText),
-                            parsedEmployment,location,Math.max(1,integer(headcountText,1)),education(educationText),
-                            splitMajors(majorText),graduationYears(applicantText),ageLimit(ageText),first(event.ageReferenceDate,command.ageReferenceDate()),
-                            experienceYears(experienceText),professionalTitles(professionalTitleText),duties,
+                            event.id,organization.id,organizationName,emptyToNull(code),title,OfficialJobFieldMapper.jobFamily(title,duties,majorText,supervisingDepartment),
+                            parsedEmployment,location,Math.max(1,integer(headcountText,1)),OfficialJobFieldMapper.education(educationText),
+                            OfficialJobFieldMapper.splitMajors(majorText),OfficialJobFieldMapper.graduationYears(applicantText),OfficialJobFieldMapper.ageLimit(ageText),first(event.ageReferenceDate,command.ageReferenceDate()),
+                            OfficialJobFieldMapper.experienceYears(experienceText),OfficialJobFieldMapper.professionalTitles(professionalTitleText),duties,
                             command.sourceUrl(),command.workbookSourceUrl(),command.sourceUrl(),List.copyOf(evidenceIds),
                             supervisingDepartment,jobCategory,jobGrade,educationText,degreeRequirement,majorText,ageText,
                             genderRequirement,candidateScope,conditions,originalRequirementText,interviewRatio,
@@ -238,32 +238,11 @@ public class OfficialExcelImportService {
     private String value(Row row,Map<String,Integer> columns,DataFormatter f,String...aliases){for(String alias:aliases){var column=columns.get(normalizeHeader(alias));if(column!=null){var cell=row.getCell(column,Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);if(cell!=null){var value=f.formatCellValue(cell).trim();if(!value.isBlank())return value;}}}return null;}
     private String values(Row row,Map<String,Integer> columns,DataFormatter f,String...aliases){var result=new LinkedHashSet<String>();for(String alias:aliases){var column=columns.get(normalizeHeader(alias));if(column!=null){var cell=row.getCell(column,Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);if(cell!=null){var value=f.formatCellValue(cell).trim();if(!value.isBlank())result.add(value);}}}return result.isEmpty()?null:String.join("；",result);}
     private static String normalizeHeader(String value){return value==null?"":value.replaceAll("[\\s\\n\\r：:（）()]","").trim();}
-    private static Set<String> splitMajors(String text){
-        if(blank(text))return new LinkedHashSet<>();
-        String normalizedText=text.replaceAll("[\\s，,。；;：:]","");
-        if(List.of("不限","不限制","无","无要求","专业不限").contains(normalizedText))return new LinkedHashSet<>();
-        var result=new LinkedHashSet<String>();
-        for(String part:text.split("[、,，;；/\\n]")){
-            String value=part.trim();
-            int restricted=Math.max(value.indexOf("（限"),value.indexOf("(限"));
-            if(restricted>=0)value=value.substring(restricted+2).trim();
-            value=value.replaceFirst("[）)]$","").replaceFirst("方向$","").trim();
-            if(!value.isBlank())result.add(value);
-        }
-        return result;
-    }
-    private static Set<Integer> graduationYears(String text){var result=new LinkedHashSet<Integer>();if(text!=null){var m=YEAR.matcher(text);while(m.find())result.add(Integer.parseInt(m.group(1)));}return result;}
     private static Integer integerOrNull(String text){if(blank(text))return null;var m=NUMBER.matcher(text);return m.find()?Integer.valueOf(m.group(1)):null;}
-    private static Integer ageLimit(String text){return text!=null&&(text.contains("周岁")||text.matches(".*\\d+岁.*"))?integerOrNull(text):null;}
-    private static Integer experienceYears(String text){return text!=null&&text.matches(".*\\d+\\s*年.*")?integerOrNull(text):null;}
-    private static Set<String> professionalTitles(String text){var result=new LinkedHashSet<String>();if(blank(text))return result;for(String level:List.of("正高级","副高级","高级","中级","初级")){if(text.contains(level))result.add(level);}return result;}
     private static int integer(String text,int fallback){var value=integerOrNull(text);return value==null?fallback:value;}
     private static Boolean yesNo(String text){if(blank(text))return null;if(text.contains("是")||text.equalsIgnoreCase("yes"))return true;if(text.contains("否")||text.equalsIgnoreCase("no"))return false;return null;}
-    private static EducationLevel education(String text){if(text!=null&&(text.contains("博士")))return EducationLevel.DOCTORATE;if(text!=null&&(text.contains("硕士")||text.contains("研究生")))return EducationLevel.MASTER;if(text!=null&&text.contains("本科"))return EducationLevel.BACHELOR;if(text!=null&&(text.contains("专科")||text.contains("大专")))return EducationLevel.ASSOCIATE;return EducationLevel.UNKNOWN;}
-    private static EmploymentType employmentType(String text){if(blank(text))return EmploymentType.UNKNOWN;if(text.contains("劳务派遣"))return EmploymentType.LABOR_DISPATCH;if(text.contains("人事代理"))return EmploymentType.PERSONNEL_AGENCY;if(text.contains("项目"))return EmploymentType.PROJECT_BASED;if(text.contains("合同"))return EmploymentType.CONTRACT;if(text.contains("事业编")||text.contains("编制内"))return EmploymentType.ESTABLISHMENT;return EmploymentType.UNKNOWN;}
-    private static JobFamily jobFamily(String title,String duties,String majors){String role=nvl(title)+nvl(duties);String text=role+nvl(majors);if(role.contains("信息中心")||role.contains("信息管理")||role.contains("信息化")||role.contains("信息系统"))return JobFamily.INFORMATION_SYSTEMS;if(text.contains("人工智能")||text.contains("算法")||text.contains("机器学习"))return JobFamily.AI;if(text.contains("数据"))return JobFamily.DATA;if(text.contains("网络安全")||text.contains("信息安全")||text.contains("安全技术"))return JobFamily.CYBERSECURITY;if(text.contains("软件")||text.contains("开发")||text.contains("Java"))return JobFamily.SOFTWARE;if(text.contains("计算机"))return JobFamily.INFORMATION_SYSTEMS;if(text.contains("数字"))return JobFamily.DIGITALIZATION;if(text.contains("运维")||text.contains("网络")||text.contains("通信"))return JobFamily.IT_OPERATIONS;if(text.contains("研究"))return JobFamily.RESEARCH;return JobFamily.OTHER;}
     private static OrganizationType organizationType(String name,EventType eventType){if(name.contains("医院"))return OrganizationType.HOSPITAL;if(name.contains("大学")||name.contains("学院")||name.contains("学校"))return OrganizationType.UNIVERSITY;if(eventType==EventType.STATE_OWNED_ENTERPRISE)return OrganizationType.STATE_OWNED_ENTERPRISE;if(eventType==EventType.UNIVERSITY)return OrganizationType.UNIVERSITY;if(eventType==EventType.HOSPITAL)return OrganizationType.HOSPITAL;return eventType==EventType.PUBLIC_INSTITUTION?OrganizationType.PUBLIC_INSTITUTION:OrganizationType.OTHER;}
-    private static boolean blank(String value){return value==null||value.isBlank();} private static String nvl(String value){return value==null?"":value;} private static String emptyToNull(String value){return blank(value)?null:value;}
+    private static boolean blank(String value){return value==null||value.isBlank();} private static String emptyToNull(String value){return blank(value)?null:value;}
     private static String join(String first,String second){if(blank(first))return second;if(blank(second))return first;return first+"；"+second;}
     private static String joinValues(String...values){var result=new ArrayList<String>();for(String value:values)if(!blank(value))result.add(value);return result.isEmpty()?null:String.join("；",result);}
     private static Map<String,String> fields(NormalizedJob job,String headcountText,String educationText,String majorText,String ageText,String employmentText){var fields=new LinkedHashMap<String,String>();put(fields,"externalJobCode",job.externalJobCode());put(fields,"title",job.title());put(fields,"organizationName",job.organizationName());put(fields,"headcount",headcountText);put(fields,"employmentType",employmentText);put(fields,"supervisingDepartment",job.supervisingDepartment());put(fields,"jobCategory",job.jobCategory());put(fields,"jobGrade",job.jobGrade());put(fields,"educationRequirementText",educationText);put(fields,"degreeRequirement",job.degreeRequirement());put(fields,"majorRequirementText",majorText);put(fields,"ageRequirementText",ageText);put(fields,"genderRequirement",job.genderRequirement());put(fields,"candidateScope",job.candidateScope());put(fields,"otherRequirements",job.otherRequirements());put(fields,"interviewRatio",job.interviewRatio());put(fields,"professionalTestRequired",job.professionalTestRequired()==null?null:job.professionalTestRequired().toString());put(fields,"contactPhone",job.contactPhone());return Collections.unmodifiableMap(fields);}

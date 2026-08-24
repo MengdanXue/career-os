@@ -16,6 +16,7 @@ import com.careeros.domain.ExtractionRun;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService.ImportResult;
 import com.careeros.infrastructure.persistence.OfficialAnnouncementFactService;
+import com.careeros.infrastructure.persistence.HospitalOfficialJobImportService;
 import org.mockito.ArgumentCaptor;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +33,70 @@ class Phase2DocumentProcessorTest {
     private final OfficialExcelImportService workbooks = mock(OfficialExcelImportService.class);
     private final OfficialAnnouncementFactService announcementFacts = mock(OfficialAnnouncementFactService.class);
     private final Phase2DocumentProcessor processor = new Phase2DocumentProcessor(extractions, workbooks, announcementFacts);
+
+    @Test
+    void hospitalHtmlImportsPublicJobTableAfterPreservingAnnouncementFacts() {
+        var hospitalJobs = mock(HospitalOfficialJobImportService.class);
+        var hospitalProcessor = new Phase2DocumentProcessor(extractions, workbooks, announcementFacts, hospitalJobs);
+        ExtractionRun run = mock(ExtractionRun.class);
+        when(run.id()).thenReturn(RUN_ID);
+        when(run.evidenceId()).thenReturn(UUID.randomUUID());
+        when(extractions.submit(any())).thenReturn(new ExtractionResult(run, Optional.empty(), false));
+        URI uri = URI.create("https://zp.hz-hospital.com/index/index/announcement_desc/id/212.html");
+        when(hospitalJobs.importAnnouncement(org.mockito.ArgumentMatchers.eq(uri.toString()), any()))
+            .thenReturn(new HospitalOfficialJobImportService.ImportResult(UUID.randomUUID(), 1, 0, 0, 0));
+        byte[] html = """
+            <html><title>杭州市第一人民医院2024年公开招聘</title><body><table><tr>
+            <th>科室/部门</th><th>岗位名称</th><th>岗位类别</th><th>学历/学位</th><th>专业要求</th>
+            <th>招聘对象</th><th>招聘人数</th><th>年龄要求</th></tr><tr><td>X-信息中心</td>
+            <td>信息工作人员</td><td>专业技术</td><td>硕士研究生/硕士</td><td>计算机科学与技术</td>
+            <td>应届毕业生</td><td>1</td><td>38周岁及以下</td></tr></table></body></html>
+            """.getBytes(StandardCharsets.UTF_8);
+
+        var result = hospitalProcessor.process(new ProcessDocumentCommand(html, "text/html", uri, uri,
+            "杭州市第一人民医院2024年公开招聘", Instant.parse("2026-08-15T00:00:00Z"),
+            2024, LocalDate.of(2024, 3, 8), "浙江杭州", EventType.HOSPITAL));
+
+        assertThat(result.inserted()).isEqualTo(1);
+        verify(hospitalJobs).importAnnouncement(org.mockito.ArgumentMatchers.eq(uri.toString()), any());
+    }
+
+    @Test
+    void hospitalMalformedRowsAreAuditedWithoutDeactivatingMissingJobs() {
+        var hospitalJobs = mock(HospitalOfficialJobImportService.class);
+        var hospitalProcessor = new Phase2DocumentProcessor(extractions, workbooks, announcementFacts, hospitalJobs);
+        ExtractionRun run = mock(ExtractionRun.class);
+        when(run.id()).thenReturn(RUN_ID);
+        when(run.evidenceId()).thenReturn(UUID.randomUUID());
+        when(extractions.submit(any())).thenReturn(new ExtractionResult(run, Optional.empty(), false));
+        URI uri = URI.create("https://zp.hz-hospital.com/index/index/announcement_desc/id/212.html");
+        UUID eventId = UUID.randomUUID();
+        when(hospitalJobs.importAnnouncement(org.mockito.ArgumentMatchers.eq(uri.toString()), any()))
+            .thenReturn(new HospitalOfficialJobImportService.ImportResult(eventId, 1, 0, 0, 0));
+        byte[] html = """
+            <html><title>医院公开招聘</title><body><table>
+            <tr><th>科室</th><th>岗位名称</th><th>岗位类别</th><th>学历</th><th>专业</th>
+            <th>招聘对象</th><th>人数</th><th>年龄</th></tr>
+            <tr><td>信息中心</td><td>系统工程师</td><td>专业技术</td><td>硕士</td><td>计算机</td>
+            <td>应届毕业生</td><td>1</td><td>38周岁以下</td></tr>
+            <tr><td>数据中心</td><td></td><td>专业技术</td><td>硕士</td><td>软件工程</td>
+            <td>应届毕业生</td><td>1</td><td>38周岁以下</td></tr>
+            </table></body></html>
+            """.getBytes(StandardCharsets.UTF_8);
+
+        var result = hospitalProcessor.process(new ProcessDocumentCommand(html, "text/html", uri, uri,
+            "杭州市第一人民医院2024年公开招聘", Instant.parse("2026-08-15T00:00:00Z"),
+            2024, LocalDate.of(2024, 3, 8), "浙江杭州", EventType.HOSPITAL));
+
+        assertThat(result.status()).isEqualTo(ProcessingStatus.PROCESSED_WITH_ERRORS);
+        assertThat(result.recruitmentEventId()).isEqualTo(eventId);
+        assertThat(result.deactivated()).isZero();
+        assertThat(result.issues()).singleElement().satisfies(issue -> {
+            assertThat(issue.sheetName()).isEqualTo("网页岗位表");
+            assertThat(issue.rowNumber()).isEqualTo(3);
+            assertThat(issue.errorCode()).isEqualTo("MISSING_JOB_TITLE");
+        });
+    }
 
     @Test
     void htmlUsesExtractionPipelineAndReturnsItsRunId() {
@@ -86,11 +151,17 @@ class Phase2DocumentProcessorTest {
         assertThat(result.status()).isEqualTo(ProcessingStatus.PROCESSED_WITH_ERRORS);
         assertThat(result.successful()).isTrue();
         assertThat(result.errorCode()).isEqualTo("ROW_ERRORS:1");
+        assertThat(result.issues()).singleElement().satisfies(issue -> {
+            assertThat(issue.stage()).isEqualTo(
+                com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED);
+            assertThat(issue.sheetName()).isEqualTo("岗位计划");
+            assertThat(issue.rowNumber()).isEqualTo(3);
+        });
     }
 
     @Test
     void processorVersionChangesWhenWorkbookInterpretationChanges() {
-        assertThat(processor.version()).isEqualTo("official-fact-fusion-v8");
+        assertThat(processor.version()).isEqualTo("official-fact-fusion-v9");
     }
 
     @Test

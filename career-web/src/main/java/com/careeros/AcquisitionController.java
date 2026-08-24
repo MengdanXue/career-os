@@ -29,7 +29,7 @@ final class AcquisitionController {
 
     @GetMapping("/sources")
     List<SourceResponse> sources() {
-        return store.findSources().stream().map(SourceResponse::from).toList();
+        return store.findSources().stream().map(source -> SourceResponse.from(source, store)).toList();
     }
 
     @PostMapping("/sources/{sourceId}/runs")
@@ -95,5 +95,14 @@ final class AcquisitionController {
             throw new IllegalArgumentException("year must be between 2000 and 2100");
         }
         return store.findSourceYearCoverage(sourceId, year).stream().map(CoverageResponse::from).toList();
+    }
+
+    @GetMapping("/sources/{sourceId}/failures")
+    List<FailureResponse> failures(
+        @PathVariable("sourceId") UUID sourceId,
+        @RequestParam(name="size", defaultValue="50") int size
+    ) {
+        if (size < 1 || size > 200) throw new IllegalArgumentException("size must be between 1 and 200");
+        return store.findImportFailures(sourceId, null).stream().limit(size).map(FailureResponse::from).toList();
     }
 }

@@ -9,9 +9,12 @@ import com.careeros.application.AcquisitionPorts.RunQuery;
 import com.careeros.domain.acquisition.AcquiredDocument;
 import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
+import com.careeros.domain.acquisition.ArtifactImportFailure;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.SourceCrawlRun;
+import com.careeros.domain.acquisition.SourceOnboardingCheckpoint;
 import com.careeros.domain.acquisition.SourceYearCoverage;
+import com.careeros.domain.acquisition.TargetSource.ConnectionStatus;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.net.URI;
@@ -32,6 +35,8 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     private final AcquiredDocumentJpaRepository documents;
     private final AcquisitionChangeJpaRepository changes;
     private final SourceYearCoverageJpaRepository coverage;
+    private final SourceOnboardingCheckpointJpaRepository checkpoints;
+    private final ArtifactImportFailureJpaRepository importFailures;
     @PersistenceContext private EntityManager entityManager;
 
     public JpaAcquisitionStore(
@@ -39,13 +44,17 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         SourceCrawlRunJpaRepository runs,
         AcquiredDocumentJpaRepository documents,
         AcquisitionChangeJpaRepository changes,
-        SourceYearCoverageJpaRepository coverage
+        SourceYearCoverageJpaRepository coverage,
+        SourceOnboardingCheckpointJpaRepository checkpoints,
+        ArtifactImportFailureJpaRepository importFailures
     ) {
         this.sources = sources;
         this.runs = runs;
         this.documents = documents;
         this.changes = changes;
         this.coverage = coverage;
+        this.checkpoints = checkpoints;
+        this.importFailures = importFailures;
     }
 
     @Override @Transactional(readOnly = true)
@@ -81,6 +90,11 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     public SourceCrawlRun findRun(UUID id) {
         return runs.findById(id).map(JpaAcquisitionStore::toDomain)
             .orElseThrow(() -> new NoSuchElementException("Source crawl run not found: " + id));
+    }
+
+    @Override @Transactional(readOnly = true)
+    public java.util.Optional<SourceCrawlRun> findLatestRun(UUID sourceId) {
+        return runs.findTopBySourceIdOrderByStartedAtDescIdDesc(sourceId).map(JpaAcquisitionStore::toDomain);
     }
 
     @Override @Transactional(readOnly = true)
@@ -171,6 +185,64 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     @Override @Transactional
     public SourceYearCoverage saveSourceYearCoverage(SourceYearCoverage value) {
         return toDomain(coverage.saveAndFlush(toEntity(value)));
+    }
+
+    @Override @Transactional
+    public SourceOnboardingCheckpoint saveCheckpoint(SourceOnboardingCheckpoint value) {
+        return toDomain(checkpoints.saveAndFlush(toEntity(value)));
+    }
+
+    @Override @Transactional(readOnly = true)
+    public List<SourceOnboardingCheckpoint> findCheckpoints(UUID sourceId) {
+        return checkpoints.findByIdSourceIdOrderByIdCheckpointAsc(sourceId).stream()
+            .map(JpaAcquisitionStore::toDomain).toList();
+    }
+
+    @Override @Transactional
+    public List<ArtifactImportFailure> saveImportFailures(List<ArtifactImportFailure> values) {
+        if (values == null || values.isEmpty()) return List.of();
+        return importFailures.saveAllAndFlush(values.stream().map(JpaAcquisitionStore::toEntity).toList())
+            .stream().map(JpaAcquisitionStore::toDomain).toList();
+    }
+
+    @Override @Transactional(readOnly = true)
+    public List<ArtifactImportFailure> findImportFailures(UUID sourceId, UUID runId) {
+        var values = runId == null
+            ? importFailures.findBySourceIdOrderByOccurredAtDescIdDesc(sourceId)
+            : importFailures.findBySourceIdAndRunIdOrderByOccurredAtAscIdAsc(sourceId, runId);
+        return values.stream()
+            .map(JpaAcquisitionStore::toDomain).toList();
+    }
+
+    @Override @Transactional(readOnly = true)
+    public long countImportFailures(UUID sourceId) {
+        return importFailures.countBySourceId(sourceId);
+    }
+
+    @Override @Transactional(readOnly = true)
+    public ConnectionStatus findTargetSourceStatus(String sourceCode) {
+        Object value = entityManager.createNativeQuery(
+            "select connection_status from target_source_catalog where code = :code")
+            .setParameter("code", sourceCode).getResultStream().findFirst().orElse("NOT_CONNECTED");
+        return ConnectionStatus.valueOf(value.toString());
+    }
+
+    @Override @Transactional
+    public void updateTargetSourceStatus(
+        String sourceCode, ConnectionStatus status, UUID recruitmentSourceId, Instant updatedAt
+    ) {
+        entityManager.createNativeQuery("""
+            update target_source_catalog
+            set connection_status = :status,
+                recruitment_source_id = :sourceId,
+                updated_at = :updatedAt
+            where code = :code
+            """)
+            .setParameter("status", status.name())
+            .setParameter("sourceId", recruitmentSourceId)
+            .setParameter("updatedAt", updatedAt)
+            .setParameter("code", sourceCode)
+            .executeUpdate();
     }
 
     @Override @Transactional(readOnly = true)
@@ -282,12 +354,47 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         entity.fetchedCount = value.fetchedCount(); entity.parsedCount = value.parsedCount();
         entity.targetJobCount = value.targetJobCount(); entity.completionBasis = value.completionBasis();
         entity.completedAt = value.completedAt(); entity.updatedAt = value.updatedAt();
+        entity.listingPageCount = value.listingPageCount(); entity.filteredCount = value.filteredCount();
+        entity.failedCount = value.failedCount(); entity.earliestPublishedOn = value.earliestPublishedOn();
+        entity.latestPublishedOn = value.latestPublishedOn(); entity.stopReason = value.stopReason();
         return entity;
     }
 
     private static SourceYearCoverage toDomain(AcquisitionJpaModels.SourceYearCoverageEntity value) {
         return new SourceYearCoverage(value.id.sourceId, value.id.recruitmentYear, value.status,
             value.discoveredCount, value.fetchedCount, value.parsedCount, value.targetJobCount,
-            value.completionBasis, value.completedAt, value.updatedAt);
+            value.completionBasis, value.completedAt, value.updatedAt, value.listingPageCount,
+            value.filteredCount, value.failedCount, value.earliestPublishedOn,
+            value.latestPublishedOn, value.stopReason);
+    }
+
+    private static AcquisitionJpaModels.SourceOnboardingCheckpointEntity toEntity(
+        SourceOnboardingCheckpoint value
+    ) {
+        var entity = new AcquisitionJpaModels.SourceOnboardingCheckpointEntity();
+        entity.id = new AcquisitionJpaModels.SourceOnboardingCheckpointId(value.sourceId(), value.checkpoint());
+        entity.status = value.status(); entity.evidence = value.evidence(); entity.verifiedAt = value.verifiedAt();
+        return entity;
+    }
+
+    private static SourceOnboardingCheckpoint toDomain(
+        AcquisitionJpaModels.SourceOnboardingCheckpointEntity value
+    ) {
+        return new SourceOnboardingCheckpoint(value.id.sourceId, value.id.checkpoint,
+            value.status, value.evidence, value.verifiedAt);
+    }
+
+    private static AcquisitionJpaModels.ArtifactImportFailureEntity toEntity(ArtifactImportFailure value) {
+        var entity = new AcquisitionJpaModels.ArtifactImportFailureEntity();
+        entity.id = value.id(); entity.runId = value.runId(); entity.sourceId = value.sourceId();
+        entity.documentId = value.documentId(); entity.stage = value.stage(); entity.sheetName = value.sheetName();
+        entity.rowNumber = value.rowNumber(); entity.errorCode = value.errorCode();
+        entity.safeMessage = value.safeMessage(); entity.occurredAt = value.occurredAt();
+        return entity;
+    }
+
+    private static ArtifactImportFailure toDomain(AcquisitionJpaModels.ArtifactImportFailureEntity value) {
+        return new ArtifactImportFailure(value.id, value.runId, value.sourceId, value.documentId,
+            value.stage, value.sheetName, value.rowNumber, value.errorCode, value.safeMessage, value.occurredAt);
     }
 }

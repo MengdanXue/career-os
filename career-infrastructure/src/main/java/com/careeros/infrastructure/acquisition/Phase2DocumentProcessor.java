@@ -6,6 +6,7 @@ import com.careeros.application.ExtractionService;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService.ImportCommand;
 import com.careeros.infrastructure.persistence.OfficialAnnouncementFactService;
+import com.careeros.infrastructure.persistence.HospitalOfficialJobImportService;
 import java.io.ByteArrayInputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -17,23 +18,36 @@ import org.springframework.stereotype.Component;
 @Component
 public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor {
     private static final Logger LOG = LoggerFactory.getLogger(Phase2DocumentProcessor.class);
-    public static final String PROCESSOR_VERSION = "official-fact-fusion-v8";
+    public static final String PROCESSOR_VERSION = "official-fact-fusion-v9";
     private static final Pattern ANNOUNCEMENT_YEAR = Pattern.compile("20\\d{2}年");
     private static final Pattern ORGANIZATION_SUFFIX = Pattern.compile(
         ".*(中心|医院|大学|学院|学校|中学|研究院|研究所|集团|公司|协会|图书馆|博物馆|艺术馆|乐团|运动队|厅|局|委员会|院|所|站|馆|社|室)$");
     private final ExtractionService extractions;
     private final OfficialExcelImportService workbooks;
     private final OfficialAnnouncementFactService announcementFacts;
+    private final HospitalOfficialJobImportService hospitalJobs;
     private final OfficialAnnouncementFactParser announcementParser = new OfficialAnnouncementFactParser();
+    private final HospitalOfficialPageParser hospitalParser = new HospitalOfficialPageParser();
 
     public Phase2DocumentProcessor(
         ExtractionService extractions,
         OfficialExcelImportService workbooks,
         OfficialAnnouncementFactService announcementFacts
     ) {
+        this(extractions, workbooks, announcementFacts, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public Phase2DocumentProcessor(
+        ExtractionService extractions,
+        OfficialExcelImportService workbooks,
+        OfficialAnnouncementFactService announcementFacts,
+        @org.springframework.lang.Nullable HospitalOfficialJobImportService hospitalJobs
+    ) {
         this.extractions = java.util.Objects.requireNonNull(extractions);
         this.workbooks = java.util.Objects.requireNonNull(workbooks);
         this.announcementFacts = java.util.Objects.requireNonNull(announcementFacts);
+        this.hospitalJobs = hospitalJobs;
     }
 
     @Override
@@ -67,9 +81,32 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
         if (MediaTypeDetector.HTML.equals(command.mediaType()) || "application/xhtml+xml".equals(command.mediaType())) {
             var parsed = announcementParser.parse(
                 new String(command.content(), StandardCharsets.UTF_8), command.parentAnnouncementUri().toString());
-            announcementFacts.upsert(
+            var event = announcementFacts.upsert(
                 command.announcementTitle(), command.parentAnnouncementUri().toString(), command.recruitmentYear(),
                 command.eventType(), parsed, result.run().evidenceId());
+            if (hospitalJobs != null && hospitalParser.supports(command.documentUri())) {
+                var hospital = hospitalParser.parse(command.documentUri(), command.content());
+                HospitalOfficialJobImportService.ImportResult imported = null;
+                if (!hospital.jobs().isEmpty()) {
+                    imported = hospitalJobs.importAnnouncement(
+                        command.parentAnnouncementUri().toString(), hospital);
+                }
+                if (!hospital.issues().isEmpty()) {
+                    var issues = hospital.issues().stream().map(issue -> new ProcessingIssue(
+                        com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED,
+                        "网页岗位表", issue.rowNumber(), issue.errorCode(), issue.message())).toList();
+                    return ProcessingResult.importedWithErrors(
+                        imported == null ? event.id() : imported.recruitmentEventId(),
+                        imported == null ? 0 : imported.inserted(),
+                        imported == null ? 0 : imported.updated(),
+                        imported == null ? 0 : imported.unchanged(),
+                        imported == null ? 0 : imported.deactivated(), issues);
+                }
+                if (imported != null) {
+                    return ProcessingResult.imported(imported.recruitmentEventId(), imported.inserted(),
+                        imported.updated(), imported.unchanged(), imported.deactivated());
+                }
+            }
         }
         return ProcessingResult.extracted(result.run().id());
     }
@@ -98,8 +135,11 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
             return ProcessingResult.ignored("NON_TARGET_WORKBOOK_SCHEMA");
         }
         if (!result.errors().isEmpty()) {
+            var issues = result.errors().stream().map(error -> new ProcessingIssue(
+                com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED,
+                error.sheet(), error.row(), "ROW_PARSE_FAILED", error.message())).toList();
             return ProcessingResult.importedWithErrors(result.recruitmentEventId(), result.inserted(), result.updated(),
-                result.unchanged(), result.deactivated(), result.errors().size());
+                result.unchanged(), result.deactivated(), issues);
         }
         return ProcessingResult.imported(result.recruitmentEventId(), result.inserted(), result.updated(),
             result.unchanged(), result.deactivated());

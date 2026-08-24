@@ -3,11 +3,14 @@ package com.careeros.infrastructure.acquisition;
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentKind;
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentState;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
+import com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
 import com.careeros.domain.acquisition.SourceYearCoverage.CoverageStatus;
+import com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint;
+import com.careeros.domain.acquisition.SourceOnboardingCheckpoint.CheckpointStatus;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Column;
@@ -18,6 +21,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -103,7 +107,7 @@ final class AcquisitionJpaModels {
         @Id UUID id;
         @Column(name = "run_id", nullable = false) UUID runId;
         @Column(name = "source_id", nullable = false) UUID sourceId;
-        @Column(name = "document_id", nullable = false) UUID documentId;
+        @Column(name = "document_id") UUID documentId;
         @Enumerated(EnumType.STRING) @Column(name = "change_type", nullable = false) ChangeType changeType;
         @Column(name = "previous_fingerprint", length = 64) String previousFingerprint;
         @Column(name = "current_fingerprint", nullable = false, length = 64) String currentFingerprint;
@@ -141,6 +145,52 @@ final class AcquisitionJpaModels {
         @Column(name = "completion_basis") String completionBasis;
         @Column(name = "completed_at") Instant completedAt;
         @Column(name = "updated_at", nullable = false) Instant updatedAt;
+        @Column(name = "listing_page_count", nullable = false) int listingPageCount;
+        @Column(name = "filtered_count", nullable = false) int filteredCount;
+        @Column(name = "failed_count", nullable = false) int failedCount;
+        @Column(name = "earliest_published_on") LocalDate earliestPublishedOn;
+        @Column(name = "latest_published_on") LocalDate latestPublishedOn;
+        @Column(name = "stop_reason") String stopReason;
         protected SourceYearCoverageEntity() {}
+    }
+
+    @Embeddable
+    static class SourceOnboardingCheckpointId implements Serializable {
+        @Column(name = "source_id", nullable = false) UUID sourceId;
+        @Enumerated(EnumType.STRING) @Column(nullable = false) Checkpoint checkpoint;
+        protected SourceOnboardingCheckpointId() {}
+        SourceOnboardingCheckpointId(UUID sourceId, Checkpoint checkpoint) {
+            this.sourceId = sourceId;
+            this.checkpoint = checkpoint;
+        }
+        @Override public boolean equals(Object other) {
+            return this == other || other instanceof SourceOnboardingCheckpointId value
+                && java.util.Objects.equals(sourceId, value.sourceId) && checkpoint == value.checkpoint;
+        }
+        @Override public int hashCode() { return java.util.Objects.hash(sourceId, checkpoint); }
+    }
+
+    @Entity(name = "SourceOnboardingCheckpointEntity") @Table(name = "source_onboarding_checkpoint")
+    static class SourceOnboardingCheckpointEntity {
+        @EmbeddedId SourceOnboardingCheckpointId id;
+        @Enumerated(EnumType.STRING) @Column(nullable = false) CheckpointStatus status;
+        @Column String evidence;
+        @Column(name = "verified_at", nullable = false) Instant verifiedAt;
+        protected SourceOnboardingCheckpointEntity() {}
+    }
+
+    @Entity(name = "ArtifactImportFailureEntity") @Table(name = "artifact_import_failure")
+    static class ArtifactImportFailureEntity {
+        @Id UUID id;
+        @Column(name = "run_id", nullable = false) UUID runId;
+        @Column(name = "source_id", nullable = false) UUID sourceId;
+        @Column(name = "document_id", nullable = false) UUID documentId;
+        @Enumerated(EnumType.STRING) @Column(nullable = false) FailureStage stage;
+        @Column(name = "sheet_name") String sheetName;
+        @Column(name = "row_number") Integer rowNumber;
+        @Column(name = "error_code", nullable = false) String errorCode;
+        @Column(name = "safe_message", nullable = false, length = 500) String safeMessage;
+        @Column(name = "occurred_at", nullable = false) Instant occurredAt;
+        protected ArtifactImportFailureEntity() {}
     }
 }

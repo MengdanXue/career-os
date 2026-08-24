@@ -2,10 +2,13 @@ package com.careeros.application;
 
 import com.careeros.domain.acquisition.AcquiredDocument;
 import com.careeros.domain.acquisition.AcquisitionChange;
+import com.careeros.domain.acquisition.ArtifactImportFailure;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.SourceCrawlRun;
+import com.careeros.domain.acquisition.SourceOnboardingCheckpoint;
 import com.careeros.domain.acquisition.SourceYearCoverage;
+import com.careeros.domain.acquisition.TargetSource.ConnectionStatus;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
 import java.net.URI;
 import java.time.Instant;
@@ -27,6 +30,7 @@ public final class AcquisitionPorts {
         RecruitmentSource saveSource(RecruitmentSource source);
         SourceCrawlRun saveRun(SourceCrawlRun run);
         SourceCrawlRun findRun(UUID id);
+        Optional<SourceCrawlRun> findLatestRun(UUID sourceId);
         RunPage findRuns(RunQuery query, int page, int size);
         Optional<AcquiredDocument> findDocument(UUID sourceId, URI canonicalUri);
         List<AcquiredDocument> findDocuments(UUID sourceId);
@@ -36,6 +40,14 @@ public final class AcquisitionPorts {
         ChangePage findChanges(ChangeCursor cursor, UUID sourceId, Set<ChangeType> types, int size);
         List<SourceYearCoverage> findSourceYearCoverage(UUID sourceId, Integer recruitmentYear);
         SourceYearCoverage saveSourceYearCoverage(SourceYearCoverage coverage);
+        SourceOnboardingCheckpoint saveCheckpoint(SourceOnboardingCheckpoint checkpoint);
+        List<SourceOnboardingCheckpoint> findCheckpoints(UUID sourceId);
+        List<ArtifactImportFailure> saveImportFailures(List<ArtifactImportFailure> failures);
+        List<ArtifactImportFailure> findImportFailures(UUID sourceId, UUID runId);
+        long countImportFailures(UUID sourceId);
+        ConnectionStatus findTargetSourceStatus(String sourceCode);
+        void updateTargetSourceStatus(
+            String sourceCode, ConnectionStatus status, UUID recruitmentSourceId, Instant updatedAt);
         long countActiveTargetJobs(UUID sourceId, int recruitmentYear);
     }
 

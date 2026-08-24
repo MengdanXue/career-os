@@ -10,12 +10,16 @@ import com.careeros.domain.acquisition.AcquiredDocument.DocumentKind;
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentState;
 import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
+import com.careeros.domain.acquisition.ArtifactImportFailure;
+import com.careeros.domain.acquisition.SourceOnboardingCheckpoint;
 import com.careeros.domain.acquisition.SourceCrawlRun;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
 import com.careeros.domain.acquisition.SourceYearCoverage;
 import com.careeros.domain.acquisition.SourceYearCoverage.CoverageStatus;
 import java.net.URI;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -60,8 +64,9 @@ class JpaAcquisitionStoreTest {
     @Test
     void seededSourcesAreEnabledAndDue(@Autowired AcquisitionStore store) {
         assertThat(store.findSources()).extracting(source -> source.code())
-            .containsExactlyInAnyOrder("ZJ_HRSS_INSTITUTION", "HZ_HRSS_INSTITUTION");
-        assertThat(store.findDueSources(Instant.now().plusSeconds(60), 10)).hasSize(2);
+            .containsExactlyInAnyOrder("ZJ_HRSS_INSTITUTION", "HZ_HRSS_INSTITUTION",
+                "HDU_RECRUITMENT", "ZJGSU_RECRUITMENT", "HZ_FIRST_HOSPITAL");
+        assertThat(store.findDueSources(Instant.now().plusSeconds(60), 10)).hasSize(5);
     }
 
     @Test
@@ -74,14 +79,36 @@ class JpaAcquisitionStoreTest {
                 org.assertj.core.groups.Tuple.tuple(2026, CoverageStatus.NOT_DISCOVERED));
 
         SourceYearCoverage failed = new SourceYearCoverage(SOURCE_ID, 2025, CoverageStatus.ACCESS_FAILED,
-            12, 0, 0, 0, null, null, NOW);
+            12, 0, 0, 0, null, null, NOW,
+            3, 9, 2, LocalDate.of(2025, 1, 1), LocalDate.of(2025, 12, 31), "REMOTE_ACCESS_FAILED");
 
         assertThat(store.saveSourceYearCoverage(failed)).isEqualTo(failed);
         assertThat(store.findSourceYearCoverage(SOURCE_ID, 2025)).singleElement()
             .satisfies(value -> {
                 assertThat(value.status()).isEqualTo(CoverageStatus.ACCESS_FAILED);
+                assertThat(value.listingPageCount()).isEqualTo(3);
+                assertThat(value.failedCount()).isEqualTo(2);
+                assertThat(value.stopReason()).isEqualTo("REMOTE_ACCESS_FAILED");
                 assertThat(value.supportsAbsenceConclusion()).isFalse();
             });
+    }
+
+    @Test
+    void persistsOnboardingEvidenceAndRowLevelFailures(@Autowired AcquisitionStore store) {
+        SourceCrawlRun run = store.saveRun(SourceCrawlRun.running(UUID.randomUUID(), SOURCE_ID, RunTrigger.MANUAL, NOW));
+        AcquiredDocument document = store.saveDocument(document(UUID.randomUUID()));
+        var checkpoint = new SourceOnboardingCheckpoint(SOURCE_ID,
+            SourceOnboardingCheckpoint.Checkpoint.LIVE_SMOKE_VERIFIED,
+            SourceOnboardingCheckpoint.CheckpointStatus.VERIFIED,
+            "2026-08-24 官方列表页返回 200，识别 3 条公告", NOW);
+        var failure = new ArtifactImportFailure(UUID.randomUUID(), run.id(), SOURCE_ID, document.id(),
+            ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED, "岗位计划", 17,
+            "MISSING_ORGANIZATION", "招聘单位为空", NOW);
+
+        assertThat(store.saveCheckpoint(checkpoint)).isEqualTo(checkpoint);
+        assertThat(store.saveImportFailures(List.of(failure))).containsExactly(failure);
+        assertThat(store.findCheckpoints(SOURCE_ID)).containsExactly(checkpoint);
+        assertThat(store.findImportFailures(SOURCE_ID, run.id())).containsExactly(failure);
     }
 
     @Test

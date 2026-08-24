@@ -127,8 +127,15 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
         return builder.build();
     }
 
-    private static void requireAllowed(URI uri, FetchRequest request) {
+    static void requireAllowed(URI uri, FetchRequest request) {
         String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+        boolean loopback = host.equals("localhost") || host.equals("127.0.0.1") || host.equals("::1");
+        if (!uri.isAbsolute() || (!"https".equalsIgnoreCase(uri.getScheme()) && !loopback)) {
+            throw new FetchRejectedException("Only absolute HTTPS source URIs are allowed");
+        }
+        if (!loopback && uri.getPort() != -1 && uri.getPort() != 443) {
+            throw new FetchRejectedException("Official HTTPS source URI must use the default port");
+        }
         if (!request.allowedHosts().contains(host)) {
             throw new FetchRejectedException("Host is outside source allowlist: " + host);
         }
