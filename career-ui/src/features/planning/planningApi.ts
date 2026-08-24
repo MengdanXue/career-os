@@ -67,9 +67,14 @@ export type PlanningEvent = {
   applicationStartsOn: string | null; applicationEndsOn: string | null
   applicationStartsAt?: string | null; applicationEndsAt?: string | null
   sourceUrl: string; registrationUrl: string | null; writtenExamOn: string | null
+  qualificationReviewEndsOn: string | null; paymentEndsOn: string | null
+  admissionTicketStartsOn: string | null; admissionTicketEndsOn: string | null
   writtenExamSubjects: string[]; graduateRule: string | null; overseasDegreeRule: string | null
   experienceEvidenceRule: string | null; employmentStatement: string | null; interviewRule: string | null
+  writtenExamState: EvidenceState; professionalTestState: EvidenceState; interviewState: EvidenceState
+  interviewOn: string | null; interviewMethod: string | null; scoreFormula: string | null
 }
+export type EvidenceState = 'CONFIRMED' | 'NOT_REQUIRED' | 'NOT_PUBLISHED' | 'NOT_COLLECTED' | 'PARSE_FAILED' | 'REVIEW_REQUIRED' | 'UNKNOWN'
 
 export type PlanningOrganization = {
   id: string; name: string; organizationType: string; province: string | null; city: string | null
@@ -79,6 +84,8 @@ export type PlanningOrganization = {
 export type PlanningJobDetail = {
   job: PlanningJob; event: PlanningEvent; organization: PlanningOrganization
   scenarioOutcomes: JobScenarioOutcome[]
+  historicalActual: JobScenarioOutcome | null
+  targetYearAnalog: JobScenarioOutcome | null
 }
 
 export async function getPlanningJobDetail(jobId: string, candidateId: string, targetYear: number): Promise<PlanningJobDetail> {
@@ -92,7 +99,12 @@ export async function getPlanningJobDetail(jobId: string, candidateId: string, t
   ])
   const representative = plan.recommendedRoutes.flatMap(route => route.representativeJobs)
     .find(value => value.jobId === jobId)
-  return { job, event, organization, scenarioOutcomes: representative?.scenarioOutcomes ?? [] }
+  return {
+    job, event, organization,
+    scenarioOutcomes: representative?.scenarioOutcomes ?? [],
+    historicalActual: representative?.historicalActual ?? null,
+    targetYearAnalog: representative?.targetYearAnalog ?? null,
+  }
 }
 
 export const planningKeys = { plan: queryKeys.careerPlan }

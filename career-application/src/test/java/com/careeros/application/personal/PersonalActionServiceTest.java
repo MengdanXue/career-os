@@ -1,11 +1,15 @@
 package com.careeros.application.personal;
 
 import static com.careeros.application.personal.CandidateEvidenceTask.EvidenceStrength.NONE;
+import static com.careeros.application.personal.CandidateEvidenceTask.EvidenceStrength.SELF_REPORTED;
+import static com.careeros.application.personal.CandidateEvidenceTask.EvidenceTaskKind.CREDENTIAL;
 import static com.careeros.application.personal.CandidateEvidenceTask.EvidenceTaskKind.EMPLOYMENT;
+import static com.careeros.application.personal.CandidateEvidenceTask.EvidenceTaskKind.GRADUATION;
 import static com.careeros.application.personal.PersonalAction.ActionKind.CANDIDATE_EVIDENCE;
 import static com.careeros.application.personal.PersonalAction.ActionKind.CURRENT_JOB_DEADLINE;
 import static com.careeros.application.personal.PersonalAction.ActionKind.TARGET_JOB_CHANGE;
 import static com.careeros.domain.CandidateFacts.CandidateFactKey.EMPLOYMENT_HISTORY;
+import static com.careeros.domain.CandidateFacts.CandidateFactKey.EDUCATION_RECORDS;
 import static com.careeros.domain.DomainEnums.EligibilityStatus.ELIGIBLE;
 import static com.careeros.domain.DomainEnums.EligibilityStatus.INELIGIBLE;
 import static com.careeros.domain.DomainEnums.OpportunityTier.EXCLUDED;
@@ -81,7 +85,30 @@ class PersonalActionServiceTest {
 
         var result = service.actions(CANDIDATE_ID, AS_OF);
 
-        assertThat(result.items()).extracting(PersonalAction::kind).containsExactly(CANDIDATE_EVIDENCE, TARGET_JOB_CHANGE);
+        assertThat(result.items()).extracting(PersonalAction::kind)
+            .containsExactly(PersonalAction.ActionKind.PREPARATION_TIMELINE, CANDIDATE_EVIDENCE, TARGET_JOB_CHANGE);
+        assertThat(result.items()).allSatisfy(action -> assertThat(action.dueOn()).isNull());
+    }
+
+    @Test
+    void emitsProfileAndExamPreparationActionsWhenTrustedPoolIsEmpty() {
+        var service = new PersonalActionService(
+            (candidateId, asOf) -> List.of(),
+            (candidateId, asOf) -> new CandidateEvidenceTasks(candidateId, asOf, true, null, List.of(
+                new CandidateEvidenceTask("CONFIRM_MASTER_GRADUATION_MONTH", GRADUATION, EDUCATION_RECORDS,
+                    "确认硕士预计毕业月份", "应届资格需要明确学位取得月份。", 0,
+                    SELF_REPORTED, "/profile#master-graduation"),
+                new CandidateEvidenceTask("VERIFY_MASTER_CREDENTIAL", CREDENTIAL, EDUCATION_RECORDS,
+                    "跟进海外学历认证证据", "需要记录留服认证状态和完成时间。", 0,
+                    SELF_REPORTED, "/profile#credential-verification"))),
+            PersonalActionServiceTest::noChanges);
+
+        var result = service.actions(CANDIDATE_ID, LocalDate.of(2026, 8, 24));
+
+        assertThat(result.items()).extracting(PersonalAction::id).containsExactly(
+            "evidence:CONFIRM_MASTER_GRADUATION_MONTH",
+            "evidence:VERIFY_MASTER_CREDENTIAL",
+            "preparation:PREPARE_WRITTEN_EXAM_BASELINE");
         assertThat(result.items()).allSatisfy(action -> assertThat(action.dueOn()).isNull());
     }
 
@@ -97,7 +124,8 @@ class PersonalActionServiceTest {
 
         assertThat(result.available()).isFalse();
         assertThat(result.message()).isEqualTo("当前岗位截止暂时无法读取；目标岗位影响暂时无法计算；目标岗位变化暂时无法读取");
-        assertThat(result.items()).isEmpty();
+        assertThat(result.items()).extracting(PersonalAction::id)
+            .containsExactly("evidence:VERIFY_EMPLOYMENT_HISTORY");
     }
 
     @Test

@@ -86,6 +86,23 @@ describe('TodayPage', () => {
     expect(screen.getByRole('link', { name: '完善我的资料' })).toHaveAttribute('href', '/profile')
   })
 
+  it('keeps profile and exam preparation useful when every opportunity tier is empty', async () => {
+    const baselineActions: PersonalActions = { ...actions, items: [
+      { id: 'evidence:CONFIRM_MASTER_GRADUATION_MONTH', kind: 'CANDIDATE_EVIDENCE', priority: 2, title: '确认硕士预计毕业月份', reason: '应届资格需要明确学位取得月份。', affectedObjectCount: 0, dueOn: null, evidenceStrength: 'SELF_REPORTED', deepLink: '/profile#master-graduation' },
+      { id: 'evidence:VERIFY_MASTER_CREDENTIAL', kind: 'CANDIDATE_EVIDENCE', priority: 2, title: '跟进海外学历认证证据', reason: '需要记录留服认证状态和完成时间。', affectedObjectCount: 0, dueOn: null, evidenceStrength: 'SELF_REPORTED', deepLink: '/profile#credential-verification' },
+      { id: 'preparation:PREPARE_WRITTEN_EXAM_BASELINE', kind: 'PREPARATION_TIMELINE', priority: 2, title: '建立笔试基础复习计划', reason: '先准备职测、综应和计算机专业基础。', affectedObjectCount: 0, dueOn: null, evidenceStrength: 'NONE', deepLink: '/plan#exam' },
+    ] }
+    const emptyWorkbench: WorkbenchSummary = { ...workbench, tierCounts: { t1: 0, t2: 0, t3: 0, excluded: 0 } }
+    stubApi(baselineActions, emptyWorkbench)
+    render(<AppProviders><TodayPage /></AppProviders>)
+
+    expect(await screen.findByRole('heading', { name: '今天最重要的 3 件事' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '确认硕士预计毕业月份' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '跟进海外学历认证证据' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: '建立笔试基础复习计划' })).toBeVisible()
+    expect(screen.getByRole('link', { name: '查看 T1' })).toHaveTextContent('0')
+  })
+
   it('keeps useful actions visible while explaining partial calculation failure once', async () => {
     stubApi({ ...actions, available: false, message: '目标岗位影响暂时无法计算', items: [actions.items[1]] })
     render(<AppProviders><TodayPage /></AppProviders>)

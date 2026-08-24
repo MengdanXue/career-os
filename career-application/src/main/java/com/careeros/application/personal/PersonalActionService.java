@@ -1,8 +1,10 @@
 package com.careeros.application.personal;
 
 import static com.careeros.application.personal.CandidateEvidenceTask.EvidenceStrength.DOCUMENTED;
+import static com.careeros.application.personal.CandidateEvidenceTask.EvidenceStrength.NONE;
 import static com.careeros.application.personal.PersonalAction.ActionKind.CANDIDATE_EVIDENCE;
 import static com.careeros.application.personal.PersonalAction.ActionKind.CURRENT_JOB_DEADLINE;
+import static com.careeros.application.personal.PersonalAction.ActionKind.PREPARATION_TIMELINE;
 import static com.careeros.application.personal.PersonalAction.ActionKind.TARGET_JOB_CHANGE;
 import static com.careeros.domain.DomainEnums.EligibilityStatus.INELIGIBLE;
 import static com.careeros.domain.DomainEnums.OpportunityTier.EXCLUDED;
@@ -38,9 +40,15 @@ public final class PersonalActionService {
         Objects.requireNonNull(asOf, "asOf");
         var actions = new ArrayList<PersonalAction>();
         var messages = new ArrayList<String>();
+        boolean currentJobsAvailable = false;
+        boolean hasTrustedCurrentJob = false;
 
         try {
-            currentJobs.load(candidateId, asOf).stream()
+            var jobs = currentJobs.load(candidateId, asOf);
+            currentJobsAvailable = true;
+            hasTrustedCurrentJob = jobs.stream()
+                .anyMatch(job -> job.eligibilityStatus() != INELIGIBLE && job.tier() != EXCLUDED);
+            jobs.stream()
                 .filter(job -> job.deadline() != null)
                 .filter(job -> !job.deadline().isBefore(asOf))
                 .filter(job -> !job.deadline().isAfter(asOf.plusDays(14)))
@@ -62,9 +70,8 @@ public final class PersonalActionService {
             var snapshot = evidenceTasks.load(candidateId, asOf);
             if (!snapshot.available()) messages.add(snapshot.message());
             snapshot.items().stream()
-                .filter(task -> task.affectedJobCount() > 0)
                 .map(task -> new PersonalAction(
-                    "evidence:" + task.code(), CANDIDATE_EVIDENCE, 2,
+                    "evidence:" + task.code(), CANDIDATE_EVIDENCE, evidencePriority(task),
                     task.title(), task.reason(), task.affectedJobCount(), null,
                     task.evidenceStrength(), task.deepLink()))
                 .forEach(actions::add);
@@ -87,6 +94,14 @@ public final class PersonalActionService {
             messages.add("目标岗位变化暂时无法读取");
         }
 
+        if (currentJobsAvailable && !hasTrustedCurrentJob) {
+            actions.add(new PersonalAction(
+                "preparation:PREPARE_WRITTEN_EXAM_BASELINE", PREPARATION_TIMELINE, 2,
+                "建立笔试基础复习计划",
+                "当前没有可直接报名的可信岗位，先准备职测、综应和计算机专业基础；不虚构报名或考试日期，新公告发布后再校准科目。",
+                0, null, NONE, "/plan#exam"));
+        }
+
         Comparator<PersonalAction> ordering = Comparator
             .comparingInt(PersonalAction::priority)
             .thenComparing(PersonalAction::dueOn, Comparator.nullsLast(Comparator.naturalOrder()))
@@ -97,6 +112,11 @@ public final class PersonalActionService {
         String message = messages.isEmpty() ? null : String.join("；", messages.stream()
             .filter(Objects::nonNull).filter(value -> !value.isBlank()).distinct().toList());
         return new PersonalActions(candidateId, asOf, messages.isEmpty(), message, selected);
+    }
+
+    private static int evidencePriority(CandidateEvidenceTask task) {
+        return task.code().equals("CONFIRM_MASTER_GRADUATION_MONTH")
+            || task.code().equals("VERIFY_MASTER_CREDENTIAL") ? 2 : 3;
     }
 
     public record PersonalActions(

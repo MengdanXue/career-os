@@ -15,7 +15,7 @@ describe('PlanningJobDetailPage', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/career-plan?targetYear=')) return json({
-        recommendedRoutes: [{ representativeJobs: [{ jobId: 'job-1', scenarioOutcomes: [
+        recommendedRoutes: [{ representativeJobs: [{ jobId: 'job-1', historicalActual: { scenarioCode: 'HISTORICAL_ACTUAL', outcome: 'INELIGIBLE', reasons: ['2026 公告仅限当届毕业生'] }, targetYearAnalog: { scenarioCode: 'TARGET_YEAR_ANALOG', outcome: 'CONDITIONALLY_ELIGIBLE', reasons: ['投影到 2027 届后进入当届范围，仍需按时取得学位和留服认证'] }, scenarioOutcomes: [
           { scenarioCode: 'PRE_GRADUATION', outcome: 'UNCERTAIN', reasons: ['工作经历事实尚未确认'] },
           { scenarioCode: 'DEGREE_PENDING_VERIFICATION', outcome: 'CONDITIONALLY_ELIGIBLE', reasons: ['硕士已取得但留服认证待完成'] },
           { scenarioCode: 'MASTER_VERIFIED', outcome: 'ELIGIBLE', reasons: ['已采集硬条件未发现阻断项'] },
@@ -38,7 +38,11 @@ describe('PlanningJobDetailPage', () => {
         id: 'event-1', title: '杭州市事业单位2026年统一招聘', recruitmentYear: 2026,
         publishedOn: '2026-03-10', applicationStartsOn: '2026-03-20', applicationEndsOn: '2026-03-27',
         sourceUrl: 'https://example.gov.cn/notice', registrationUrl: 'https://example.gov.cn/apply',
+        qualificationReviewEndsOn: '2026-03-29T17:00:00+08:00', paymentEndsOn: '2026-03-30T17:00:00+08:00',
+        admissionTicketStartsOn: '2026-04-20', admissionTicketEndsOn: '2026-04-25',
         writtenExamOn: '2026-04-25', writtenExamSubjects: ['职业能力倾向测验', '综合应用能力'],
+        writtenExamState: 'CONFIRMED', professionalTestState: 'CONFIRMED', interviewState: 'NOT_PUBLISHED',
+        interviewOn: null, interviewMethod: '结构化面试', scoreFormula: '笔试50% + 面试50%',
         graduateRule: null, overseasDegreeRule: '境外学历须完成认证', experienceEvidenceRule: '工作经历须提供证明',
         employmentStatement: '签订事业单位聘用合同', interviewRule: '按笔试成绩1:3入围',
       })
@@ -63,6 +67,14 @@ describe('PlanningJobDetailPage', () => {
     expect(screen.getByRole('link', { name: '查看岗位附件' })).toHaveAttribute('href', 'https://example.gov.cn/jobs.xlsx')
     expect(screen.getByText(/历史岗位事实，不代表当前仍可报名/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '按你的三个阶段分别判断' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '2027 同类岗位推演' })).toBeVisible()
+    expect(screen.getByText('历史岗位当年：不可报')).toBeVisible()
+    expect(screen.getByText('2027 同类岗位：条件可报')).toBeVisible()
+    expect(screen.getByText('笔试：2026-04-25')).toBeVisible()
+    expect(screen.getByText('面试时间：官网说明另行通知')).toBeVisible()
+    expect(screen.getByText(/资格初审截止：2026-03-29/)).toBeVisible()
+    expect(screen.getByText(/缴费截止：2026-03-30/)).toBeVisible()
+    expect(screen.getByText(/准考证：2026-04-20 至 2026-04-25/)).toBeVisible()
     expect(screen.getByText('工作经历事实尚未确认')).toBeInTheDocument()
     expect(screen.getByText('硕士已取得但留服认证待完成')).toBeInTheDocument()
     expect(screen.getByText('已采集硬条件未发现阻断项')).toBeInTheDocument()

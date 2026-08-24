@@ -115,7 +115,7 @@ export function CareerPlanPage() {
           <article data-channel="social"><span>02 · OPEN MARKET</span><h3>社会人员通道</h3><strong>本科已完成，社会招聘技术岗持续可评估</strong><p>不依赖应届身份；年龄、专业、职称和真实工作经历按公告逐项判断。</p><ul><li>工作经历只计算有起止日期和证明的记录</li><li>中级职称作为岗位条件或加分证据，不替代公告学历要求</li><li>与应届通道共用技术准备和官方来源监控</li></ul></article>
         </div></section>
 
-        <section className="plan-section timing-section"><header><p className="section-number">关键时间与考试</p><h2>什么时候关注、考什么、哪些信息还没拿到</h2></header>
+        <section className="plan-section timing-section" id="exam"><header><p className="section-number">关键时间与考试</p><h2>什么时候关注、考什么、哪些信息还没拿到</h2></header>
           <div className="process-window-grid">{data.processWindows.map(window => <article key={`${window.stage}-${window.month}`}><span>{processLabels[window.stage] ?? window.stage}</span><strong>{window.month} 月</strong><small>{window.eventCount} 个历史事件</small></article>)}</div>
           {data.examSummary.applicationToWrittenExamSamples > 0 && <p className="exam-interval">报名至笔试：{data.examSummary.averageApplicationToWrittenExamDays ?? '—'} 天平均值，基于 {data.examSummary.applicationToWrittenExamSamples} 个有完整日期的事件。</p>}
           <ExamEvidence summary={data.examSummary} />

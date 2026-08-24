@@ -13,14 +13,25 @@ const educationLabels: Record<string, string> = {
   DOCTORATE: '博士研究生', MASTER: '硕士研究生', BACHELOR: '本科', ASSOCIATE: '大专',
   HIGH_SCHOOL: '高中/中专', UNKNOWN: '官网未明确',
 }
-const scenarioLabels: Record<string, string> = { PRE_GRADUATION: '本科阶段', DEGREE_PENDING_VERIFICATION: '硕士待认证', MASTER_VERIFIED: '硕士已认证' }
+const scenarioLabels: Record<string, string> = { MASTER_IN_PROGRESS: '境外硕士在读', PRE_GRADUATION: '本科阶段（兼容值）', DEGREE_PENDING_VERIFICATION: '硕士待认证', MASTER_VERIFIED: '硕士已认证' }
 const outcomeLabels: Record<string, string> = { ELIGIBLE: '可报', CONDITIONALLY_ELIGIBLE: '条件可报', UNCERTAIN: '待确认', INELIGIBLE: '不可报' }
+const evidenceStateLabels: Record<string, string> = {
+  CONFIRMED: '官网已明确', NOT_REQUIRED: '官网明确不要求', NOT_PUBLISHED: '官网说明另行通知',
+  NOT_COLLECTED: '系统尚未采集该通知', PARSE_FAILED: '官网原件自动解析失败',
+  REVIEW_REQUIRED: '官网规则有歧义，等待复核', UNKNOWN: '当前证据无法判断',
+}
 
 function values(items: Array<string | number> | undefined, fallback = '官网未明确') {
   return items && items.length > 0 ? items.join('、') : fallback
 }
 
 function dateOnly(value: string | null | undefined) { return value ? value.slice(0, 10) : null }
+
+function processValue(label: string, value: string | null | undefined, state: string) {
+  return `${label}：${dateOnly(value) ?? evidenceStateLabels[state] ?? evidenceStateLabels.UNKNOWN}`
+}
+
+function inferredState(value: string | null | undefined) { return value ? 'CONFIRMED' : 'UNKNOWN' }
 
 function dateRange(starts: string | null, ends: string | null) {
   if (starts && ends) return `${starts} 至 ${ends}`
@@ -63,6 +74,11 @@ export function PlanningJobDetailPage() {
 
         <aside className="historical-disclaimer" role="note"><strong>历史岗位事实，不代表当前仍可报名</strong><span>用于判断未来可能机会与准备节奏；是否可报必须以新公告和当时画像重新计算。</span></aside>
 
+        {(data.historicalActual || data.targetYearAnalog) && <section className="official-detail-block projected-outcome-block"><header><p className="section-number">目标年份投影</p><h2>{targetYear} 同类岗位推演</h2></header><div>
+          {data.historicalActual && <article data-outcome={data.historicalActual.outcome.toLowerCase()}><strong>历史岗位当年：{outcomeLabels[data.historicalActual.outcome]}</strong><ul>{data.historicalActual.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul></article>}
+          {data.targetYearAnalog && <article data-outcome={data.targetYearAnalog.outcome.toLowerCase()}><strong>{targetYear} 同类岗位：{outcomeLabels[data.targetYearAnalog.outcome]}</strong><ul>{data.targetYearAnalog.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul></article>}
+        </div><p className="conditional-note">同类岗位推演只平移相对届别规则；新公告的年龄、专业、认证和社保条件仍需重新计算。</p></section>}
+
         <section className="official-detail-block scenario-outcome-block"><header><p className="section-number">资格判断</p><h2>按你的三个阶段分别判断</h2></header>
           {data.scenarioOutcomes.length > 0 ? <div className="job-scenario-outcomes">{data.scenarioOutcomes.map(value => <article key={value.scenarioCode} data-outcome={value.outcome.toLowerCase()}><span>{scenarioLabels[value.scenarioCode] ?? value.scenarioCode}</span><h3>{outcomeLabels[value.outcome] ?? value.outcome}</h3><ul>{value.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul></article>)}</div> : <p className="conditional-note">该岗位不在当前规划的代表样本中，暂不生成个人资格结论；下方仍展示全部官网事实。</p>}
         </section>
@@ -96,12 +112,17 @@ export function PlanningJobDetailPage() {
           </div>
         </section>
 
-        <section className="official-detail-block"><header><p className="section-number">03 · 招聘流程</p><h2>当年什么时候、怎么考</h2></header>
+        <section className="official-detail-block"><header><p className="section-number">03 · 招聘流程</p><h2>从公告到聘用，站内查看完整流程</h2></header>
           <ol className="planning-process">
-            <li><span>公告发布</span><strong>{data.event.publishedOn ?? '官网未明确'}</strong></li>
-            <li><span>报名时间</span><strong>{dateRange(applicationStarts, applicationEnds)}</strong>{data.event.registrationUrl && <a href={data.event.registrationUrl} target="_blank" rel="noreferrer">报名入口（历史）</a>}</li>
-            <li><span>笔试时间</span><strong>{data.event.writtenExamOn ?? '官网未明确'}</strong><small>{values(data.event.writtenExamSubjects)}</small></li>
-            <li><span>面试规则</span><strong>{data.job.interviewRatio ? `入围比例 ${data.job.interviewRatio}` : '官网未明确'}</strong>{data.job.professionalTestRequired && <small>含专业知识测试</small>}{data.event.interviewRule && <small>{data.event.interviewRule}</small>}</li>
+            <li data-state={inferredState(data.event.publishedOn)}><span>公告</span><strong>公告发布：{data.event.publishedOn ?? '当前证据无法判断'}</strong><small>证据状态：{evidenceStateLabels[inferredState(data.event.publishedOn)]}</small></li>
+            <li data-state={inferredState(applicationStarts)}><span>报名</span><strong>报名：{dateRange(applicationStarts, applicationEnds)}</strong><small>证据状态：{evidenceStateLabels[inferredState(applicationStarts)]}</small>{data.event.registrationUrl && <a href={data.event.registrationUrl} target="_blank" rel="noreferrer">报名入口（历史）</a>}</li>
+            <li data-state={inferredState(data.event.qualificationReviewEndsOn)}><span>资格初审</span><strong>{processValue('资格初审截止', data.event.qualificationReviewEndsOn, inferredState(data.event.qualificationReviewEndsOn))}</strong><small>证据状态：{evidenceStateLabels[inferredState(data.event.qualificationReviewEndsOn)]}</small></li>
+            <li data-state={inferredState(data.event.paymentEndsOn)}><span>缴费</span><strong>{processValue('缴费截止', data.event.paymentEndsOn, inferredState(data.event.paymentEndsOn))}</strong><small>证据状态：{evidenceStateLabels[inferredState(data.event.paymentEndsOn)]}</small></li>
+            <li data-state={inferredState(data.event.admissionTicketStartsOn)}><span>准考证</span><strong>准考证：{dateRange(data.event.admissionTicketStartsOn, data.event.admissionTicketEndsOn)}</strong><small>证据状态：{evidenceStateLabels[inferredState(data.event.admissionTicketStartsOn)]}</small></li>
+            <li data-state={data.event.writtenExamState}><span>笔试</span><strong>{processValue('笔试', data.event.writtenExamOn, data.event.writtenExamState)}</strong><small>证据状态：{evidenceStateLabels[data.event.writtenExamState]}</small><small>{values(data.event.writtenExamSubjects)}</small></li>
+            <li data-state={data.event.professionalTestState}><span>专业测试</span><strong>专业测试：{evidenceStateLabels[data.event.professionalTestState]}</strong><small>证据状态：{evidenceStateLabels[data.event.professionalTestState]}</small>{data.job.professionalTestRequired && <small>岗位表标注需要专业测试</small>}</li>
+            <li data-state={data.event.interviewState}><span>面试</span><strong>{processValue('面试时间', data.event.interviewOn, data.event.interviewState)}</strong><small>证据状态：{evidenceStateLabels[data.event.interviewState]}</small>{data.event.interviewMethod && <small>方式：{data.event.interviewMethod}</small>}{data.job.interviewRatio && <small>入围比例 {data.job.interviewRatio}</small>}{data.event.interviewRule && <small>{data.event.interviewRule}</small>}</li>
+            <li data-state={data.event.employmentStatement ? 'CONFIRMED' : 'UNKNOWN'}><span>体检 / 考察 / 公示 / 聘用</span><strong>{data.event.employmentStatement ?? '当前证据无法判断'}</strong><small>证据状态：{evidenceStateLabels[data.event.employmentStatement ? 'CONFIRMED' : 'UNKNOWN']}</small>{data.event.scoreFormula && <small>成绩：{data.event.scoreFormula}</small>}</li>
           </ol>
         </section>
 
