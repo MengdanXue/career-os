@@ -5,7 +5,6 @@ import static com.careeros.application.planning.CareerPlan.QualificationOutcome.
 import static com.careeros.application.planning.CareerPlan.QualificationOutcome.INELIGIBLE;
 import static com.careeros.application.planning.CareerPlan.QualificationOutcome.UNCERTAIN;
 import static com.careeros.domain.CandidateFacts.CandidateFactKey.EDUCATION_RECORDS;
-import static com.careeros.domain.CandidateFacts.CandidateFactKey.EMPLOYMENT_HISTORY;
 import static com.careeros.domain.EducationRecord.CompletionStatus.EXPECTED;
 import static com.careeros.domain.EducationRecord.CredentialVerificationStatus.PLANNED;
 import static com.careeros.domain.EducationRecord.CredentialVerificationStatus.UNKNOWN;
@@ -97,8 +96,8 @@ public final class GraduateEligibilityProjector {
             }
             reasons.add("公告未明示限制既往工作经历");
         }
-        if (rule.restrictsSocialInsurance() && !facts.isConfirmed(EMPLOYMENT_HISTORY)) {
-            reasons.add("社保限制已明示，但就业记录尚未核实");
+        if (rule.restrictsSocialInsurance()) {
+            reasons.add("社保限制已明示，但尚无独立核验的社保期间事实");
             return new GraduateTrackAssessment(GraduateTrack.CONDITIONAL, CONDITIONALLY_ELIGIBLE, reasons);
         }
         if (!facts.isConfirmed(EDUCATION_RECORDS)) {

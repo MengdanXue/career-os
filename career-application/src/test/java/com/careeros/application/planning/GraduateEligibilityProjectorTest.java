@@ -59,6 +59,23 @@ class GraduateEligibilityProjectorTest {
         assertThat(assessment.reasons()).contains("公告未明示限制既往工作经历");
     }
 
+    @Test
+    void confirmedEmploymentHistoryDoesNotPretendAnIndependentSocialInsuranceRestrictionIsSatisfied() {
+        var candidate = candidateExpectedIn2027(List.of());
+        var base = rule2026();
+        var socialInsuranceRestricted = new GraduateEligibilityRule(
+            base.recruitmentYear(), base.explicitGraduationYears(), base.cohorts(),
+            base.includesOverseasGraduates(), base.degreeTiming(), base.degreeDeadline(),
+            base.credentialTiming(), base.credentialDeadline(), false, true,
+            "应届毕业生不得缴纳社会保险", base.evidenceState());
+
+        var assessment = projector.assess(candidate, CandidateFacts.confirmed(candidate),
+            socialInsuranceRestricted, TARGET_YEAR_ANALOG, 2027);
+
+        assertThat(assessment.outcome()).isEqualTo(CONDITIONALLY_ELIGIBLE);
+        assertThat(assessment.reasons()).contains("社保限制已明示，但尚无独立核验的社保期间事实");
+    }
+
     private static GraduateEligibilityRule rule2026() {
         return GraduateEligibilityRule.fromExplicitYears(
             2026, Set.of(2024, 2025, 2026), true,

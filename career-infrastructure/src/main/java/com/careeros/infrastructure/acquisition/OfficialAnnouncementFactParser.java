@@ -99,11 +99,13 @@ public final class OfficialAnnouncementFactParser {
 
     private static GraduateEligibilityRule graduateRule(LocalDate publishedOn, String rawRule) {
         if (publishedOn == null || rawRule == null || rawRule.isBlank()) return null;
+        String degreeClause = requirementClause(rawRule, false);
+        String credentialClause = requirementClause(rawRule, true);
         if (rawRule.contains("毕业年份不限") || rawRule.contains("不限制毕业年份") || rawRule.contains("不限定届别")) {
             return new GraduateEligibilityRule(publishedOn.getYear(), java.util.Set.of(),
                 java.util.Set.of(GraduateEligibilityRule.CohortScope.UNRESTRICTED), includesOverseas(rawRule),
-                timingFor(rawRule, false), firstChineseDate(rawRule), timingFor(rawRule, true),
-                firstChineseDate(rawRule), NO_EMPLOYER.matcher(rawRule).find(),
+                timingFor(degreeClause, false), firstChineseDate(degreeClause), timingFor(credentialClause, true),
+                firstChineseDate(credentialClause), NO_EMPLOYER.matcher(rawRule).find(),
                 SOCIAL_INSURANCE_RESTRICTION.matcher(rawRule).find(), rawRule, EvidenceState.CONFIRMED);
         }
         var years = new LinkedHashSet<Integer>();
@@ -111,14 +113,24 @@ public final class OfficialAnnouncementFactParser {
         while (matcher.find()) years.add(Integer.parseInt(matcher.group(1)));
         var base = GraduateEligibilityRule.fromExplicitYears(
             publishedOn.getYear(), years, includesOverseas(rawRule), rawRule);
-        LocalDate degreeDeadline = firstChineseDate(sentence(rawRule, "取得相应证书的时限"));
-        if (degreeDeadline == null) degreeDeadline = firstChineseDate(rawRule);
         return new GraduateEligibilityRule(
             base.recruitmentYear(), base.explicitGraduationYears(), base.cohorts(),
-            base.includesOverseasGraduates(), timingFor(rawRule, false), degreeDeadline,
-            timingFor(rawRule, true), rawRule.contains("认证") ? degreeDeadline : null,
+            base.includesOverseasGraduates(), timingFor(degreeClause, false), firstChineseDate(degreeClause),
+            timingFor(credentialClause, true), firstChineseDate(credentialClause),
             NO_EMPLOYER.matcher(rawRule).find(), SOCIAL_INSURANCE_RESTRICTION.matcher(rawRule).find(),
             base.rawText(), base.evidenceState());
+    }
+
+    private static String requirementClause(String text, boolean credential) {
+        if (text == null || text.isBlank()) return null;
+        for (String value : text.split("[。；;]+|\\R+")) {
+            String clause = value.strip();
+            boolean credentialClause = clause.contains("认证") || clause.contains("留学服务中心");
+            boolean degreeClause = clause.contains("取得相应证书") || clause.contains("学历学位证书")
+                || clause.matches(".*(?:取得|获得).{0,12}(?:学历|学位|毕业证|证书).*");
+            if (credential ? credentialClause : degreeClause) return clause;
+        }
+        return null;
     }
 
     private static boolean includesOverseas(String text) {
@@ -127,6 +139,7 @@ public final class OfficialAnnouncementFactParser {
     }
 
     private static RequirementTiming timingFor(String text, boolean credential) {
+        if (text == null || text.isBlank()) return RequirementTiming.UNSPECIFIED;
         if (credential && !(text.contains("认证") || text.contains("留学服务中心"))) {
             return RequirementTiming.UNSPECIFIED;
         }

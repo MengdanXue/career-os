@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class OfficialAnnouncementFactService {
-    private static final String VERSION = "official-announcement-v3";
+    private static final String VERSION = "official-announcement-v4";
     private final RecruitmentEventJpaRepository events;
     private final JdbcTemplate jdbc;
     private final Clock clock;

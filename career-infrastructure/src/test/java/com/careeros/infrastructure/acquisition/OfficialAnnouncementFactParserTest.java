@@ -117,4 +117,21 @@ class OfficialAnnouncementFactParserTest {
         assertThat(facts.graduateEligibilityRule().requiresNoEmployer()).isTrue();
         assertThat(facts.graduateEligibilityRule().restrictsSocialInsurance()).isTrue();
     }
+
+    @Test
+    void keepsCredentialTimingAndDeadlineInsideTheCredentialClause() {
+        String html = """
+            <html><head><meta name="PubDate" content="2027-02-18 09:00"></head><body>
+              <p>2027届毕业生于2027年10月报名。</p>
+              <p>国（境）外毕业生的教育部留学服务中心认证须于2028年1月31日前、聘用前取得。</p>
+            </body></html>
+            """;
+
+        var facts = parser.parse(html, "https://example.gov.cn/credential-timing.html");
+
+        assertThat(facts.graduateEligibilityRule().credentialTiming())
+            .isEqualTo(GraduateEligibilityRule.RequirementTiming.APPOINTMENT);
+        assertThat(facts.graduateEligibilityRule().credentialDeadline())
+            .isEqualTo(LocalDate.of(2028, 1, 31));
+    }
 }

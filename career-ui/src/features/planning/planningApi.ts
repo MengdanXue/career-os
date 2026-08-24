@@ -43,7 +43,7 @@ export type CareerPlan = {
   actionTimeline: { startsOn: string; endsOn: string; title: string; detail: string; status: string }[]
   dataCoverage: { complete: boolean; sourceYearCount: number; completeSourceYearCount: number; incompleteSourceYears: string[]; warnings: string[]; failedSections: string[]; loadedAt: string }
   configuredCoverage: ConfiguredCoverage; targetMarketCoverage: TargetMarketCoverage; analysisCoverage: AnalysisCoverage
-  jobProjections: JobProjection[]
+  jobProjections?: JobProjection[]
   generatedAt: string; algorithmVersion: string
 }
 
@@ -106,7 +106,7 @@ export async function getPlanningJobDetail(jobId: string, candidateId: string, t
     requestJson<PlanningEvent>(`/api/v1/recruitment-events/${job.recruitmentEventId}`),
     requestJson<PlanningOrganization>(`/api/v1/organizations/${job.organizationId}`),
   ])
-  const projection = plan.jobProjections
+  const projection = (plan.jobProjections ?? [])
     .find(value => value.jobId === jobId)
   return {
     job, event, organization,

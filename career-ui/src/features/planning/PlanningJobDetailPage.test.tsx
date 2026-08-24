@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppProviders } from '../../app/AppProviders'
 import { PlanningJobDetailPage } from './PlanningJobDetailPage'
+import { getPlanningJobDetail } from './planningApi'
 import { Route, Routes } from 'react-router-dom'
 
 function json(value: unknown) {
@@ -92,5 +93,24 @@ describe('PlanningJobDetailPage', () => {
     expect(screen.getByText('工作经历事实尚未确认')).toBeInTheDocument()
     expect(screen.getByText('硕士已取得但留服认证待完成')).toBeInTheDocument()
     expect(screen.getByText('已采集硬条件未发现阻断项')).toBeInTheDocument()
+  })
+
+  it('keeps the job detail contract compatible with a cached plan that predates job projections', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/career-plan?targetYear=')) return json({ recommendedRoutes: [] })
+      if (url.endsWith('/api/v1/jobs/job-old')) return json({
+        id: 'job-old', recruitmentEventId: 'event-old', organizationId: 'org-old',
+      })
+      if (url.endsWith('/api/v1/recruitment-events/event-old')) return json({ id: 'event-old' })
+      if (url.endsWith('/api/v1/organizations/org-old')) return json({ id: 'org-old' })
+      throw new Error(`Unexpected request: ${url}`)
+    }))
+
+    const detail = await getPlanningJobDetail('job-old', 'candidate-1', 2027)
+
+    expect(detail.scenarioOutcomes).toEqual([])
+    expect(detail.historicalActual).toBeNull()
+    expect(detail.targetYearAnalog).toBeNull()
   })
 })
