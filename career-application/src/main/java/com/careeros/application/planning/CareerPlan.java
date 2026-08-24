@@ -25,13 +25,18 @@ public record CareerPlan(
     List<Risk> qualificationRisks,
     List<ActionItem> actionTimeline,
     DataCoverage dataCoverage,
+    ConfiguredCoverage configuredCoverage,
+    TargetMarketCoverage targetMarketCoverage,
+    AnalysisCoverage analysisCoverage,
     Instant generatedAt,
     String algorithmVersion
 ) {
     public CareerPlan {
         Objects.requireNonNull(candidateId); Objects.requireNonNull(asOf); Objects.requireNonNull(candidateSnapshot);
         Objects.requireNonNull(currentScenario); Objects.requireNonNull(graduateTrack);
-        Objects.requireNonNull(examSummary); Objects.requireNonNull(dataCoverage); Objects.requireNonNull(generatedAt);
+        Objects.requireNonNull(examSummary); Objects.requireNonNull(dataCoverage);
+        Objects.requireNonNull(configuredCoverage); Objects.requireNonNull(targetMarketCoverage);
+        Objects.requireNonNull(analysisCoverage); Objects.requireNonNull(generatedAt);
         futureScenarios = copy(futureScenarios); recommendedRoutes = copy(recommendedRoutes); ageWindows = copy(ageWindows);
         recruitmentWindows = copy(recruitmentWindows); examPatterns = copy(examPatterns); processWindows = copy(processWindows);
         historicalSummary = copy(historicalSummary); qualificationRisks = copy(qualificationRisks); actionTimeline = copy(actionTimeline);
@@ -155,4 +160,22 @@ public record CareerPlan(
             failedSections = copy(failedSections); Objects.requireNonNull(loadedAt);
         }
     }
+    public record ConfiguredCoverage(
+        boolean complete, int sourceYearCount, int completeSourceYearCount, List<String> gaps
+    ) {
+        public ConfiguredCoverage { gaps = copy(gaps); }
+    }
+    public record TargetMarketCoverage(
+        int targetCount, int connected, int partial, int failed, int notConnected,
+        List<RouteCoverage> routes
+    ) {
+        public TargetMarketCoverage { routes = copy(routes); }
+    }
+    public record RouteCoverage(
+        String routeCode, int targetCount, int connected, int partial, int failed, int notConnected,
+        boolean marketComplete
+    ) {}
+    public record AnalysisCoverage(
+        int sourceCount, int eventCount, int jobCount, int evidenceCompleteJobs, Instant loadedAt
+    ) {}
 }

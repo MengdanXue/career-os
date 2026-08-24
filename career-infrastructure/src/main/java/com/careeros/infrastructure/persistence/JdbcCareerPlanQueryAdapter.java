@@ -8,6 +8,9 @@ import com.careeros.application.planning.CareerPlanService.CandidateNotFoundExce
 import com.careeros.domain.CandidateFacts;
 import com.careeros.domain.GraduateEligibilityRule;
 import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
+import com.careeros.domain.acquisition.TargetSource;
+import com.careeros.domain.acquisition.TargetSource.AuthorityLevel;
+import com.careeros.domain.acquisition.TargetSource.ConnectionStatus;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
@@ -76,6 +79,13 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
         order by coverage.recruitment_year, source.code
         """;
 
+    private static final String TARGET_SOURCES_SQL = """
+        select code, name, route_code, region, authority_level, connection_status, official_root_url
+        from target_source_catalog
+        where enabled
+        order by route_code, code
+        """;
+
     private final JdbcTemplate jdbc;
     private final RepositoryPorts.CandidateProfiles candidates;
     private final RepositoryPorts.CandidateFactConfirmations confirmations;
@@ -112,11 +122,18 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
             coverage = List.of();
             failedSections.add("COVERAGE");
         }
+        List<TargetSource> targetSources;
+        try {
+            targetSources = jdbc.query(TARGET_SOURCES_SQL, this::mapTargetSource);
+        } catch (DataAccessException exception) {
+            targetSources = List.of();
+            failedSections.add("TARGET_SOURCES");
+        }
         Instant loadedAt = coverage.stream().map(CoverageSignal::updatedAt).max(Instant::compareTo)
             .orElse(asOf.atStartOfDay().toInstant(ZoneOffset.UTC));
         var facts = confirmations == null ? CandidateFacts.resolve(candidate, List.of())
             : CandidateFacts.resolve(candidate, confirmations.findByCandidateId(candidateId));
-        return new CareerPlanData(candidate, jobs, coverage, loadedAt, failedSections, facts);
+        return new CareerPlanData(candidate, jobs, coverage, loadedAt, failedSections, facts, targetSources);
     }
 
     private HistoricalJob mapJob(ResultSet rows, int rowNumber) throws SQLException {
@@ -144,6 +161,12 @@ public class JdbcCareerPlanQueryAdapter implements CareerPlanQuery {
     private CoverageSignal mapCoverage(ResultSet rows, int rowNumber) throws SQLException {
         return new CoverageSignal(rows.getString("code"), rows.getInt("recruitment_year"),
             CoverageStatus.valueOf(rows.getString("status")), rows.getTimestamp("updated_at").toInstant());
+    }
+
+    private TargetSource mapTargetSource(ResultSet rows, int rowNumber) throws SQLException {
+        return new TargetSource(rows.getString("code"), rows.getString("name"), rows.getString("route_code"),
+            rows.getString("region"), AuthorityLevel.valueOf(rows.getString("authority_level")),
+            ConnectionStatus.valueOf(rows.getString("connection_status")), rows.getString("official_root_url"));
     }
 
     private List<String> strings(String json) throws SQLException {

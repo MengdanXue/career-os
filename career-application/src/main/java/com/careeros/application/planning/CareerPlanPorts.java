@@ -8,6 +8,7 @@ import com.careeros.domain.DomainEnums.JobFamily;
 import com.careeros.domain.DomainEnums.OrganizationType;
 import com.careeros.domain.GraduateEligibilityRule;
 import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
+import com.careeros.domain.acquisition.TargetSource;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -34,15 +35,21 @@ public final class CareerPlanPorts {
         List<CoverageSignal> coverage,
         Instant loadedAt,
         List<String> failedSections,
-        CandidateFacts candidateFacts
+        CandidateFacts candidateFacts,
+        List<TargetSource> targetSources
     ) {
         public CareerPlanData(CandidateProfile candidate, List<HistoricalJob> jobs,
             List<CoverageSignal> coverage, Instant loadedAt) {
-            this(candidate, jobs, coverage, loadedAt, List.of(), CandidateFacts.confirmed(candidate));
+            this(candidate, jobs, coverage, loadedAt, List.of(), CandidateFacts.confirmed(candidate), List.of());
         }
         public CareerPlanData(CandidateProfile candidate, List<HistoricalJob> jobs,
             List<CoverageSignal> coverage, Instant loadedAt, List<String> failedSections) {
-            this(candidate, jobs, coverage, loadedAt, failedSections, CandidateFacts.confirmed(candidate));
+            this(candidate, jobs, coverage, loadedAt, failedSections, CandidateFacts.confirmed(candidate), List.of());
+        }
+        public CareerPlanData(CandidateProfile candidate, List<HistoricalJob> jobs,
+            List<CoverageSignal> coverage, Instant loadedAt, List<String> failedSections,
+            CandidateFacts candidateFacts) {
+            this(candidate, jobs, coverage, loadedAt, failedSections, candidateFacts, List.of());
         }
         public CareerPlanData {
             Objects.requireNonNull(candidate);
@@ -50,6 +57,7 @@ public final class CareerPlanPorts {
             coverage = coverage == null ? List.of() : List.copyOf(coverage);
             failedSections = failedSections == null ? List.of() : List.copyOf(failedSections);
             candidateFacts = candidateFacts == null ? CandidateFacts.resolve(candidate, List.of()) : candidateFacts;
+            targetSources = targetSources == null ? List.of() : List.copyOf(targetSources);
             Objects.requireNonNull(loadedAt);
         }
     }

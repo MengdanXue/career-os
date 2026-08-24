@@ -18,6 +18,7 @@ import com.careeros.domain.EducationRecord.CompletionStatus;
 import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
 import com.careeros.domain.GraduateEligibilityRule;
 import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
+import com.careeros.domain.acquisition.TargetSource;
 import com.careeros.domain.PartialDate;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -134,6 +135,51 @@ class CareerPlanServiceTest {
             new CareerPlan.ProcessWindow("APPLICATION_START", 3, 3),
             new CareerPlan.ProcessWindow("WRITTEN_EXAM", 4, 1),
             new CareerPlan.ProcessWindow("INTERVIEW", 5, 1));
+    }
+
+    @Test
+    void distinguishesConfiguredTargetMarketAndAnalysisCoverage() {
+        var targets = List.of(
+            new TargetSource("HZ_HRSS_INSTITUTION", "杭州人社", "PUBLIC_TECH", "杭州",
+                TargetSource.AuthorityLevel.OFFICIAL_AGGREGATOR, TargetSource.ConnectionStatus.CONNECTED,
+                "https://hrss.hangzhou.gov.cn/"),
+            new TargetSource("HDU_RECRUITMENT", "杭电", "UNIVERSITY_HOSPITAL_IT", "杭州",
+                TargetSource.AuthorityLevel.OFFICIAL_ORGANIZATION, TargetSource.ConnectionStatus.NOT_CONNECTED,
+                "https://renshi.hdu.edu.cn/"),
+            new TargetSource("WESTLAKE_RESEARCH", "西湖大学", "RESEARCH_SUPPORT", "杭州",
+                TargetSource.AuthorityLevel.OFFICIAL_ORGANIZATION, TargetSource.ConnectionStatus.FAILED,
+                "https://www.westlake.edu.cn/"),
+            new TargetSource("HZ_DATA_GROUP", "杭州数据集团", "GOVERNMENT_SOE_DIGITAL", "杭州",
+                TargetSource.AuthorityLevel.OFFICIAL_ORGANIZATION, TargetSource.ConnectionStatus.PARTIAL,
+                "https://hr.hzfi.cn/"));
+        var service = new CareerPlanService((id, from, to, asOf) -> new CareerPlanData(
+            candidate(), jobs(), coverage(), LOADED_AT, List.of(), CandidateFacts.confirmed(candidate()), targets));
+
+        var plan = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22));
+
+        assertThat(plan.configuredCoverage()).satisfies(value -> {
+            assertThat(value.sourceYearCount()).isEqualTo(2);
+            assertThat(value.completeSourceYearCount()).isEqualTo(1);
+            assertThat(value.complete()).isFalse();
+        });
+        assertThat(plan.targetMarketCoverage()).satisfies(value -> {
+            assertThat(value.targetCount()).isEqualTo(4);
+            assertThat(value.connected()).isEqualTo(1);
+            assertThat(value.partial()).isEqualTo(1);
+            assertThat(value.failed()).isEqualTo(1);
+            assertThat(value.notConnected()).isEqualTo(1);
+            assertThat(value.routes()).filteredOn(route -> route.routeCode().equals("RESEARCH_SUPPORT"))
+                .singleElement().satisfies(route -> {
+                    assertThat(route.failed()).isEqualTo(1);
+                    assertThat(route.marketComplete()).isFalse();
+                });
+        });
+        assertThat(plan.analysisCoverage()).satisfies(value -> {
+            assertThat(value.sourceCount()).isEqualTo(2);
+            assertThat(value.eventCount()).isEqualTo(2);
+            assertThat(value.jobCount()).isEqualTo(3);
+            assertThat(value.evidenceCompleteJobs()).isEqualTo(2);
+        });
     }
 
     @Test

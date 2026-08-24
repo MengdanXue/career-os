@@ -13,6 +13,8 @@ import com.careeros.domain.CandidateFacts.CandidateFactKey;
 import com.careeros.domain.EducationRecord.CompletionStatus;
 import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
 import com.careeros.domain.GraduateEligibilityRule.EvidenceState;
+import com.careeros.domain.acquisition.TargetSource;
+import com.careeros.domain.acquisition.TargetSource.ConnectionStatus;
 import java.time.Instant;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -59,9 +61,11 @@ public final class CareerPlanService {
         return new CareerPlan(
             candidateId, targetYear, asOf, snapshot(candidate), current, future, graduateTrack,
             routes(jobs, candidate, data.candidateFacts(), asOf, current, future, targetYear,
-                data.coverage(), data.failedSections()), ageWindows(candidate, data.candidateFacts()), recruitmentWindows(jobs), examPatterns(jobs),
+                data.coverage(), data.failedSections(), data.targetSources()), ageWindows(candidate, data.candidateFacts()), recruitmentWindows(jobs), examPatterns(jobs),
             examSummary(jobs), processWindows(jobs),
             annualSummary(jobs, data.coverage()), risks(candidate, coverage), actions(targetYear, asOf), coverage,
+            configuredCoverage(coverage), targetMarketCoverage(data.targetSources()),
+            analysisCoverage(jobs, data.coverage(), data.loadedAt()),
             clock.instant(), ALGORITHM_VERSION);
     }
 
@@ -131,13 +135,13 @@ public final class CareerPlanService {
 
     private static List<Route> routes(List<HistoricalJob> jobs, CandidateProfile candidate, CandidateFacts facts, LocalDate asOf,
         Scenario current, List<Scenario> future, int targetYear, List<CoverageSignal> coverage,
-        List<String> failedSections) {
+        List<String> failedSections, List<TargetSource> targetSources) {
         var scenarios = new ArrayList<Scenario>(); scenarios.add(current); scenarios.addAll(future);
         var routes = List.of(
-            route("PUBLIC_TECH", "事业单位信息技术岗", jobs, CareerPlanService::isPublicTech, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections),
-            route("UNIVERSITY_HOSPITAL_IT", "高校与医院信息化岗", jobs, job -> job.organizationType() == OrganizationType.UNIVERSITY || job.organizationType() == OrganizationType.HOSPITAL, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections),
-            route("RESEARCH_SUPPORT", "科研与技术支撑岗", jobs, job -> job.organizationType() == OrganizationType.RESEARCH_INSTITUTE || job.jobFamily() == JobFamily.RESEARCH, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections),
-            route("GOVERNMENT_SOE_DIGITAL", "政府国企数字化岗", jobs, job -> job.organizationType() == OrganizationType.STATE_OWNED_ENTERPRISE || job.organizationType() == OrganizationType.GOVERNMENT, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections)
+            route("PUBLIC_TECH", "事业单位信息技术岗", jobs, CareerPlanService::isPublicTech, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections, targetSources),
+            route("UNIVERSITY_HOSPITAL_IT", "高校与医院信息化岗", jobs, job -> job.organizationType() == OrganizationType.UNIVERSITY || job.organizationType() == OrganizationType.HOSPITAL, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections, targetSources),
+            route("RESEARCH_SUPPORT", "科研与技术支撑岗", jobs, job -> job.organizationType() == OrganizationType.RESEARCH_INSTITUTE || job.jobFamily() == JobFamily.RESEARCH, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections, targetSources),
+            route("GOVERNMENT_SOE_DIGITAL", "政府国企数字化岗", jobs, job -> job.organizationType() == OrganizationType.STATE_OWNED_ENTERPRISE || job.organizationType() == OrganizationType.GOVERNMENT, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections, targetSources)
         );
         return routes.stream().sorted(Comparator
             .comparing(Route::priorityScore, Comparator.nullsLast(Comparator.reverseOrder()))
@@ -163,7 +167,7 @@ public final class CareerPlanService {
 
     private static Route route(String code, String label, List<HistoricalJob> all, Predicate<HistoricalJob> predicate,
         CandidateProfile candidate, CandidateFacts facts, LocalDate asOf, List<Scenario> scenarios, int targetYear,
-        List<CoverageSignal> coverage, List<String> failedSections) {
+        List<CoverageSignal> coverage, List<String> failedSections, List<TargetSource> targetSources) {
         List<HistoricalJob> jobs = all.stream().filter(predicate)
             .sorted(Comparator.comparingInt(HistoricalJob::year).reversed().thenComparing(HistoricalJob::jobId)).toList();
         int events = (int) jobs.stream().map(HistoricalJob::eventId).distinct().count();
@@ -185,7 +189,7 @@ public final class CareerPlanService {
         var components = scoreComponents(jobs, formal, candidate, verifiedYears, employmentConfirmed,
             targetFamiliesConfirmed, analogBreakdown);
         int score = components.stream().mapToInt(value -> value.score() * value.weight()).sum() / 100;
-        RouteRankingState rankingState = rankingState(jobs, coverage, failedSections);
+        RouteRankingState rankingState = rankingState(code, jobs, coverage, failedSections, targetSources);
         Integer rankedScore = rankingState == RouteRankingState.RANKED || rankingState == RouteRankingState.LIMITED
             ? score : null;
         var representatives = jobs.stream().sorted(representativeOrder()).limit(3)
@@ -209,10 +213,25 @@ public final class CareerPlanService {
             rankingReason(rankingState));
     }
 
-    private static RouteRankingState rankingState(List<HistoricalJob> jobs, List<CoverageSignal> coverage,
-        List<String> failedSections) {
+    private static RouteRankingState rankingState(String routeCode, List<HistoricalJob> jobs,
+        List<CoverageSignal> coverage, List<String> failedSections, List<TargetSource> targetSources) {
         if (failedSections.contains("HISTORY")) return RouteRankingState.DATA_FAILURE;
-        if (jobs.isEmpty()) return RouteRankingState.NOT_COVERED;
+        if (!targetSources.isEmpty()) {
+            List<TargetSource> routeTargets = targetSources.stream()
+                .filter(source -> source.routeCode().equals(routeCode)).toList();
+            if (routeTargets.isEmpty()) return RouteRankingState.NOT_COVERED;
+            boolean marketComplete = routeTargets.stream()
+                .allMatch(source -> source.connectionStatus() == ConnectionStatus.CONNECTED);
+            if (jobs.isEmpty()) {
+                boolean completedAbsence = marketComplete && routeTargets.stream().allMatch(source ->
+                    coverage.stream().filter(signal -> signal.sourceCode().equals(source.code()))
+                        .findAny().filter(CareerPlanService::complete).isPresent());
+                return completedAbsence ? RouteRankingState.NO_TARGET_RECORDS : RouteRankingState.NOT_COVERED;
+            }
+            if (!marketComplete) return RouteRankingState.LIMITED;
+        } else if (jobs.isEmpty()) {
+            return RouteRankingState.NOT_COVERED;
+        }
         boolean complete = !coverage.isEmpty() && coverage.stream()
             .allMatch(signal -> signal.status() == CoverageStatus.COMPLETE
                 || signal.status() == CoverageStatus.NO_TARGET_RECORDS);
@@ -743,8 +762,45 @@ public final class CareerPlanService {
         if (data.coverage().isEmpty()) warnings.add("尚无来源年度覆盖账本，当前结果仅作有限参考。");
         if (data.failedSections().contains("HISTORY")) warnings.add("历史岗位统计本次读取失败；页面中的空值不得解释为零招聘。");
         if (data.failedSections().contains("COVERAGE")) warnings.add("来源覆盖账本本次读取失败；完整性状态暂不可判断。");
+        if (data.failedSections().contains("TARGET_SOURCES")) warnings.add("目标来源目录本次读取失败；市场接入度暂不可判断。");
+        if (!data.targetSources().isEmpty() && data.targetSources().stream()
+            .anyMatch(source -> source.connectionStatus() != ConnectionStatus.CONNECTED)) {
+            warnings.add("目标市场来源尚未全部接入；已配置来源完整不代表杭州半体制市场完整。");
+        }
         return new DataCoverage(allComplete && data.failedSections().isEmpty(), data.coverage().size(), complete,
             incomplete, warnings, data.failedSections(), data.loadedAt());
+    }
+
+    private static ConfiguredCoverage configuredCoverage(DataCoverage legacy) {
+        return new ConfiguredCoverage(legacy.complete(), legacy.sourceYearCount(),
+            legacy.completeSourceYearCount(), legacy.incompleteSourceYears());
+    }
+
+    private static TargetMarketCoverage targetMarketCoverage(List<TargetSource> targets) {
+        var routes = List.of("PUBLIC_TECH", "UNIVERSITY_HOSPITAL_IT", "RESEARCH_SUPPORT", "GOVERNMENT_SOE_DIGITAL")
+            .stream().map(route -> routeCoverage(route, targets)).toList();
+        return new TargetMarketCoverage(targets.size(), connectionCount(targets, ConnectionStatus.CONNECTED),
+            connectionCount(targets, ConnectionStatus.PARTIAL), connectionCount(targets, ConnectionStatus.FAILED),
+            connectionCount(targets, ConnectionStatus.NOT_CONNECTED), routes);
+    }
+
+    private static RouteCoverage routeCoverage(String route, List<TargetSource> targets) {
+        var values = targets.stream().filter(target -> target.routeCode().equals(route)).toList();
+        int connected = connectionCount(values, ConnectionStatus.CONNECTED);
+        return new RouteCoverage(route, values.size(), connected,
+            connectionCount(values, ConnectionStatus.PARTIAL), connectionCount(values, ConnectionStatus.FAILED),
+            connectionCount(values, ConnectionStatus.NOT_CONNECTED), !values.isEmpty() && connected == values.size());
+    }
+
+    private static int connectionCount(List<TargetSource> targets, ConnectionStatus status) {
+        return (int) targets.stream().filter(target -> target.connectionStatus() == status).count();
+    }
+
+    private static AnalysisCoverage analysisCoverage(List<HistoricalJob> jobs, List<CoverageSignal> coverage,
+        Instant loadedAt) {
+        return new AnalysisCoverage((int) coverage.stream().map(CoverageSignal::sourceCode).distinct().count(),
+            (int) jobs.stream().map(HistoricalJob::eventId).distinct().count(), jobs.size(),
+            (int) jobs.stream().filter(HistoricalJob::evidenceComplete).count(), loadedAt);
     }
 
     private static boolean complete(CoverageSignal signal) {
