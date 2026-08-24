@@ -22,6 +22,7 @@ import com.careeros.application.personal.CandidateEvidenceTaskService;
 import com.careeros.application.personal.PersonalActionPorts.CurrentJobSignal;
 import com.careeros.application.personal.PersonalActionPorts.TargetJobChangeSnapshot;
 import com.careeros.application.personal.PersonalActionService;
+import com.careeros.application.personal.PoliticalRequirementClassifier;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -44,17 +45,19 @@ class ApplicationConfiguration {
     @Bean FitEvaluator fitEvaluator() { return new FitEvaluator(); }
     @Bean StabilityEvaluator stabilityEvaluator() { return new StabilityEvaluator(); }
     @Bean CandidateProfileService candidateProfileService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.CandidateFactConfirmations facts, Clock clock) { return new CandidateProfileService(candidates, facts, clock); }
+    @Bean PoliticalRequirementClassifier politicalRequirementClassifier() { return new PoliticalRequirementClassifier(); }
     @Bean CareerPlanService careerPlanService(CareerPlanQuery query, Clock clock) { return new CareerPlanService(query, clock); }
     @Bean CandidateEvidenceTaskService candidateEvidenceTaskService(
         CandidateProfileService candidateProfiles,
-        DecisionRankingService rankings
+        DecisionRankingService rankings,
+        PoliticalRequirementClassifier politicalRequirements
     ) {
         var facts = (com.careeros.application.personal.CandidateEvidenceTaskPorts.CandidateFactsSnapshot) candidateId -> {
             var snapshot = candidateProfiles.facts(candidateId);
             return new CandidateSnapshot(snapshot.profile(), snapshot.statuses());
         };
         var impact = (com.careeros.application.personal.CandidateEvidenceTaskPorts.CandidateQualificationImpact)
-            (candidateId, asOf) -> qualificationImpact(rankings, candidateId, asOf);
+            (candidateId, asOf) -> qualificationImpact(rankings, politicalRequirements, candidateId, asOf);
         return new CandidateEvidenceTaskService(facts, impact);
     }
     @Bean PersonalActionService personalActionService(
@@ -152,6 +155,7 @@ class ApplicationConfiguration {
 
     private static QualificationImpact qualificationImpact(
         DecisionRankingService rankings,
+        PoliticalRequirementClassifier politicalRequirements,
         java.util.UUID candidateId,
         LocalDate asOf
     ) {
@@ -185,7 +189,7 @@ class ApplicationConfiguration {
                         default -> { }
                     }
                 });
-            if (hasPoliticalRequirement(bundle.jobContext().job())) {
+            if (politicalRequirements.hasHardRequirement(bundle.jobContext().job())) {
                 affected.add(com.careeros.domain.CandidateFacts.CandidateFactKey.POLITICAL_AFFILIATION);
             }
             affected.forEach(key -> counts.merge(key, 1, Integer::sum));
@@ -201,20 +205,4 @@ class ApplicationConfiguration {
         return rankings.rankAll(candidateId, asOf.atStartOfDay(ZoneOffset.UTC).toInstant());
     }
 
-    private static boolean hasPoliticalRequirement(com.careeros.domain.JobPosting job) {
-        String text = String.join(" ",
-            job.candidateScope() == null ? "" : job.candidateScope(),
-            job.otherRequirements() == null ? "" : job.otherRequirements(),
-            job.originalRequirementText() == null ? "" : job.originalRequirementText());
-        String compact = text.replaceAll("[\\s，。；、]", "");
-        if (compact.contains("不限") || compact.contains("优先")
-            || compact.contains("党员或") || compact.contains("或民主党派")) {
-            return false;
-        }
-        return compact.contains("须为中共党员")
-            || compact.contains("要求中共党员")
-            || compact.contains("政治面貌中共党员")
-            || compact.contains("政治面貌为中共党员")
-            || compact.contains("限中共党员");
-    }
 }
