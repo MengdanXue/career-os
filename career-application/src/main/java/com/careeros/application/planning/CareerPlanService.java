@@ -34,11 +34,12 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class CareerPlanService {
-    public static final String ALGORITHM_VERSION = "career-plan-v2";
+    public static final String ALGORITHM_VERSION = "career-plan-v3";
     private static final Set<EmploymentType> FORMAL_TYPES =
         Set.of(EmploymentType.ESTABLISHMENT, EmploymentType.PUBLIC_INSTITUTION_FORMAL);
     private final CareerPlanQuery query;
     private final Clock clock;
+    private static final GraduateEligibilityProjector GRADUATE_PROJECTOR = new GraduateEligibilityProjector();
 
     public CareerPlanService(CareerPlanQuery query) { this(query, Clock.systemUTC()); }
     public CareerPlanService(CareerPlanQuery query, Clock clock) {
@@ -52,10 +53,12 @@ public final class CareerPlanService {
         List<HistoricalJob> jobs = uniqueJobs(data.jobs());
         Scenario current = currentScenario(candidate, data.candidateFacts(), asOf);
         List<Scenario> future = futureScenarios(current, candidate, targetYear);
+        GraduateTrackSummary graduateTrack = graduateTrack(candidate, data.candidateFacts(), targetYear);
         DataCoverage coverage = coverage(data);
         return new CareerPlan(
-            candidateId, targetYear, asOf, snapshot(candidate), current, future,
-            routes(jobs, candidate, data.candidateFacts(), asOf, current, future), ageWindows(candidate, data.candidateFacts()), recruitmentWindows(jobs), examPatterns(jobs),
+            candidateId, targetYear, asOf, snapshot(candidate), current, future, graduateTrack,
+            routes(jobs, candidate, data.candidateFacts(), asOf, current, future, targetYear,
+                data.coverage(), data.failedSections()), ageWindows(candidate, data.candidateFacts()), recruitmentWindows(jobs), examPatterns(jobs),
             annualSummary(jobs, data.coverage()), risks(candidate, coverage), actions(targetYear, asOf), coverage,
             clock.instant(), ALGORITHM_VERSION);
     }
@@ -72,8 +75,8 @@ public final class CareerPlanService {
 
     private static Scenario currentScenario(CandidateProfile candidate, CandidateFacts facts, LocalDate asOf) {
         if (!facts.isConfirmed(CandidateFactKey.EDUCATION_RECORDS)) {
-            return new Scenario("PRE_GRADUATION", "本科阶段（待确认）",
-                "教育记录尚未确认；暂按本科阶段模拟，不作为已核验学历结论。", asOf, true);
+            return new Scenario("MASTER_IN_PROGRESS", "境外硕士在读（待确认）",
+                "境外硕士在读记录尚未确认，学位与留服认证仍按公告截止时点判断。", asOf, true);
         }
         var masters = candidate.educationRecords().stream()
             .filter(record -> record.educationLevel() == EducationLevel.MASTER).toList();
@@ -82,12 +85,15 @@ public final class CareerPlanService {
         if (verified) return scenario("MASTER_VERIFIED", true, asOf);
         boolean completed = masters.stream().anyMatch(record -> record.completionStatus() == CompletionStatus.COMPLETED);
         if (completed) return scenario("DEGREE_PENDING_VERIFICATION", true, asOf);
-        return scenario("PRE_GRADUATION", true, asOf);
+        boolean expected = masters.stream().anyMatch(record -> record.completionStatus() == CompletionStatus.EXPECTED);
+        return scenario(expected ? "MASTER_IN_PROGRESS" : "PRE_GRADUATION", true, asOf);
     }
 
     private static List<Scenario> futureScenarios(Scenario current, CandidateProfile candidate, int targetYear) {
         var result = new ArrayList<Scenario>();
-        if (current.code().equals("PRE_GRADUATION")) result.add(scenario("DEGREE_PENDING_VERIFICATION", false, null));
+        if (current.code().equals("PRE_GRADUATION") || current.code().equals("MASTER_IN_PROGRESS")) {
+            result.add(scenario("DEGREE_PENDING_VERIFICATION", false, null));
+        }
         if (!current.code().equals("MASTER_VERIFIED")) result.add(scenario("MASTER_VERIFIED", false, null));
         return List.copyOf(result);
     }
@@ -95,22 +101,45 @@ public final class CareerPlanService {
     private static Scenario scenario(String code, boolean current, LocalDate effectiveFrom) {
         return switch (code) {
             case "PRE_GRADUATION" -> new Scenario(code, "本科阶段", "本科已完成；境外硕士尚未取得，硕士硬门槛需按公告期限判断。", effectiveFrom, current);
+            case "MASTER_IN_PROGRESS" -> new Scenario(code, "境外硕士在读", "本科已完成，境外硕士预计毕业；学位与留服认证须按公告截止时点判断。", effectiveFrom, current);
             case "DEGREE_PENDING_VERIFICATION" -> new Scenario(code, "硕士待认证", "境外硕士证书已取得，但留服认证尚未完成。", effectiveFrom, current);
             case "MASTER_VERIFIED" -> new Scenario(code, "硕士已认证", "硕士与留服认证均完成，可进入硕士岗位的确定性资格判断。", effectiveFrom, current);
             default -> throw new IllegalArgumentException("Unknown scenario: " + code);
         };
     }
 
+    private static GraduateTrackSummary graduateTrack(CandidateProfile candidate, CandidateFacts facts, int targetYear) {
+        Integer expected = expectedMasterYear(candidate);
+        if (!facts.isConfirmed(CandidateFactKey.EDUCATION_RECORDS) || expected == null) {
+            return new GraduateTrackSummary("UNKNOWN", "目标年度应届轨道待确认",
+                "需先核实境外硕士预计毕业时间。", QualificationOutcome.UNCERTAIN);
+        }
+        if (expected == targetYear) {
+            return new GraduateTrackSummary("TARGET_YEAR_GRADUATE", targetYear + " 届境外硕士应届生候选",
+                "届别上进入目标年度当届通道；最终可报性取决于学位、留服认证和公告截止时点。",
+                QualificationOutcome.CONDITIONALLY_ELIGIBLE);
+        }
+        if (expected < targetYear && expected >= targetYear - 2) {
+            return new GraduateTrackSummary("RECENT_GRADUATE_WINDOW", expected + " 届近届毕业生候选",
+                "是否可报取决于当年公告是否纳入近两届。", QualificationOutcome.CONDITIONALLY_ELIGIBLE);
+        }
+        return new GraduateTrackSummary("NOT_IN_GRADUATE_SCOPE", "不在目标年度常规应届窗口",
+            "仍可按社会人员通道评估。", QualificationOutcome.INELIGIBLE);
+    }
+
     private static List<Route> routes(List<HistoricalJob> jobs, CandidateProfile candidate, CandidateFacts facts, LocalDate asOf,
-        Scenario current, List<Scenario> future) {
+        Scenario current, List<Scenario> future, int targetYear, List<CoverageSignal> coverage,
+        List<String> failedSections) {
         var scenarios = new ArrayList<Scenario>(); scenarios.add(current); scenarios.addAll(future);
         var routes = List.of(
-            route("PUBLIC_TECH", "事业单位信息技术岗", jobs, CareerPlanService::isPublicTech, candidate, facts, asOf, scenarios),
-            route("UNIVERSITY_HOSPITAL_IT", "高校与医院信息化岗", jobs, job -> job.organizationType() == OrganizationType.UNIVERSITY || job.organizationType() == OrganizationType.HOSPITAL, candidate, facts, asOf, scenarios),
-            route("RESEARCH_SUPPORT", "科研与技术支撑岗", jobs, job -> job.organizationType() == OrganizationType.RESEARCH_INSTITUTE || job.jobFamily() == JobFamily.RESEARCH, candidate, facts, asOf, scenarios),
-            route("GOVERNMENT_SOE_DIGITAL", "政府国企数字化岗", jobs, job -> job.organizationType() == OrganizationType.STATE_OWNED_ENTERPRISE || job.organizationType() == OrganizationType.GOVERNMENT, candidate, facts, asOf, scenarios)
+            route("PUBLIC_TECH", "事业单位信息技术岗", jobs, CareerPlanService::isPublicTech, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections),
+            route("UNIVERSITY_HOSPITAL_IT", "高校与医院信息化岗", jobs, job -> job.organizationType() == OrganizationType.UNIVERSITY || job.organizationType() == OrganizationType.HOSPITAL, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections),
+            route("RESEARCH_SUPPORT", "科研与技术支撑岗", jobs, job -> job.organizationType() == OrganizationType.RESEARCH_INSTITUTE || job.jobFamily() == JobFamily.RESEARCH, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections),
+            route("GOVERNMENT_SOE_DIGITAL", "政府国企数字化岗", jobs, job -> job.organizationType() == OrganizationType.STATE_OWNED_ENTERPRISE || job.organizationType() == OrganizationType.GOVERNMENT, candidate, facts, asOf, scenarios, targetYear, coverage, failedSections)
         );
-        return routes.stream().sorted(Comparator.comparingInt(Route::priorityScore).reversed().thenComparing(Route::code)).toList();
+        return routes.stream().sorted(Comparator
+            .comparing(Route::priorityScore, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(Route::code)).toList();
     }
 
     private static boolean isPublicTech(HistoricalJob job) {
@@ -131,7 +160,8 @@ public final class CareerPlanService {
     }
 
     private static Route route(String code, String label, List<HistoricalJob> all, Predicate<HistoricalJob> predicate,
-        CandidateProfile candidate, CandidateFacts facts, LocalDate asOf, List<Scenario> scenarios) {
+        CandidateProfile candidate, CandidateFacts facts, LocalDate asOf, List<Scenario> scenarios, int targetYear,
+        List<CoverageSignal> coverage, List<String> failedSections) {
         List<HistoricalJob> jobs = all.stream().filter(predicate)
             .sorted(Comparator.comparingInt(HistoricalJob::year).reversed().thenComparing(HistoricalJob::jobId)).toList();
         int events = (int) jobs.stream().map(HistoricalJob::eventId).distinct().count();
@@ -139,18 +169,27 @@ public final class CareerPlanService {
         Map<UUID, List<JobScenarioOutcome>> outcomes = jobs.stream().collect(Collectors.toMap(HistoricalJob::jobId,
             job -> scenarios.stream().map(scenario -> evaluate(job, candidate, facts, asOf, scenario.code())).toList(),
             (left, right) -> left, LinkedHashMap::new));
+        Map<UUID, ProjectedJobOutcome> projected = jobs.stream().collect(Collectors.toMap(HistoricalJob::jobId,
+            job -> projected(job, candidate, facts, asOf, scenarios.getFirst().code(), targetYear),
+            (left, right) -> left, LinkedHashMap::new));
         var breakdowns = scenarios.stream().map(scenario -> breakdown(scenario.code(), outcomes.values())).toList();
+        var analogBreakdown = breakdown("TARGET_YEAR_ANALOG", projected.values().stream()
+            .map(value -> List.of(value.targetYearAnalog())).toList());
         Set<JobFamily> routeFamilies = jobs.stream().map(HistoricalJob::jobFamily).collect(Collectors.toSet());
         int verifiedYears = facts.isConfirmed(CandidateFactKey.EMPLOYMENT_HISTORY)
             ? verifiedFullTimeYears(candidate, asOf, routeFamilies) : 0;
         boolean employmentConfirmed = facts.isConfirmed(CandidateFactKey.EMPLOYMENT_HISTORY);
         boolean targetFamiliesConfirmed = facts.isConfirmed(CandidateFactKey.TARGET_JOB_FAMILIES);
         var components = scoreComponents(jobs, formal, candidate, verifiedYears, employmentConfirmed,
-            targetFamiliesConfirmed, breakdowns.getFirst());
+            targetFamiliesConfirmed, analogBreakdown);
         int score = components.stream().mapToInt(value -> value.score() * value.weight()).sum() / 100;
+        RouteRankingState rankingState = rankingState(jobs, coverage, failedSections);
+        Integer rankedScore = rankingState == RouteRankingState.RANKED || rankingState == RouteRankingState.LIMITED
+            ? score : null;
         var representatives = jobs.stream().sorted(representativeOrder()).limit(3)
             .map(job -> new RepresentativeJob(job.jobId(), job.organizationName(),
-            job.title(), job.year(), job.sourceUrl(), job.evidenceComplete(), outcomes.get(job.jobId()))).toList();
+            job.title(), job.year(), job.sourceUrl(), job.evidenceComplete(), outcomes.get(job.jobId()),
+            projected.get(job.jobId()).historicalActual(), projected.get(job.jobId()).targetYearAnalog())).toList();
         var orgs = jobs.stream().map(HistoricalJob::organizationName).filter(Objects::nonNull).distinct().sorted().limit(8).toList();
         var families = jobs.stream().map(job -> job.jobFamily().name()).distinct().sorted().toList();
         var advantages = new ArrayList<String>();
@@ -161,10 +200,31 @@ public final class CareerPlanService {
         List<String> applicable = breakdowns.stream()
             .filter(value -> value.eligible() + value.conditionallyEligible() > 0)
             .map(ScenarioBreakdown::scenarioCode).toList();
-        return new Route(code, label, score, "五项证据加权决策指数，不是录取概率", jobs.size(), events, formal, orgs,
+        return new Route(code, label, rankedScore, "五项证据加权决策指数，不是录取概率", jobs.size(), events, formal, orgs,
             families, applicable, advantages, routeRisks,
             List.of("职业能力倾向测验与综合应用能力", "信息系统、数据库与网络基础", "准备可核验的学历、职称和工作经历材料"),
-            representatives, breakdowns, components, strength(jobs, events));
+            representatives, breakdowns, components, strength(jobs, events), rankingState,
+            rankingReason(rankingState));
+    }
+
+    private static RouteRankingState rankingState(List<HistoricalJob> jobs, List<CoverageSignal> coverage,
+        List<String> failedSections) {
+        if (failedSections.contains("HISTORY")) return RouteRankingState.DATA_FAILURE;
+        if (jobs.isEmpty()) return RouteRankingState.NOT_COVERED;
+        boolean complete = !coverage.isEmpty() && coverage.stream()
+            .allMatch(signal -> signal.status() == CoverageStatus.COMPLETE
+                || signal.status() == CoverageStatus.NO_TARGET_RECORDS);
+        return complete ? RouteRankingState.RANKED : RouteRankingState.LIMITED;
+    }
+
+    private static String rankingReason(RouteRankingState state) {
+        return switch (state) {
+            case RANKED -> "目前已连接来源覆盖完成，参与排名";
+            case LIMITED -> "已有目标岗位，但市场覆盖仍有缺口，限制性排名";
+            case NOT_COVERED -> "尚未接入该路线的目标来源，暂不排名";
+            case NO_TARGET_RECORDS -> "目标来源覆盖完成，但未发现符合范围的岗位";
+            case DATA_FAILURE -> "历史数据查询失败，暂停排名";
+        };
     }
 
     private static ScenarioBreakdown breakdown(String scenarioCode, java.util.Collection<List<JobScenarioOutcome>> outcomes) {
@@ -192,8 +252,8 @@ public final class CareerPlanService {
         long distinctFamilies = jobs.stream().map(HistoricalJob::jobFamily).distinct().count();
         int reuse = !targetFamiliesConfirmed || distinctFamilies == 0 ? 0 : (int) (matchingFamilies * 100 / distinctFamilies);
         return List.of(
-            new ScoreComponent("ELIGIBILITY_READINESS", "当前资格准备度", readiness, 30,
-                total == 0 ? "无历史岗位样本，不计分" : String.format("当前场景：可报 %d、条件可报 %d、待确认 %d、不可报 %d",
+            new ScoreComponent("ELIGIBILITY_READINESS", "目标年份资格准备度", readiness, 30,
+                total == 0 ? "无历史岗位样本，不计分" : String.format("目标年度类比：可报 %d、条件可报 %d、待确认 %d、不可报 %d",
                     current.eligible(), current.conditionallyEligible(), current.uncertain(), current.ineligible()), total > 0),
             new ScoreComponent("EXPERIENCE_ADVANTAGE", "已核验经历优势", Math.min(100, verifiedYears * 20), 25,
                 !employmentConfirmed ? "工作经历尚未确认，不计优势分"
@@ -212,18 +272,55 @@ public final class CareerPlanService {
         );
     }
 
+    private static ProjectedJobOutcome projected(HistoricalJob job, CandidateProfile candidate, CandidateFacts facts,
+        LocalDate asOf, String scenarioCode, int targetYear) {
+        JobScenarioOutcome historicalBase = evaluate(job, candidate, facts, asOf, scenarioCode, false);
+        JobScenarioOutcome analogBase = evaluate(job, candidate, facts, asOf, scenarioCode, true);
+        if (job.graduateEligibilityRule() == null) {
+            return new ProjectedJobOutcome(
+                renamed(historicalBase, "HISTORICAL_ACTUAL"),
+                renamed(analogBase, "TARGET_YEAR_ANALOG"));
+        }
+        var historicalGraduate = GRADUATE_PROJECTOR.assess(candidate, facts, job.graduateEligibilityRule(),
+            GraduateEligibilityProjector.EvaluationMode.HISTORICAL_ACTUAL, targetYear);
+        var analogGraduate = GRADUATE_PROJECTOR.assess(candidate, facts, job.graduateEligibilityRule(),
+            GraduateEligibilityProjector.EvaluationMode.TARGET_YEAR_ANALOG, targetYear);
+        return new ProjectedJobOutcome(
+            merge(historicalBase, historicalGraduate.outcome(), historicalGraduate.reasons(), "HISTORICAL_ACTUAL"),
+            merge(analogBase, analogGraduate.outcome(), analogGraduate.reasons(), "TARGET_YEAR_ANALOG"));
+    }
+
+    private static JobScenarioOutcome renamed(JobScenarioOutcome value, String scenarioCode) {
+        return new JobScenarioOutcome(scenarioCode, value.outcome(), value.reasons());
+    }
+
+    private static JobScenarioOutcome merge(JobScenarioOutcome base, QualificationOutcome graduateOutcome,
+        List<String> graduateReasons, String scenarioCode) {
+        var reasons = new LinkedHashSet<String>();
+        reasons.addAll(base.reasons());
+        reasons.addAll(graduateReasons);
+        return new JobScenarioOutcome(scenarioCode, worsen(base.outcome(), graduateOutcome), List.copyOf(reasons));
+    }
+
     private static JobScenarioOutcome evaluate(HistoricalJob job, CandidateProfile candidate, CandidateFacts facts,
         LocalDate asOf, String scenarioCode) {
+        return evaluate(job, candidate, facts, asOf, scenarioCode, false);
+    }
+
+    private static JobScenarioOutcome evaluate(HistoricalJob job, CandidateProfile candidate, CandidateFacts facts,
+        LocalDate asOf, String scenarioCode, boolean skipAbsoluteGraduationYears) {
         QualificationOutcome outcome = QualificationOutcome.ELIGIBLE;
         var reasons = new ArrayList<String>();
         if (job.minimumEducation().ordinal() > EducationLevel.BACHELOR.ordinal()) {
-            if (scenarioCode.equals("PRE_GRADUATION")) {
+            if (scenarioCode.equals("PRE_GRADUATION") || scenarioCode.equals("MASTER_IN_PROGRESS")) {
                 if (!facts.isConfirmed(CandidateFactKey.HIGHEST_EDUCATION)) {
                     outcome = worsen(outcome, QualificationOutcome.UNCERTAIN);
                     reasons.add("已完成学历尚未确认");
                 } else {
                     outcome = worsen(outcome, QualificationOutcome.CONDITIONALLY_ELIGIBLE);
-                    reasons.add("当前仅按已完成本科判断；硕士预计取得后需按公告期限复核");
+                    reasons.add(scenarioCode.equals("MASTER_IN_PROGRESS")
+                        ? "境外硕士在读；学位与留服认证需在公告要求时点前完成"
+                        : "当前仅按已完成本科判断；硕士预计取得后需按公告期限复核");
                 }
             } else if (scenarioCode.equals("DEGREE_PENDING_VERIFICATION")) {
                 switch (credentialTiming(job)) {
@@ -266,7 +363,7 @@ public final class CareerPlanService {
                 }
             }
         }
-        if (!job.acceptedGraduationYears().isEmpty()) {
+        if (!skipAbsoluteGraduationYears && !job.acceptedGraduationYears().isEmpty()) {
             Integer graduationYear = scenarioCode.equals("PRE_GRADUATION") ? candidate.graduationYear() : expectedMasterYear(candidate);
             CandidateFactKey key = scenarioCode.equals("PRE_GRADUATION") ? CandidateFactKey.GRADUATION_YEAR : CandidateFactKey.EDUCATION_RECORDS;
             if (!facts.isConfirmed(key) || graduationYear == null) {
@@ -343,7 +440,8 @@ public final class CareerPlanService {
             }
             case NONE -> { }
         }
-        if (normalizedScope.contains("应届毕业生") || normalizedScope.contains("应届生")) {
+        if (job.graduateEligibilityRule() == null
+            && (normalizedScope.contains("应届毕业生") || normalizedScope.contains("应届生"))) {
             outcome = worsen(outcome, QualificationOutcome.UNCERTAIN);
             reasons.add("应届身份需按当年公告、毕业时间和社保经历复核");
         }

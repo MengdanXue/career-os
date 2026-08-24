@@ -14,6 +14,7 @@ public record CareerPlan(
     CandidateSnapshot candidateSnapshot,
     Scenario currentScenario,
     List<Scenario> futureScenarios,
+    GraduateTrackSummary graduateTrack,
     List<Route> recommendedRoutes,
     List<AgeWindow> ageWindows,
     List<RecruitmentWindow> recruitmentWindows,
@@ -27,7 +28,8 @@ public record CareerPlan(
 ) {
     public CareerPlan {
         Objects.requireNonNull(candidateId); Objects.requireNonNull(asOf); Objects.requireNonNull(candidateSnapshot);
-        Objects.requireNonNull(currentScenario); Objects.requireNonNull(dataCoverage); Objects.requireNonNull(generatedAt);
+        Objects.requireNonNull(currentScenario); Objects.requireNonNull(graduateTrack);
+        Objects.requireNonNull(dataCoverage); Objects.requireNonNull(generatedAt);
         futureScenarios = copy(futureScenarios); recommendedRoutes = copy(recommendedRoutes); ageWindows = copy(ageWindows);
         recruitmentWindows = copy(recruitmentWindows); examPatterns = copy(examPatterns);
         historicalSummary = copy(historicalSummary); qualificationRisks = copy(qualificationRisks); actionTimeline = copy(actionTimeline);
@@ -38,6 +40,7 @@ public record CareerPlan(
     public enum EvidenceStrength { STRONG, MODERATE, LIMITED, INSUFFICIENT }
     public enum RiskSeverity { HIGH, MEDIUM, LOW }
     public enum QualificationOutcome { ELIGIBLE, CONDITIONALLY_ELIGIBLE, UNCERTAIN, INELIGIBLE }
+    public enum RouteRankingState { RANKED, LIMITED, NOT_COVERED, NO_TARGET_RECORDS, DATA_FAILURE }
 
     public record CandidateSnapshot(
         String displayName, LocalDate birthDate, Gender gender, String profileVersion,
@@ -46,14 +49,26 @@ public record CareerPlan(
 
     public record Scenario(String code, String label, String description, LocalDate effectiveFrom, boolean current) {}
 
+    public record GraduateTrackSummary(
+        String code, String label, String detail, QualificationOutcome outcome
+    ) {}
+
     public record RepresentativeJob(
         UUID jobId, String organizationName, String title, int year, String sourceUrl, boolean evidenceComplete,
-        List<JobScenarioOutcome> scenarioOutcomes
+        List<JobScenarioOutcome> scenarioOutcomes,
+        JobScenarioOutcome historicalActual,
+        JobScenarioOutcome targetYearAnalog
     ) {
         public RepresentativeJob {
             scenarioOutcomes = copy(scenarioOutcomes);
         }
+
+        public ProjectedJobOutcome projectedOutcome() {
+            return new ProjectedJobOutcome(historicalActual, targetYearAnalog);
+        }
     }
+
+    public record ProjectedJobOutcome(JobScenarioOutcome historicalActual, JobScenarioOutcome targetYearAnalog) {}
 
     public record JobScenarioOutcome(
         String scenarioCode, QualificationOutcome outcome, List<String> reasons
@@ -75,7 +90,7 @@ public record CareerPlan(
     public record Route(
         String code,
         String label,
-        int priorityScore,
+        Integer priorityScore,
         String priorityLabel,
         int historicalJobCount,
         int eventCount,
@@ -89,7 +104,9 @@ public record CareerPlan(
         List<RepresentativeJob> representativeJobs,
         List<ScenarioBreakdown> scenarioBreakdowns,
         List<ScoreComponent> scoreComponents,
-        EvidenceStrength evidenceStrength
+        EvidenceStrength evidenceStrength,
+        RouteRankingState rankingState,
+        String rankingReason
     ) {
         public Route {
             organizations = copy(organizations); jobFamilies = copy(jobFamilies); applicableScenarios = copy(applicableScenarios);

@@ -16,6 +16,7 @@ import com.careeros.domain.CandidateEmploymentRecord.VerificationStatus;
 import com.careeros.domain.EducationRecord;
 import com.careeros.domain.EducationRecord.CompletionStatus;
 import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
+import com.careeros.domain.GraduateEligibilityRule;
 import com.careeros.domain.PartialDate;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -36,7 +37,11 @@ class CareerPlanServiceTest {
 
         var plan = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22));
 
-        assertThat(plan.currentScenario().code()).isEqualTo("PRE_GRADUATION");
+        assertThat(plan.currentScenario().code()).isEqualTo("MASTER_IN_PROGRESS");
+        assertThat(plan.currentScenario().label()).isEqualTo("境外硕士在读");
+        assertThat(plan.graduateTrack().code()).isEqualTo("TARGET_YEAR_GRADUATE");
+        assertThat(plan.graduateTrack().outcome())
+            .isEqualTo(CareerPlan.QualificationOutcome.CONDITIONALLY_ELIGIBLE);
         assertThat(plan.futureScenarios()).extracting(CareerPlan.Scenario::code)
             .containsExactly("DEGREE_PENDING_VERIFICATION", "MASTER_VERIFIED");
         assertThat(plan.recommendedRoutes()).extracting(CareerPlan.Route::code)
@@ -53,7 +58,41 @@ class CareerPlanServiceTest {
         assertThat(plan.dataCoverage().warnings()).anyMatch(value -> value.contains("数据尚未补齐"));
         assertThat(plan.qualificationRisks()).extracting(CareerPlan.Risk::code)
             .contains("CREDENTIAL_VERIFICATION", "POLITICAL_AFFILIATION", "EMPLOYMENT_EVIDENCE", "SOURCE_COVERAGE");
-        assertThat(plan.algorithmVersion()).isEqualTo("career-plan-v2");
+        assertThat(plan.recommendedRoutes()).filteredOn(route -> route.code().equals("GOVERNMENT_SOE_DIGITAL"))
+            .singleElement().satisfies(route -> {
+                assertThat(route.rankingState()).isEqualTo(CareerPlan.RouteRankingState.NOT_COVERED);
+                assertThat(route.priorityScore()).isNull();
+            });
+        assertThat(plan.algorithmVersion()).isEqualTo("career-plan-v3");
+    }
+
+    @Test
+    void representativeJobExposesHistoricalActualAndTargetYearAnalogOutcomes() {
+        var base = jobs().get(1);
+        var rule = GraduateEligibilityRule.fromExplicitYears(2026, Set.of(2024, 2025, 2026), true,
+            "2024、2025、2026届普通高校毕业生，含同期留学回国人员");
+        var structured = new HistoricalJob(
+            base.jobId(), base.eventId(), base.year(), base.publishedOn(), base.applicationStartsOn(),
+            base.applicationEndsOn(), base.writtenExamOn(), base.ageReferenceDate(), base.writtenExamSubjects(),
+            base.organizationName(), base.organizationType(), base.title(), base.jobFamily(), base.employmentType(),
+            base.minimumEducation(), base.maximumAge(), base.minimumExperienceYears(), base.requiredProfessionalTitles(),
+            base.candidateScope(), base.requirements(), base.sourceUrl(), base.evidenceComplete(), base.exactMajors(),
+            List.of(2024, 2025, 2026), base.genderRequirement(), base.overseasDegreeRule(), rule, rule.rawText(),
+            GraduateEligibilityRule.EvidenceState.CONFIRMED, GraduateEligibilityRule.EvidenceState.NOT_REQUIRED,
+            GraduateEligibilityRule.EvidenceState.NOT_PUBLISHED, null, null, null);
+        var service = new CareerPlanService((id, from, to, asOf) -> new CareerPlanData(
+            candidate(), List.of(structured), coverage(), LOADED_AT));
+
+        var representative = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22))
+            .recommendedRoutes().stream().filter(route -> route.code().equals("PUBLIC_TECH"))
+            .findFirst().orElseThrow().representativeJobs().getFirst();
+
+        assertThat(representative.historicalActual().outcome())
+            .isEqualTo(CareerPlan.QualificationOutcome.INELIGIBLE);
+        assertThat(representative.targetYearAnalog().outcome())
+            .isEqualTo(CareerPlan.QualificationOutcome.CONDITIONALLY_ELIGIBLE);
+        assertThat(representative.targetYearAnalog().reasons())
+            .contains("2027 届属于目标年度当届毕业生范围");
     }
 
     @Test
@@ -88,8 +127,8 @@ class CareerPlanServiceTest {
             .filter(value -> value.code().equals("PUBLIC_TECH")).findFirst().orElseThrow();
 
         assertThat(route.scenarioBreakdowns()).extracting(CareerPlan.ScenarioBreakdown::scenarioCode)
-            .containsExactly("PRE_GRADUATION", "DEGREE_PENDING_VERIFICATION", "MASTER_VERIFIED");
-        assertThat(route.scenarioBreakdowns()).filteredOn(value -> value.scenarioCode().equals("PRE_GRADUATION"))
+            .containsExactly("MASTER_IN_PROGRESS", "DEGREE_PENDING_VERIFICATION", "MASTER_VERIFIED");
+        assertThat(route.scenarioBreakdowns()).filteredOn(value -> value.scenarioCode().equals("MASTER_IN_PROGRESS"))
             .singleElement().satisfies(value -> {
                 assertThat(value.eligible()).isZero();
                 assertThat(value.conditionallyEligible()).isEqualTo(1);
@@ -138,7 +177,7 @@ class CareerPlanServiceTest {
                 assertThat(value.score()).isEqualTo(100);
                 assertThat(value.basis()).contains("5 个完整年");
             });
-        assertThat(route.scenarioBreakdowns()).filteredOn(value -> value.scenarioCode().equals("PRE_GRADUATION"))
+        assertThat(route.scenarioBreakdowns()).filteredOn(value -> value.scenarioCode().equals("MASTER_IN_PROGRESS"))
             .singleElement().extracting(CareerPlan.ScenarioBreakdown::eligible).isEqualTo(1);
     }
 
@@ -190,7 +229,7 @@ class CareerPlanServiceTest {
         var outcome = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22)).recommendedRoutes().stream()
             .filter(route -> route.code().equals("PUBLIC_TECH")).findFirst().orElseThrow()
             .representativeJobs().getFirst().scenarioOutcomes().stream()
-            .filter(value -> value.scenarioCode().equals("PRE_GRADUATION")).findFirst().orElseThrow();
+            .filter(value -> value.scenarioCode().equals("MASTER_IN_PROGRESS")).findFirst().orElseThrow();
 
         assertThat(outcome.outcome()).isEqualTo(CareerPlan.QualificationOutcome.INELIGIBLE);
         assertThat(outcome.reasons()).anyMatch(value -> value.contains("专业不在"));
@@ -207,7 +246,7 @@ class CareerPlanServiceTest {
         var outcome = service.generate(CANDIDATE_ID, 2027, LocalDate.of(2026, 8, 22)).recommendedRoutes().stream()
             .filter(route -> route.code().equals("PUBLIC_TECH")).findFirst().orElseThrow()
             .representativeJobs().getFirst().scenarioOutcomes().stream()
-            .filter(value -> value.scenarioCode().equals("PRE_GRADUATION")).findFirst().orElseThrow();
+            .filter(value -> value.scenarioCode().equals("MASTER_IN_PROGRESS")).findFirst().orElseThrow();
 
         assertThat(outcome.outcome()).isEqualTo(CareerPlan.QualificationOutcome.UNCERTAIN);
         assertThat(outcome.reasons()).anyMatch(value -> value.contains("专业事实尚未"));
@@ -338,7 +377,7 @@ class CareerPlanServiceTest {
             UUID.fromString("10000000-0000-0000-0000-000000000009"), "乙单位", OrganizationType.PUBLIC_INSTITUTION,
             "信息安全", JobFamily.INFORMATION_SYSTEMS, EmploymentType.ESTABLISHMENT, EducationLevel.BACHELOR,
             38, null, Set.of(), "政治面貌不限，中共党员优先", true);
-        assertThat(outcomeFor(bachelorBase, nonMember, "PRE_GRADUATION")).satisfies(value -> {
+        assertThat(outcomeFor(bachelorBase, nonMember, "MASTER_IN_PROGRESS")).satisfies(value -> {
             assertThat(value.outcome()).isEqualTo(CareerPlan.QualificationOutcome.ELIGIBLE);
             assertThat(value.reasons()).anyMatch(reason -> reason.contains("优先条件"));
         });
@@ -351,7 +390,7 @@ class CareerPlanServiceTest {
                 bachelorBase.minimumExperienceYears(), bachelorBase.requiredProfessionalTitles(), preference,
                 bachelorBase.requirements(), bachelorBase.sourceUrl(), bachelorBase.evidenceComplete(), bachelorBase.exactMajors(),
                 bachelorBase.acceptedGraduationYears(), bachelorBase.genderRequirement(), bachelorBase.overseasDegreeRule());
-            assertThat(outcomeFor(preferenceJob, nonMember, "PRE_GRADUATION").outcome())
+            assertThat(outcomeFor(preferenceJob, nonMember, "MASTER_IN_PROGRESS").outcome())
                 .as(preference).isEqualTo(CareerPlan.QualificationOutcome.ELIGIBLE);
         }
         for (String required : List.of("中共党员，具有相关经验者优先", "中共党员，年龄不限")) {
@@ -363,7 +402,7 @@ class CareerPlanServiceTest {
                 bachelorBase.minimumExperienceYears(), bachelorBase.requiredProfessionalTitles(), required,
                 bachelorBase.requirements(), bachelorBase.sourceUrl(), bachelorBase.evidenceComplete(), bachelorBase.exactMajors(),
                 bachelorBase.acceptedGraduationYears(), bachelorBase.genderRequirement(), bachelorBase.overseasDegreeRule());
-            assertThat(outcomeFor(requiredJob, nonMember, "PRE_GRADUATION").outcome())
+            assertThat(outcomeFor(requiredJob, nonMember, "MASTER_IN_PROGRESS").outcome())
                 .as(required).isEqualTo(CareerPlan.QualificationOutcome.INELIGIBLE);
         }
         var alternative = new HistoricalJob(bachelorBase.jobId(), bachelorBase.eventId(), bachelorBase.year(),
@@ -374,7 +413,7 @@ class CareerPlanServiceTest {
             bachelorBase.minimumExperienceYears(), bachelorBase.requiredProfessionalTitles(), "中共党员或民主党派",
             bachelorBase.requirements(), bachelorBase.sourceUrl(), bachelorBase.evidenceComplete(), bachelorBase.exactMajors(),
             bachelorBase.acceptedGraduationYears(), bachelorBase.genderRequirement(), bachelorBase.overseasDegreeRule());
-        assertThat(outcomeFor(alternative, nonMember, "PRE_GRADUATION")).satisfies(value -> {
+        assertThat(outcomeFor(alternative, nonMember, "MASTER_IN_PROGRESS")).satisfies(value -> {
             assertThat(value.outcome()).isEqualTo(CareerPlan.QualificationOutcome.UNCERTAIN);
             assertThat(value.reasons()).anyMatch(reason -> reason.contains("备选或歧义"));
         });
