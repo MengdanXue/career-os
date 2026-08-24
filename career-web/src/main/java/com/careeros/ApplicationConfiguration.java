@@ -19,6 +19,7 @@ import com.careeros.application.planning.CareerPlanService;
 import com.careeros.application.personal.CandidateEvidenceTaskPorts.CandidateSnapshot;
 import com.careeros.application.personal.CandidateEvidenceTaskPorts.QualificationImpact;
 import com.careeros.application.personal.CandidateEvidenceTaskService;
+import com.careeros.application.personal.CandidateDecisionDiffService;
 import com.careeros.application.personal.PersonalActionPorts.CurrentJobSignal;
 import com.careeros.application.personal.PersonalActionPorts.TargetJobChangeSnapshot;
 import com.careeros.application.personal.PersonalActionService;
@@ -75,6 +76,7 @@ class ApplicationConfiguration {
     }
     @Bean DecisionIntelligenceService decisionIntelligenceService(RepositoryPorts.CandidateProfiles candidates,RepositoryPorts.CandidateFactConfirmations candidateFacts,RepositoryPorts.EligibilityAssessments assessments,DecisionPorts.JobContexts jobContexts,DecisionPorts.OrganizationStabilityFacts stabilityFacts,DecisionPorts.DecisionSnapshots snapshots,JobAdmissionPorts.JobAdmissions admissions,DecisionPorts.DecisionInputLock inputLock,EligibilityEvaluator eligibilityEvaluator,FitEvaluator fitEvaluator,StabilityEvaluator stabilityEvaluator) { return new DecisionIntelligenceService(candidates,candidateFacts,assessments,jobContexts,stabilityFacts,snapshots,admissions,inputLock,eligibilityEvaluator,fitEvaluator,stabilityEvaluator); }
     @Bean DecisionRankingService decisionRankingService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,DecisionIntelligenceService decisions) { return new DecisionRankingService(jobContexts,admissions,decisions); }
+    @Bean CandidateDecisionDiffService candidateDecisionDiffService(RepositoryPorts.CandidateProfiles candidates, DecisionPorts.DecisionSnapshots snapshots, DecisionIntelligenceService decisions) { return new CandidateDecisionDiffService(candidates, snapshots, decisions); }
     @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }
     @Bean JobLibrarySummaryService jobLibrarySummaryService(JobAdmissionPorts.JobAdmissions admissions) { return new JobLibrarySummaryService(admissions); }
     @Bean OfficialJobAdmissionService officialJobAdmissionService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,JobAdmissionPorts.JobFieldEvidence fieldEvidence) { return new OfficialJobAdmissionService(jobContexts,admissions,fieldEvidence); }
