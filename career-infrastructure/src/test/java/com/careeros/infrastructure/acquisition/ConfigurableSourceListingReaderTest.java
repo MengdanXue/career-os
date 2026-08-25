@@ -81,6 +81,65 @@ class ConfigurableSourceListingReaderTest {
             .hasMessageContaining("repeated a non-terminal page");
     }
 
+    @Test
+    void linkedPageTraversalFollowsTheOfficialNextLinkUntilItDisappears() {
+        URI first = URI.create("https://www.gongshu.gov.cn/col/col1229113747/index.html");
+        URI second = URI.create("https://www.gongshu.gov.cn/col/col1229113747/index_2.html");
+        var fetcher = new MapFetcher(Map.of(
+            first, linkedPage(
+                "/art/2026/8/20/art_1229113747_999001.html", "2026年事业单位公开招聘公告",
+                "/col/col1229113747/index_2.html"),
+            second, ("<html><body>"
+                + "<a href=\"/art/2026/8/20/art_1229113747_999001.html\">2026年事业单位公开招聘公告</a>"
+                + "<a href=\"/art/2024/6/10/art_1229113747_888001.html\">2024年事业单位公开招聘公告</a>"
+                + "</body></html>").getBytes(StandardCharsets.UTF_8)
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(linkedSource(), new ListingQuery(Set.of(2024, 2025, 2026), true));
+
+        assertThat(result.links()).extracting(link -> link.recruitmentYear())
+            .containsExactly(2026, 2024);
+        assertThat(result.evidenceByYear().get(2024).stopReason())
+            .isEqualTo("NO_NEXT_LINK");
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isTrue();
+        assertThat(fetcher.requests()).containsExactly(first, second);
+    }
+
+    @Test
+    void linkedPageTraversalRejectsANextLinkOutsideTheOfficialHostAllowlist() {
+        URI first = URI.create("https://www.gongshu.gov.cn/col/col1229113747/index.html");
+        var fetcher = new MapFetcher(Map.of(
+            first, linkedPage(
+                "/art/2026/8/20/art_1229113747_999001.html", "2026年事业单位公开招聘公告",
+                "https://tracker.example/index_2.html")
+        ));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(linkedSource(), new ListingQuery(Set.of(2024, 2025, 2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("allowed official host");
+    }
+
+    @Test
+    void linkedPageTraversalRejectsPaginationCycles() {
+        URI first = URI.create("https://www.gongshu.gov.cn/col/col1229113747/index.html");
+        URI second = URI.create("https://www.gongshu.gov.cn/col/col1229113747/index_2.html");
+        var fetcher = new MapFetcher(Map.of(
+            first, linkedPage(
+                "/art/2026/8/20/art_1229113747_999001.html", "2026年事业单位公开招聘公告",
+                "/col/col1229113747/index_2.html"),
+            second, linkedPage(
+                "/art/2024/6/10/art_1229113747_888001.html", "2024年事业单位公开招聘公告",
+                "/col/col1229113747/index.html")
+        ));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(linkedSource(), new ListingQuery(Set.of(2024, 2025, 2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("cycle");
+    }
+
     private static RecruitmentSource source() {
         Instant now = Instant.parse("2026-08-24T12:00:00Z");
         return new RecruitmentSource(
@@ -101,8 +160,35 @@ class ConfigurableSourceListingReaderTest {
             ), null, null, now, 0, now, now);
     }
 
+    private static RecruitmentSource linkedSource() {
+        Instant now = Instant.parse("2026-08-24T12:00:00Z");
+        return new RecruitmentSource(
+            UUID.fromString("01992f09-0000-7000-8000-000000000401"),
+            "HZ_GONGSHU_GOV", "杭州市拱墅区政府招聘",
+            URI.create("https://www.gongshu.gov.cn/"),
+            URI.create("https://www.gongshu.gov.cn/col/col1229113747/index.html"),
+            SourceType.OFFICIAL_GOVERNMENT, "杭州", CrawlMode.STATIC_HTML,
+            true, "0 30 8 * * *", "Asia/Shanghai", Duration.ofMillis(1_500),
+            Map.of(
+                "adapterType", "STATIC_HTML",
+                "historicalPaginationMode", "LINKED_PAGE",
+                "historicalMaxPages", 20,
+                "nextPageSelector", "a.next[href]",
+                "articleUrlRegex", "^https://www\\.gongshu\\.gov\\.cn/art/[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}/art_[0-9]+_[0-9]+\\.html$",
+                "linkSelector", "a[href]",
+                "titleIncludeRegex", "招聘|招考|选聘|引进",
+                "titleExcludeRegex", "拟聘|公示|成绩|体检|递补"
+            ), null, null, now, 0, now, now);
+    }
+
     private static byte[] page(String href, String title) {
         return ("<html><body><a href=\"" + href + "\">" + title + "</a></body></html>")
+            .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static byte[] linkedPage(String href, String title, String nextHref) {
+        String next = nextHref == null ? "" : "<a class=\"next\" href=\"" + nextHref + "\">下一页</a>";
+        return ("<html><body><a href=\"" + href + "\">" + title + "</a>" + next + "</body></html>")
             .getBytes(StandardCharsets.UTF_8);
     }
 

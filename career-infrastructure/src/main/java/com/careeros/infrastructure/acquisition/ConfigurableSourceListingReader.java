@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.jsoup.Jsoup;
 
 public final class ConfigurableSourceListingReader implements SourceListingReader {
     private static final Pattern YEAR = Pattern.compile("(?:^|[/\\s（(])(20\\d{2})(?:[/\\s年）)]|$)");
@@ -49,10 +50,50 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         String mode = String.valueOf(source.configuration().get("historicalPaginationMode"));
         return switch (mode) {
             case "STATIC_PAGE_SUFFIX" -> readStaticSuffix(source, query);
+            case "LINKED_PAGE" -> readLinkedPages(source, query);
             case "JCMS_PARAM_JSON" -> readJcms(source, query);
             case "FIXED_HTTPS_EVIDENCE" -> readFixedEvidence(source, query);
             default -> throw new IllegalArgumentException("Unsupported historicalPaginationMode: " + mode);
         };
+    }
+
+    private ListingResult readLinkedPages(RecruitmentSource source, ListingQuery query) {
+        int maxPages = positive(source.configuration(), "historicalMaxPages");
+        String nextPageSelector = required(source.configuration(), "nextPageSelector");
+        LinkedHashMap<URI, YearDiscoveredLink> accepted = new LinkedHashMap<>();
+        Set<URI> visitedPages = new HashSet<>();
+        Set<String> pageFingerprints = new HashSet<>();
+        int rawCount = 0;
+        URI current = source.entryUri();
+        for (int page = 1; page <= maxPages; page++) {
+            current = canonical(current);
+            if (!visitedPages.add(current)) {
+                throw new FetchFailedException("Historical listing next-page link formed a cycle");
+            }
+            FetchedDocument fetched = fetch(source, current);
+            if (!pageFingerprints.add(sha256(fetched.content()))) {
+                throw new FetchFailedException("Historical listing repeated a non-terminal page");
+            }
+            List<DiscoveredLink> raw = canonicalDistinct(
+                discoverer.discoverAll(source, fetched.finalUri(), fetched.content()));
+            List<DiscoveredLink> candidates = canonicalDistinct(
+                discoverer.discover(source, fetched.finalUri(), fetched.content()));
+            rawCount += raw.size();
+            for (DiscoveredLink link : candidates) {
+                recruitmentYear(link).filter(query.recruitmentYears()::contains)
+                    .ifPresent(year -> accepted.putIfAbsent(link.uri(), new YearDiscoveredLink(link, year)));
+            }
+            Optional<URI> next = nextPageUri(source, fetched.finalUri(), fetched.content(), nextPageSelector);
+            if (next.isEmpty()) {
+                return completed(query, List.copyOf(accepted.values()), page, rawCount,
+                    "NO_NEXT_LINK", "official next-link traversal pages=" + page);
+            }
+            if (page == maxPages) {
+                throw new FetchFailedException("Historical listing exceeded configured page limit");
+            }
+            current = next.orElseThrow();
+        }
+        throw new FetchFailedException("Historical listing exceeded configured page limit");
     }
 
     private ListingResult readStaticSuffix(RecruitmentSource source, ListingQuery query) {
@@ -227,6 +268,29 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         return URI.create(value.substring(0, value.length() - "list.htm".length()) + "list" + page + ".htm");
     }
 
+    private static Optional<URI> nextPageUri(
+        RecruitmentSource source, URI pageUri, byte[] content, String selector
+    ) {
+        LinkedHashMap<URI, URI> distinct = new LinkedHashMap<>();
+        var document = Jsoup.parse(new String(content, StandardCharsets.UTF_8), pageUri.toString());
+        for (var element : document.select(selector)) {
+            String href = element.attr("href").trim();
+            if (href.isEmpty()) continue;
+            URI resolved = canonical(pageUri.resolve(href));
+            try {
+                requireOfficialHttps(source, resolved);
+            } catch (IllegalArgumentException unsafeLink) {
+                throw new FetchFailedException(
+                    "Historical listing next-page link is not HTTPS on an allowed official host", unsafeLink);
+            }
+            distinct.putIfAbsent(resolved, resolved);
+        }
+        if (distinct.size() > 1) {
+            throw new FetchFailedException("Historical listing exposed ambiguous next-page links");
+        }
+        return distinct.values().stream().findFirst();
+    }
+
     private static List<DiscoveredLink> canonicalDistinct(List<DiscoveredLink> values) {
         LinkedHashMap<URI, DiscoveredLink> distinct = new LinkedHashMap<>();
         for (DiscoveredLink value : values) {
@@ -270,6 +334,14 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             : value == null ? -1 : Integer.parseInt(value.toString());
         if (parsed < 1) throw new IllegalArgumentException(key + " must be positive");
         return parsed;
+    }
+
+    private static String required(Map<String, Object> configuration, String key) {
+        Object value = configuration.get(key);
+        if (!(value instanceof String text) || text.isBlank()) {
+            throw new IllegalArgumentException(key + " is required");
+        }
+        return text;
     }
 
     private static String sha256(byte[] value) {
