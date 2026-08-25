@@ -10,6 +10,7 @@ import com.careeros.domain.acquisition.SourceYearCoverage;
 import com.careeros.domain.acquisition.SourceOnboardingCheckpoint;
 import com.careeros.domain.acquisition.ArtifactImportFailure;
 import com.careeros.application.AcquisitionPorts.AcquisitionStore;
+import com.careeros.application.AcquisitionPorts.TargetSourceRegistration;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -26,21 +27,41 @@ final class AcquisitionApiModels {
         UUID id, String code, String name, String entryUri, String sourceType, String region,
         String crawlMode, boolean enabled, String cronExpression, String timeZone,
         Instant lastSuccessAt, Instant lastFailureAt, Instant nextDueAt, int consecutiveFailureCount,
-        String connectionStatus, List<CoverageResponse> coverage,
+        String connectionStatus, String scopeLevel, String scopeCode, String priorityTier,
+        String coverageRole, String accessStatus, long documentIssueCount,
+        List<CoverageResponse> coverage,
         List<CheckpointResponse> checkpoints, long historicalFailureCount
     ) {
-        static SourceResponse from(RecruitmentSource value, AcquisitionStore store) {
+        static SourceResponse from(
+            RecruitmentSource value, TargetSourceRegistration target, AcquisitionStore store
+        ) {
+            if (value == null) {
+                return new SourceResponse(null, target.code(), target.name(), target.officialRootUrl(),
+                    "UNCONFIGURED", target.region(), "UNCONFIGURED", false, null, null,
+                    null, null, null, 0, target.connectionStatus().name(), target.scopeLevel(),
+                    target.scopeCode(), target.priorityTier(), target.coverageRole(), "NOT_CONFIGURED", 0,
+                    List.of(), List.of(), 0);
+            }
+            long documentIssues = store.countDocumentImportFailures(value.id());
             return new SourceResponse(value.id(),value.code(),value.name(),value.entryUri().toString(),
                 value.sourceType().name(),value.region(),value.crawlMode().name(),value.enabled(),
                 value.cronExpression(),value.timeZone(),value.lastSuccessAt(),value.lastFailureAt(),
                 value.nextDueAt(),value.consecutiveFailureCount(),
-                Optional.ofNullable(store.findTargetSourceStatus(value.code()))
-                    .map(Enum::name).orElse("NOT_CONNECTED"),
+                target.connectionStatus().name(), target.scopeLevel(), target.scopeCode(),
+                target.priorityTier(), target.coverageRole(), accessStatus(value, store), documentIssues,
                 store.findSourceYearCoverage(value.id(), null).stream()
                     .sorted(java.util.Comparator.comparingInt(SourceYearCoverage::recruitmentYear))
                     .map(CoverageResponse::from).toList(),
                 store.findCheckpoints(value.id()).stream().map(CheckpointResponse::from).toList(),
                 store.countImportFailures(value.id()));
+        }
+
+        private static String accessStatus(RecruitmentSource value, AcquisitionStore store) {
+            if (value.lastSuccessAt() != null) return "ACCESSIBLE";
+            return store.findLatestRun(value.id())
+                .map(run -> run.status() == com.careeros.domain.acquisition.SourceCrawlRun.RunStatus.FAILED
+                    ? "ACCESS_FAILED" : "ACCESSIBLE")
+                .orElse("UNKNOWN");
         }
     }
 

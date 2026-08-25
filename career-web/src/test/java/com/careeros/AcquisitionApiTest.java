@@ -58,6 +58,7 @@ class AcquisitionApiTest {
             com.careeros.domain.acquisition.SourceOnboardingCheckpoint.CheckpointStatus.VERIFIED,
             "官方来源已登记", NOW)));
         when(store.countImportFailures(SOURCE_ID)).thenReturn(2L);
+        when(store.countDocumentImportFailures(SOURCE_ID)).thenReturn(2L);
 
         mvc.perform(get("/api/acquisition/sources"))
             .andExpect(status().isOk())
@@ -65,6 +66,12 @@ class AcquisitionApiTest {
             .andExpect(jsonPath("$[0].configuration").doesNotExist())
             .andExpect(jsonPath("$[0].entryUri").value("https://rlsbt.zj.gov.cn/list"))
             .andExpect(jsonPath("$[0].connectionStatus").value("PARTIAL"))
+            .andExpect(jsonPath("$[0].scopeLevel").value("CITY"))
+            .andExpect(jsonPath("$[0].scopeCode").value("HANGZHOU"))
+            .andExpect(jsonPath("$[0].priorityTier").value("P0"))
+            .andExpect(jsonPath("$[0].coverageRole").value("PRIMARY"))
+            .andExpect(jsonPath("$[0].accessStatus").value("ACCESSIBLE"))
+            .andExpect(jsonPath("$[0].documentIssueCount").value(2))
             .andExpect(jsonPath("$[0].coverage[0].listingPageCount").value(2))
             .andExpect(jsonPath("$[0].checkpoints[0].checkpoint").value("REGISTERED"))
             .andExpect(jsonPath("$[0].historicalFailureCount").value(2));
@@ -77,6 +84,22 @@ class AcquisitionApiTest {
             .andExpect(status().isAccepted())
             .andExpect(header().string("Location", "/api/acquisition/runs/" + RUN_ID))
             .andExpect(jsonPath("$.status").value("SUCCEEDED"));
+    }
+
+    @Test void listsRegisteredDistrictTargetsEvenBeforeACollectorIsConnected() throws Exception {
+        when(store.findTargetSources()).thenReturn(List.of(new TargetSourceRegistration(
+            "HZ_GONGSHU_GOV", "拱墅区政府招聘", "杭州拱墅", "https://www.gongshu.gov.cn/",
+            com.careeros.domain.acquisition.TargetSource.ConnectionStatus.NOT_CONNECTED,
+            null, true, "DISTRICT", "HANGZHOU_GONGSHU", "P0", "PRIMARY")));
+
+        mvc.perform(get("/api/acquisition/sources"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].code").value("HZ_GONGSHU_GOV"))
+            .andExpect(jsonPath("$[0].id").value(nullValue()))
+            .andExpect(jsonPath("$[0].enabled").value(false))
+            .andExpect(jsonPath("$[0].accessStatus").value("NOT_CONFIGURED"))
+            .andExpect(jsonPath("$[0].scopeLevel").value("DISTRICT"))
+            .andExpect(jsonPath("$[0].priorityTier").value("P0"));
     }
 
     @Test void historicalTriggerReturnsRunAndCoverageForRequestedRange() throws Exception {
@@ -152,7 +175,7 @@ class AcquisitionApiTest {
             URI.create("https://rlsbt.zj.gov.cn/"), URI.create("https://rlsbt.zj.gov.cn/list"),
             SourceType.OFFICIAL_GOVERNMENT, "浙江", CrawlMode.STATIC_HTML, true,
             "0 10 8 * * *", "Asia/Shanghai", Duration.ofSeconds(1), Map.of("secret", "selector"),
-            null, null, NOW, 0, NOW, NOW);
+            NOW, null, NOW, 0, NOW, NOW);
     }
 
     private static SourceCrawlRun run() {

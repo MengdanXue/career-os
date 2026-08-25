@@ -29,7 +29,18 @@ final class AcquisitionController {
 
     @GetMapping("/sources")
     List<SourceResponse> sources() {
-        return store.findSources().stream().map(source -> SourceResponse.from(source, store)).toList();
+        var actual = store.findSources().stream().collect(java.util.stream.Collectors.toMap(
+            com.careeros.domain.acquisition.RecruitmentSource::code, value -> value));
+        var targets = store.findTargetSources();
+        if (targets.isEmpty()) {
+            return actual.values().stream().sorted(java.util.Comparator.comparing(
+                    com.careeros.domain.acquisition.RecruitmentSource::code))
+                .map(source -> SourceResponse.from(source, new com.careeros.application.AcquisitionPorts.TargetSourceRegistration(
+                    source.code(), source.name(), source.region(), source.baseUri().toString(),
+                    store.findTargetSourceStatus(source.code()), source.id(), source.enabled(),
+                    "CITY", "HANGZHOU", "P0", "PRIMARY"), store)).toList();
+        }
+        return targets.stream().map(target -> SourceResponse.from(actual.get(target.code()), target, store)).toList();
     }
 
     @PostMapping("/sources/{sourceId}/runs")

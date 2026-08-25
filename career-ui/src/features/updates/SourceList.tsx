@@ -17,6 +17,18 @@ const coverageLabels: Record<string, string> = {
   NOT_DISCOVERED: '未采集',
 }
 
+const accessLabels: Record<AcquisitionSource['accessStatus'], string> = {
+  ACCESSIBLE: '官网访问正常',
+  ACCESS_FAILED: '官网访问失败',
+  NOT_CONFIGURED: '采集器未接入',
+  UNKNOWN: '官网尚未验证',
+}
+
+function scopeLabel(source: AcquisitionSource) {
+  if (source.scopeCode === 'HANGZHOU') return '杭州'
+  return source.region.replace(/^浙江/, '').replace(/^杭州/, '') || source.scopeCode
+}
+
 function runMessage(run: AcquisitionRun) {
   if (run.status === 'PARTIALLY_SUCCEEDED') return `部分完成：新增 ${run.addedCount}，更新 ${run.updatedCount}，失败 ${run.failedCount}`
   if (run.status === 'SUCCEEDED') return `完成：新增 ${run.addedCount}，更新 ${run.updatedCount}，下线 ${run.deactivatedCount}`
@@ -26,16 +38,16 @@ function runMessage(run: AcquisitionRun) {
 }
 
 function SourceRow({ source }: { source: AcquisitionSource }) {
-  const run = useMutation({ mutationFn: () => triggerSource(source.id) })
+  const run = useMutation({ mutationFn: () => triggerSource(source.id!) })
   const connection = connectionPresentation[source.connectionStatus] ?? connectionPresentation.NOT_CONNECTED
   const coverage = [...(source.coverage ?? [])].sort((left, right) => left.year - right.year)
   return <article className="source-row">
     <div className="source-identity">
-      <div><StatusChip tone={connection.tone}>{connection.label}</StatusChip><span>{source.region}</span></div>
+      <div><StatusChip tone={connection.tone}>{connection.label}</StatusChip><span>{source.priorityTier} · {scopeLabel(source)}</span></div>
       <strong>{source.name}</strong>
       <a href={source.entryUri} target="_blank" rel="noreferrer">查看官方来源</a>
     </div>
-    <button type="button" aria-label={`运行 ${source.name}`} disabled={run.isPending || !source.enabled} onClick={() => run.mutate()}>{run.isPending ? '正在采集…' : '立即更新'}</button>
+    <button type="button" aria-label={`运行 ${source.name}`} disabled={run.isPending || !source.enabled || !source.id} onClick={() => run.mutate()}>{run.isPending ? '正在采集…' : '立即更新'}</button>
     <div className="source-evidence" aria-label={`${source.name}采集证据`}>
       <span className="evidence-kicker">年度证据覆盖</span>
       <div className="coverage-rail">
@@ -43,6 +55,7 @@ function SourceRow({ source }: { source: AcquisitionSource }) {
       </div>
       {coverage.some(item => item.stopReason === 'FIXED_EVIDENCE_SET') && <span className="coverage-limitation">固定公告证据不能证明该年度官网列表已完整遍历</span>}
       <div className="source-health">
+        <span>{accessLabels[source.accessStatus]}{source.documentIssueCount > 0 ? ` · ${source.documentIssueCount} 个附件问题记录` : ''}</span>
         {source.historicalFailureCount > 0 && <span>历史采集失败记录 {source.historicalFailureCount} 条</span>}
         {source.consecutiveFailureCount > 0 && <span>连续运行失败 {source.consecutiveFailureCount} 次</span>}
       </div>

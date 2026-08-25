@@ -65,8 +65,28 @@ class JpaAcquisitionStoreTest {
     void seededSourcesAreEnabledAndDue(@Autowired AcquisitionStore store) {
         assertThat(store.findSources()).extracting(source -> source.code())
             .containsExactlyInAnyOrder("ZJ_HRSS_INSTITUTION", "HZ_HRSS_INSTITUTION",
-                "HDU_RECRUITMENT", "ZJGSU_RECRUITMENT", "HZ_FIRST_HOSPITAL");
-        assertThat(store.findDueSources(Instant.now().plusSeconds(60), 10)).hasSize(5);
+                "HDU_RECRUITMENT", "ZJGSU_RECRUITMENT", "HZ_FIRST_HOSPITAL", "HZ_XIHU_GOV");
+        assertThat(store.findDueSources(Instant.now().plusSeconds(60), 10)).hasSize(6);
+    }
+
+    @Test
+    void readsCompleteTargetScopeIncludingDistrictsWithoutCollectors(@Autowired AcquisitionStore store) {
+        assertThat(store.findTargetSources()).filteredOn(target -> target.scopeLevel().equals("DISTRICT"))
+            .hasSize(13);
+        assertThat(store.findTargetSources()).filteredOn(target -> target.code().equals("HZ_XIHU_GOV"))
+            .singleElement().satisfies(target -> {
+                assertThat(target.priorityTier()).isEqualTo("P0");
+                assertThat(target.scopeCode()).isEqualTo("HANGZHOU_XIHU");
+                assertThat(target.recruitmentSourceId()).isNotNull();
+                assertThat(target.connectionStatus()).isEqualTo(
+                    com.careeros.domain.acquisition.TargetSource.ConnectionStatus.PARTIAL);
+            });
+        assertThat(store.findTargetSources()).filteredOn(target -> target.code().equals("HZ_GONGSHU_GOV"))
+            .singleElement().satisfies(target -> {
+                assertThat(target.recruitmentSourceId()).isNull();
+                assertThat(target.connectionStatus()).isEqualTo(
+                    com.careeros.domain.acquisition.TargetSource.ConnectionStatus.NOT_CONNECTED);
+            });
     }
 
     @Test

@@ -26,6 +26,7 @@ public final class AcquisitionPorts {
     public interface AcquisitionStore {
         List<RecruitmentSource> findDueSources(Instant now, int limit);
         List<RecruitmentSource> findSources();
+        default List<TargetSourceRegistration> findTargetSources() { return List.of(); }
         RecruitmentSource findSource(UUID id);
         RecruitmentSource saveSource(RecruitmentSource source);
         SourceCrawlRun saveRun(SourceCrawlRun run);
@@ -45,6 +46,7 @@ public final class AcquisitionPorts {
         List<ArtifactImportFailure> saveImportFailures(List<ArtifactImportFailure> failures);
         List<ArtifactImportFailure> findImportFailures(UUID sourceId, UUID runId);
         long countImportFailures(UUID sourceId);
+        default long countDocumentImportFailures(UUID sourceId) { return countImportFailures(sourceId); }
         ConnectionStatus findTargetSourceStatus(String sourceCode);
         void updateTargetSourceStatus(
             String sourceCode, ConnectionStatus status, UUID recruitmentSourceId, Instant updatedAt);
@@ -87,4 +89,22 @@ public final class AcquisitionPorts {
     }
 
     public record PersistedDocumentChange(AcquiredDocument document, AcquisitionChange change) {}
+
+    public record TargetSourceRegistration(
+        String code, String name, String region, String officialRootUrl,
+        ConnectionStatus connectionStatus, UUID recruitmentSourceId, boolean enabled,
+        String scopeLevel, String scopeCode, String priorityTier, String coverageRole
+    ) {
+        public TargetSourceRegistration {
+            code = Objects.requireNonNull(code, "code");
+            name = Objects.requireNonNull(name, "name");
+            region = Objects.requireNonNull(region, "region");
+            officialRootUrl = Objects.requireNonNull(officialRootUrl, "officialRootUrl");
+            Objects.requireNonNull(connectionStatus, "connectionStatus");
+            scopeLevel = Objects.requireNonNull(scopeLevel, "scopeLevel");
+            scopeCode = Objects.requireNonNull(scopeCode, "scopeCode");
+            priorityTier = Objects.requireNonNull(priorityTier, "priorityTier");
+            coverageRole = Objects.requireNonNull(coverageRole, "coverageRole");
+        }
+    }
 }

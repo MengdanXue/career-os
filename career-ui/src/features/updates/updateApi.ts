@@ -13,10 +13,13 @@ export type AcquisitionCheckpoint = {
 }
 
 export type AcquisitionSource = {
-  id: string; code: string; name: string; entryUri: string; sourceType: string; region: string; crawlMode: string;
+  id: string | null; code: string; name: string; entryUri: string; sourceType: string; region: string; crawlMode: string;
   enabled: boolean; cronExpression: string; timeZone: string; lastSuccessAt: string | null; lastFailureAt: string | null;
   nextDueAt: string | null; consecutiveFailureCount: number;
   connectionStatus: 'CONNECTED' | 'PARTIAL' | 'FAILED' | 'NOT_CONNECTED';
+  scopeLevel: 'CITY' | 'DISTRICT' | 'ORGANIZATION'; scopeCode: string; priorityTier: 'P0' | 'P1' | 'P2';
+  coverageRole: 'PRIMARY' | 'SUPPLEMENTAL' | 'DISCOVERY';
+  accessStatus: 'ACCESSIBLE' | 'ACCESS_FAILED' | 'NOT_CONFIGURED' | 'UNKNOWN'; documentIssueCount: number;
   coverage: AcquisitionCoverage[]; checkpoints: AcquisitionCheckpoint[]; historicalFailureCount: number
 }
 

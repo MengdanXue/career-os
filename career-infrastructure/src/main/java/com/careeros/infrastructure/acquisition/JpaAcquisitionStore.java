@@ -6,6 +6,7 @@ import com.careeros.application.AcquisitionPorts.ChangePage;
 import com.careeros.application.AcquisitionPorts.PersistedDocumentChange;
 import com.careeros.application.AcquisitionPorts.RunPage;
 import com.careeros.application.AcquisitionPorts.RunQuery;
+import com.careeros.application.AcquisitionPorts.TargetSourceRegistration;
 import com.careeros.domain.acquisition.AcquiredDocument;
 import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
@@ -68,6 +69,24 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     public List<RecruitmentSource> findSources() {
         return sources.findAll().stream().map(JpaAcquisitionStore::toDomain)
             .sorted(java.util.Comparator.comparing(RecruitmentSource::code)).toList();
+    }
+
+    @Override @Transactional(readOnly = true)
+    @SuppressWarnings("unchecked")
+    public List<TargetSourceRegistration> findTargetSources() {
+        List<Object[]> rows = entityManager.createNativeQuery("""
+            select code, name, region, official_root_url, connection_status,
+                   recruitment_source_id, enabled, scope_level, scope_code,
+                   priority_tier, coverage_role
+            from target_source_catalog
+            order by case priority_tier when 'P0' then 0 when 'P1' then 1 else 2 end,
+                     scope_code, code
+            """).getResultList();
+        return rows.stream().map(row -> new TargetSourceRegistration(
+            row[0].toString(), row[1].toString(), row[2].toString(), row[3].toString(),
+            ConnectionStatus.valueOf(row[4].toString()), (UUID) row[5], (Boolean) row[6],
+            row[7].toString(), row[8].toString(), row[9].toString(), row[10].toString()
+        )).toList();
     }
 
     @Override @Transactional(readOnly = true)
@@ -217,6 +236,16 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     @Override @Transactional(readOnly = true)
     public long countImportFailures(UUID sourceId) {
         return importFailures.countBySourceId(sourceId);
+    }
+
+    @Override @Transactional(readOnly = true)
+    public long countDocumentImportFailures(UUID sourceId) {
+        Number count = (Number) entityManager.createNativeQuery("""
+            select count(*) from artifact_import_failure
+            where source_id = :sourceId
+              and stage not in ('DISCOVERY_CONTRACT_CHANGED', 'REMOTE_ACCESS_FAILED')
+            """).setParameter("sourceId", sourceId).getSingleResult();
+        return count.longValue();
     }
 
     @Override @Transactional(readOnly = true)
