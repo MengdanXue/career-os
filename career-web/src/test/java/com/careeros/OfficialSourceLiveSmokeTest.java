@@ -52,6 +52,16 @@ class OfficialSourceLiveSmokeTest {
     }
 
     @Test
+    void xihuOfficialListingStillMatchesConfiguredArticles() {
+        assertCompatible(source(
+            "HZ_XIHU_GOV",
+            "https://www.hzxh.gov.cn/",
+            "https://www.hzxh.gov.cn/col/col1368377/index.html",
+            "https://www.hzxh.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=1838&tplSetId=wBnYzsSjnCAXcEg2xsahR&pageType=column&tagId=%E7%A7%BB%E5%8A%A8%E7%89%88%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A81&editType=null&pageId=1368377",
+            "^https://www\\.hzxh\\.gov\\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\\.html$"));
+    }
+
+    @Test
     void auditedStaticCatalogListingsStillExposeOfficialRecruitmentLinks() {
         var sources = OfficialSourceCatalog.load().sources().stream()
             .filter(OfficialSourceCatalog.SourceDefinition::enabled)

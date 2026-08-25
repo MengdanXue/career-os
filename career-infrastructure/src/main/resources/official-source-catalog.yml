@@ -85,10 +85,15 @@ sources:
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.hzxh.gov.cn/
     listingUrl: https://www.hzxh.gov.cn/col/col1368377/index.html
-    strategy: STATIC_HTML
+    strategy: JCMS_LISTING
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
+    enabled: true
     articleUrlRegex: '^https://www\.hzxh\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+    linkSelector: 'a[href]'
+    titleIncludeRegex: '招聘|招考|选聘|引进'
+    titleExcludeRegex: '拟聘|公示|成绩|体检|递补'
+    historicalPaginationMode: JCMS_PARAM_JSON
+    adapterType: JCMS_LISTING
   - code: HZ_FUYANG_GOV
     name: 富阳区政府招聘
     routeCode: PUBLIC_TECH

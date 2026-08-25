@@ -18,6 +18,13 @@ class OfficialSourceCatalogTest {
                 "HZ_FUYANG_GOV", "HZ_LINAN_GOV", "HZ_JIANDE_GOV", "HZ_TONGLU_GOV", "HZ_CHUNAN_GOV");
         assertThat(catalog.sources()).filteredOn(source -> source.code().startsWith("HZ_") && source.code().endsWith("_GOV"))
             .allMatch(source -> source.historicalYears().containsAll(java.util.List.of(2024, 2025, 2026, 2027)));
+        var xihu = catalog.sources().stream().filter(source -> source.code().equals("HZ_XIHU_GOV"))
+            .findFirst().orElseThrow();
+        assertThat(xihu.enabled()).isTrue();
+        assertThat(xihu.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(xihu.configuration())
+            .containsEntry("historicalPaginationMode", "JCMS_PARAM_JSON")
+            .containsEntry("adapterType", "JCMS_LISTING");
     }
 
     @Test
@@ -70,5 +77,25 @@ class OfficialSourceCatalogTest {
             assertThat(link.uri()).hasToString("https://rsc.zjgsu.edu.cn/2025/0414/c938a192675/page.htm");
             assertThat(link.title()).contains("公开招聘");
         });
+    }
+
+    @Test
+    void xihuJcmsContractDiscoversCurrentOfficialRecruitmentArticlesFromJsonHtml() {
+        var source = OfficialSourceCatalog.load().sources().stream()
+            .filter(value -> value.code().equals("HZ_XIHU_GOV")).findFirst().orElseThrow();
+        byte[] response = """
+            {"success":true,"data":{"html":"<div class='page-content'>
+              <a href='/col/col1368377/art/2026/art_fda023d7591c4fbf820b53260da8962a.html'>
+                西湖区人力资源和社会保障局公开招聘编外工作人员公告</a>
+              <a href='/col/col1229349919/art/2025/art_a900cfc4dba7403887a8cc0a165aadf1.html'>
+                2025年杭州市西湖区部分事业单位公开招聘工作人员公告</a>
+            </div>"}}
+            """.getBytes(StandardCharsets.UTF_8);
+
+        assertThat(new StaticHtmlSourceDiscoverer().discover(source, response))
+            .extracting(link -> link.uri().toString())
+            .containsExactly(
+                "https://www.hzxh.gov.cn/col/col1229349919/art/2025/art_a900cfc4dba7403887a8cc0a165aadf1.html",
+                "https://www.hzxh.gov.cn/col/col1368377/art/2026/art_fda023d7591c4fbf820b53260da8962a.html");
     }
 }
