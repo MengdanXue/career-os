@@ -91,7 +91,7 @@ sources:
     articleUrlRegex: '^https://www\.hzxh\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
     linkSelector: 'a[href]'
     titleIncludeRegex: '招聘|招考|选聘|引进'
-    titleExcludeRegex: '拟聘|公示|成绩|体检|递补'
+    titleExcludeRegex: '招聘会|培训|讲座'
     historicalPaginationMode: JCMS_PARAM_JSON
     adapterType: JCMS_LISTING
   - code: HZ_FUYANG_GOV

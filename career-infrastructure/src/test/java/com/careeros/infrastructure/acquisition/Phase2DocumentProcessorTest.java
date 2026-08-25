@@ -17,6 +17,9 @@ import com.careeros.infrastructure.persistence.OfficialExcelImportService;
 import com.careeros.infrastructure.persistence.OfficialExcelImportService.ImportResult;
 import com.careeros.infrastructure.persistence.OfficialAnnouncementFactService;
 import com.careeros.infrastructure.persistence.HospitalOfficialJobImportService;
+import com.careeros.infrastructure.persistence.OfficialLifecycleDocumentService;
+import com.careeros.infrastructure.persistence.OfficialLifecycleDocumentService.MatchStatus;
+import com.careeros.infrastructure.persistence.OfficialLifecycleDocumentService.Result;
 import org.mockito.ArgumentCaptor;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -123,6 +126,33 @@ class Phase2DocumentProcessorTest {
     }
 
     @Test
+    void lifecycleHtmlIsLinkedWithoutCreatingAStandaloneRecruitmentEvent() {
+        var lifecycle = mock(OfficialLifecycleDocumentService.class);
+        var lifecycleProcessor = new Phase2DocumentProcessor(
+            extractions, workbooks, announcementFacts, null, lifecycle);
+        ExtractionRun run = mock(ExtractionRun.class);
+        UUID evidenceId = UUID.randomUUID();
+        UUID eventId = UUID.randomUUID();
+        when(run.id()).thenReturn(RUN_ID);
+        when(run.evidenceId()).thenReturn(evidenceId);
+        when(extractions.submit(any())).thenReturn(new ExtractionResult(run, Optional.empty(), false));
+        when(lifecycle.recordIfLifecycle(
+            org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyInt(), any(), org.mockito.ArgumentMatchers.eq(evidenceId)))
+            .thenReturn(Optional.of(new Result(MatchStatus.MATCHED, eventId, 1)));
+
+        var result = lifecycleProcessor.process(command(
+            "text/html", "<html><body>面试时间另行通知</body></html>".getBytes(StandardCharsets.UTF_8),
+            URI.create("https://www.hzxh.gov.cn/art/2025/6/1/lifecycle.html"),
+            "杭州市西湖区2025年度部分事业单位公开招聘工作人员面试通知"));
+
+        assertThat(result.recruitmentEventId()).isEqualTo(eventId);
+        assertThat(result.inserted()).isZero();
+        verify(announcementFacts, never()).upsert(any(), any(),
+            org.mockito.ArgumentMatchers.anyInt(), any(), any(), any());
+    }
+
+    @Test
     void xlsxUsesOfficialWorkbookPipelineAndReturnsJobDeltas() throws Exception {
         UUID eventId = UUID.fromString("01992f09-0000-7000-8000-000000000702");
         when(workbooks.importWorkbook(any(), any())).thenReturn(
@@ -161,7 +191,7 @@ class Phase2DocumentProcessorTest {
 
     @Test
     void processorVersionChangesWhenWorkbookInterpretationChanges() {
-        assertThat(processor.version()).isEqualTo("official-fact-fusion-v9");
+        assertThat(processor.version()).isEqualTo("official-fact-fusion-v10");
     }
 
     @Test
@@ -219,6 +249,18 @@ class Phase2DocumentProcessorTest {
 
         assertThat(result.successful()).isTrue();
         assertThat(result.errorCode()).isEqualTo("NON_JOB_WORKBOOK_SCHEMA");
+    }
+
+    @Test
+    void lifecycleRosterWorkbookIsPreservedWithoutBeingImportedAsJobs() throws Exception {
+        var result = processor.process(command(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            new byte[] {'P','K',3,4}, URI.create("https://www.hzxh.gov.cn/files/interview-list.xlsx"),
+            "杭州市西湖区2025年度部分事业单位公开招聘工作人员入围面试人员名单"));
+
+        assertThat(result.successful()).isTrue();
+        assertThat(result.errorCode()).isEqualTo("LIFECYCLE_ATTACHMENT");
+        verify(workbooks, never()).importWorkbook(any(), any());
     }
 
     @Test

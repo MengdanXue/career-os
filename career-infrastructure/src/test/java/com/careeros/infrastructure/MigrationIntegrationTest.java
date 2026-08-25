@@ -98,7 +98,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(37);
+        assertThat(result.migrationsExecuted).isEqualTo(39);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -152,7 +152,8 @@ class MigrationIntegrationTest {
               var targetScopeColumns = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='target_source_catalog' and column_name in ('scope_level','scope_code','priority_tier','coverage_role')");
               var districtTargets = connection.prepareStatement("select count(*) from target_source_catalog where scope_level='DISTRICT' and code in ('HZ_SHANGCHENG_GOV','HZ_GONGSHU_GOV','HZ_XIHU_GOV','HZ_BINJIANG_GOV','HZ_XIAOSHAN_GOV','HZ_YUHANG_GOV','HZ_LINPING_GOV','HZ_QIANTANG_GOV','HZ_FUYANG_GOV','HZ_LINAN_GOV','HZ_JIANDE_GOV','HZ_TONGLU_GOV','HZ_CHUNAN_GOV')");
               var districtPriority = connection.prepareStatement("select priority_tier, count(*) from target_source_catalog where scope_level='DISTRICT' group by priority_tier order by priority_tier");
-              var xihuSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_XIHU_GOV' and source.enabled and source.configuration ->> 'historicalPaginationMode'='JCMS_PARAM_JSON' and source.configuration ->> 'adapterType'='JCMS_LISTING' and target.connection_status='PARTIAL'")) {
+              var lifecycleTable = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name='recruitment_lifecycle_document'");
+              var xihuSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_XIHU_GOV' and source.enabled and source.configuration ->> 'historicalPaginationMode'='JCMS_PARAM_JSON' and source.configuration ->> 'adapterType'='JCMS_LISTING' and source.configuration ->> 'titleExcludeRegex'='招聘会|培训|讲座' and target.connection_status='PARTIAL'")) {
             try (var rows = tables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(14); }
             try (var rows = candidates.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = pendingIndex.executeQuery()) {
@@ -213,6 +214,7 @@ class MigrationIntegrationTest {
                 assertThat(rows.getInt(2)).isEqualTo(3);
                 assertThat(rows.next()).isFalse();
             }
+            try (var rows = lifecycleTable.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = xihuSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
         }
 

@@ -89,6 +89,8 @@ class OfficialSourceCatalogTest {
                 西湖区人力资源和社会保障局公开招聘编外工作人员公告</a>
               <a href='/col/col1229349919/art/2025/art_a900cfc4dba7403887a8cc0a165aadf1.html'>
                 2025年杭州市西湖区部分事业单位公开招聘工作人员公告</a>
+              <a href='/col/col1229349919/art/2025/art_b900cfc4dba7403887a8cc0a165aadf2.html'>
+                2025年杭州市西湖区部分事业单位公开招聘工作人员拟聘用人员公示</a>
             </div>"}}
             """.getBytes(StandardCharsets.UTF_8);
 
@@ -96,6 +98,7 @@ class OfficialSourceCatalogTest {
             .extracting(link -> link.uri().toString())
             .containsExactly(
                 "https://www.hzxh.gov.cn/col/col1229349919/art/2025/art_a900cfc4dba7403887a8cc0a165aadf1.html",
+                "https://www.hzxh.gov.cn/col/col1229349919/art/2025/art_b900cfc4dba7403887a8cc0a165aadf2.html",
                 "https://www.hzxh.gov.cn/col/col1368377/art/2026/art_fda023d7591c4fbf820b53260da8962a.html");
     }
 }
