@@ -20,7 +20,7 @@
 - Opportunity Admission Gate（V9/V10）：持久化记录解析质量、目标范围、准入原因和人工核验状态；岗位内容变化后自动撤销旧准入，用工身份未知时禁止进入机会池，避免过期或不完整结论继续排名。
 - Java 21：编译与运行均使用 Java 21，Spring 任务执行器启用虚拟线程，适合并发下载、文档解析和数据库等待等 I/O 密集工作。
 
-当前阶段没有引入全网爬虫、登录/CAPTCHA 或自动投递。杭州 Wave 2 Slice A 已把目标市场目录扩展到 28 个，其中包含杭州 10 个 P0 区和 3 个 P2 县市；6 个来源已绑定真实采集器，运行态为已接入 1、部分接入 5、采集失败 0，另外 22 个目标明确显示为未接入。西湖区招聘信息已通过官方 JCMS 列表契约进入采集链路，其余区县仍待逐个核验官网契约，页面不会把“目录中有名称”误报成“已经采集”。采集结果继续进入确定性 Excel 导入或 HTML/PDF 证据审核管道。
+当前阶段没有引入全网爬虫、登录/CAPTCHA 或自动投递。杭州 Wave 2 已把目标市场目录扩展到 28 个，其中包含杭州 10 个 P0 区和 3 个 P2 县市；6 个来源已绑定真实采集器，运行态为已接入 1、部分接入 5、采集失败 0，另外 22 个目标明确显示为未接入。西湖区招聘信息已通过官方 JCMS 列表契约进入采集链路，浙江政务云官方附件域名已按来源精确放行；其余区县仍待逐个核验官网契约，页面不会把“目录中有名称”误报成“已经采集”。资格复审、成绩、面试、体检、考察、公示和聘用公告会作为招聘生命周期文档单独保存，只有唯一匹配时才回写原招聘事件，未匹配和歧义项会保留审计状态。
 
 Phase 4A 的模型不是决策者：资格、分数、层级和证据均由 Java 规则计算。模型默认关闭，启用后也只负责润色已经生成的解释，失败时自动回退到确定性中文说明。候选人事实逐项确认、岗位字段级证据和目标年类比已经进入主流程；完整的留服/专业目录权威映射、更多来源接入、Golden Jobs 扩面和申请跟踪仍是后续核心工作，因此当前版本是可使用、可审计的个人规划与证据研究台，不等于浙江/杭州全市场采集完成。
 
@@ -85,7 +85,7 @@ python scripts/planning_browser_acceptance.py
 pwsh -NoProfile -File scripts/hangzhou_wave2_slice_a_acceptance.ps1 -BaseUrl http://localhost:8080 -RunSources
 ```
 
-2026-08-24 的当前验收数据库已迁移到 V37。真实运行态共有 28 个目标、6 个已配置来源：已接入 1、部分接入 5、采集失败 0、未接入 22，官网访问正常 6 个，并保留 3 条附件问题记录。杭州市人社源连续增量运行的第二次结果为发现 33、抓取 33、未变化 33、新增 0、更新 0、下线 0、失败 0；重复表头产生的启用伪岗位已降为 0。当前岗位库仍不能代表杭州全市场总量。最终回归通过 Java 402 项和前端 45 项测试，共 447 项、0 失败。T1/T2/T3 当前结果受准入门与证据条件约束，不会把原始记录直接包装成可报机会。规划接口会为纳入分析的每个岗位返回本人历史实际与 2027 类比结论，数据读取失败时暂停排名而不是把失败结果排入路线。
+2026-08-24 的当前验收数据库已迁移到 V40。真实运行态共有 28 个目标、6 个已配置来源：已接入 1、部分接入 5、采集失败 0、未接入 22，官网访问正常 6 个。西湖区修复官方附件域名后，第一轮运行新增 1 个 Excel 附件、复用 2 个文档、失败 0；第二轮复用 3 个文档、新增 0、更新 0、失败 0。该 Excel 已解析为 24 个正式事业单位岗位，其中“信息管理”岗位的研究生专业要求直接包含“计算机科学与技术”。当前三份西湖材料没有生命周期标题，实测后续公告为 0；系统会明确显示零，不伪造公示或面试记录。历史失败记录仍保留用于审计，但页面会标明“历史”。当前岗位库仍不能代表杭州全市场总量。T1/T2/T3 结果继续受准入门与证据条件约束，不会把原始记录直接包装成可报机会。
 
 官方源兼容性检查默认不访问公网，需要时显式运行：
 
@@ -112,6 +112,6 @@ java -jar career-web\target\career-web-0.1.0-SNAPSHOT.jar
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - 指标：`http://localhost:8080/actuator/metrics`
 
-个人行动接口为 `GET /api/v1/candidates/{candidateId}/personal-actions?asOf=YYYY-MM-DD`，画像证据任务接口为 `GET /api/v1/candidates/{candidateId}/evidence-tasks?asOf=YYYY-MM-DD`。画像保存并确认后，前端调用 `POST /api/v1/candidates/{candidateId}/decision-change-summaries/{previousProfileVersion}?asOf=YYYY-MM-DD` 重算旧版本所覆盖的同一批岗位。三者都由确定性规则生成；规划页和任意已分析岗位详情已统一展示历史实际条件、2027 类比结果和十二阶段招考流程。后续体检、考察、公示等独立公告与原招聘事件的自动关联，以及完整申请跟踪，仍属于后续工作。
+个人行动接口为 `GET /api/v1/candidates/{candidateId}/personal-actions?asOf=YYYY-MM-DD`，画像证据任务接口为 `GET /api/v1/candidates/{candidateId}/evidence-tasks?asOf=YYYY-MM-DD`。画像保存并确认后，前端调用 `POST /api/v1/candidates/{candidateId}/decision-change-summaries/{previousProfileVersion}?asOf=YYYY-MM-DD` 重算旧版本所覆盖的同一批岗位。三者都由确定性规则生成；规划页和任意已分析岗位详情已统一展示历史实际条件、2027 类比结果和十二阶段招考流程。后续体检、考察、公示等独立公告已具备保守自动关联、未匹配/歧义留存和来源健康统计；扩大到其余杭州来源以及完整申请跟踪仍属于后续工作。
 
 接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md)、[Phase 3 增量采集 API](docs/PHASE3_API.md)、[Phase 4A 决策智能与 Agent API](docs/PHASE4A_API.md)、[Phase 4B 决策工作台](docs/PHASE4B_WORKBENCH.md) 和 [Phase 5A 半体制职业规划](docs/PHASE5A_CAREER_PLANNER.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。
