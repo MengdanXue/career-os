@@ -26,7 +26,7 @@ sources:
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.hhtz.gov.cn/
     strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
+    historicalYears: [2024, 2025, 2026, 2027]
     enabled: false
   - code: HZ_YUHANG_GOV
     name: 余杭区政府招聘
@@ -34,7 +34,7 @@ sources:
     officialRootUrl: https://www.yuhang.gov.cn/
     listingUrl: https://www.yuhang.gov.cn/col/col1229176178/index.html
     strategy: STATIC_HTML
-    historicalYears: [2024, 2025, 2026]
+    historicalYears: [2024, 2025, 2026, 2027]
     enabled: false
     articleUrlRegex: '^https://www\.yuhang\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
   - code: HZ_QIANTANG_GOV
@@ -43,7 +43,7 @@ sources:
     officialRootUrl: https://www.qiantang.gov.cn/
     listingUrl: https://www.qiantang.gov.cn/col/col1657687/index.html
     strategy: STATIC_HTML
-    historicalYears: [2024, 2025, 2026]
+    historicalYears: [2024, 2025, 2026, 2027]
     enabled: false
     articleUrlRegex: '^https://www\.qiantang\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
   - code: HZ_XIAOSHAN_GOV
@@ -52,7 +52,7 @@ sources:
     officialRootUrl: https://www.xiaoshan.gov.cn/
     listingUrl: https://www.xiaoshan.gov.cn/col/col1229292680/index.html
     strategy: STATIC_HTML
-    historicalYears: [2024, 2025, 2026]
+    historicalYears: [2024, 2025, 2026, 2027]
     enabled: false
     articleUrlRegex: '^https://www\.xiaoshan\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
   - code: HZ_LINPING_GOV
@@ -61,9 +61,71 @@ sources:
     officialRootUrl: https://www.linping.gov.cn/
     listingUrl: https://www.linping.gov.cn/col/col1229597298/index.html
     strategy: STATIC_HTML
-    historicalYears: [2024, 2025, 2026]
+    historicalYears: [2024, 2025, 2026, 2027]
     enabled: false
     articleUrlRegex: '^https://www\.linping\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
+  - code: HZ_SHANGCHENG_GOV
+    name: 上城区政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.hzsc.gov.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: false
+  - code: HZ_GONGSHU_GOV
+    name: 拱墅区政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.gongshu.gov.cn/
+    listingUrl: https://www.gongshu.gov.cn/col/col1229113747/index.html
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: false
+    articleUrlRegex: '^https://www\.gongshu\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+  - code: HZ_XIHU_GOV
+    name: 西湖区政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.hzxh.gov.cn/
+    listingUrl: https://www.hzxh.gov.cn/col/col1368377/index.html
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: false
+    articleUrlRegex: '^https://www\.hzxh\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+  - code: HZ_FUYANG_GOV
+    name: 富阳区政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.fuyang.gov.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: false
+  - code: HZ_LINAN_GOV
+    name: 临安区政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.linan.gov.cn/
+    listingUrl: https://www.linan.gov.cn/col/col1229261156/index.html
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: false
+    articleUrlRegex: '^https://www\.linan\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+  - code: HZ_JIANDE_GOV
+    name: 建德市政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.jiande.gov.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: false
+  - code: HZ_TONGLU_GOV
+    name: 桐庐县政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.tonglu.gov.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: false
+  - code: HZ_CHUNAN_GOV
+    name: 淳安县政府招聘
+    routeCode: PUBLIC_TECH
+    officialRootUrl: https://www.qdh.gov.cn/
+    strategy: UNSUPPORTED
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: false
   - code: HDU_RECRUITMENT
     name: 杭州电子科技大学招聘
     routeCode: UNIVERSITY_HOSPITAL_IT

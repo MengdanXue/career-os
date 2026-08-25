@@ -8,6 +8,19 @@ import org.junit.jupiter.api.Test;
 
 class OfficialSourceCatalogTest {
     @Test
+    void catalogRepresentsAllHangzhouDistrictScopesThroughThe2027WatchWindow() {
+        var catalog = OfficialSourceCatalog.load();
+
+        assertThat(catalog.sources()).extracting(OfficialSourceCatalog.SourceDefinition::code)
+            .contains(
+                "HZ_SHANGCHENG_GOV", "HZ_GONGSHU_GOV", "HZ_XIHU_GOV", "HZ_BINJIANG_GOV",
+                "HZ_XIAOSHAN_GOV", "HZ_YUHANG_GOV", "HZ_LINPING_GOV", "HZ_QIANTANG_GOV",
+                "HZ_FUYANG_GOV", "HZ_LINAN_GOV", "HZ_JIANDE_GOV", "HZ_TONGLU_GOV", "HZ_CHUNAN_GOV");
+        assertThat(catalog.sources()).filteredOn(source -> source.code().startsWith("HZ_") && source.code().endsWith("_GOV"))
+            .allMatch(source -> source.historicalYears().containsAll(java.util.List.of(2024, 2025, 2026, 2027)));
+    }
+
+    @Test
     void catalogContainsTwentyUniqueOfficialTargetsAcrossAllRoutes() {
         var catalog = OfficialSourceCatalog.load();
 
