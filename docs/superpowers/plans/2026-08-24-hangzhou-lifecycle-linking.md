@@ -104,4 +104,4 @@
 - [x] Run focused module tests, `mvn -q test`, frontend tests and build.
 - [x] Rebuild/start the app, run Xihu twice, and execute the lifecycle acceptance script.
 - [x] Record only measured counts in README and gap analysis.
-- [ ] Commit, push the private branch, and verify a clean worktree.
+- [x] Commit, push the private branch, and verify a clean worktree.
