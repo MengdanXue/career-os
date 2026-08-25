@@ -18,6 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class OfficialExcelImportService {
     private static final Pattern NUMBER = Pattern.compile("(\\d+)");
     private static final Pattern YEAR = Pattern.compile("(20\\d{2})");
+    private static final Set<String> JOB_HEADER_ALIASES = Set.of(
+        "岗位名称", "招聘岗位", "招聘岗位名称", "岗位", "科室/岗位", "部门/岗位", "部门岗位", "科室岗位", "选聘岗位");
+    private static final Set<String> ORGANIZATION_HEADER_ALIASES = Set.of(
+        "招聘单位", "单位名称", "用人单位", "招聘主体", "用人学院部门");
     private final RecruitmentEventJpaRepository events;
     private final OrganizationJpaRepository organizations;
     private final JobUpsertService upserts;
@@ -72,6 +76,7 @@ public class OfficialExcelImportService {
                 for(int rowIndex=header.rowIndex()+1;rowIndex<=sheet.getLastRowNum();rowIndex++){
                     var row=sheet.getRow(rowIndex); if(row==null) continue;
                     try{
+                        if(isRepeatedHeaderRow(row,header,formatter))continue;
                         String title=value(row,header.columns(),formatter,"岗位名称","招聘岗位","招聘岗位名称","岗位","科室/岗位","部门/岗位","部门岗位","科室岗位","选聘岗位");
                         if(blank(title)) continue;
                         String organizationName=value(row,header.columns(),formatter,
@@ -235,6 +240,17 @@ public class OfficialExcelImportService {
         return false;
     }
     private boolean containsAny(Map<String,Integer> map,String...aliases){return Arrays.stream(aliases).map(OfficialExcelImportService::normalizeHeader).anyMatch(map::containsKey);}
+    private boolean isRepeatedHeaderRow(Row row,Header header,DataFormatter formatter){
+        int matches=0;boolean repeatsJob=false;boolean repeatsOrganization=false;
+        for(var entry:header.columns().entrySet()){
+            var cell=row.getCell(entry.getValue(),Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+            if(cell==null||!normalizeHeader(formatter.formatCellValue(cell)).equals(entry.getKey()))continue;
+            matches++;
+            if(JOB_HEADER_ALIASES.contains(entry.getKey()))repeatsJob=true;
+            if(ORGANIZATION_HEADER_ALIASES.contains(entry.getKey()))repeatsOrganization=true;
+        }
+        return repeatsJob&&(repeatsOrganization||matches>=3);
+    }
     private String value(Row row,Map<String,Integer> columns,DataFormatter f,String...aliases){for(String alias:aliases){var column=columns.get(normalizeHeader(alias));if(column!=null){var cell=row.getCell(column,Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);if(cell!=null){var value=f.formatCellValue(cell).trim();if(!value.isBlank())return value;}}}return null;}
     private String values(Row row,Map<String,Integer> columns,DataFormatter f,String...aliases){var result=new LinkedHashSet<String>();for(String alias:aliases){var column=columns.get(normalizeHeader(alias));if(column!=null){var cell=row.getCell(column,Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);if(cell!=null){var value=f.formatCellValue(cell).trim();if(!value.isBlank())result.add(value);}}}return result.isEmpty()?null:String.join("；",result);}
     private static String normalizeHeader(String value){return value==null?"":value.replaceAll("[\\s\\n\\r：:（）()]","").trim();}

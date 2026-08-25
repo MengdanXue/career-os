@@ -145,6 +145,13 @@ class OfficialExcelImportServiceTest {
     }
 
     @Test
+    void repeatedPrintedHeadersAreIgnoredInsteadOfImportedAsJobs() throws Exception {
+        assertThat(importedJobs(workbookWithRepeatedPrintedHeaders()))
+            .extracting(JobUpsertService.NormalizedJob::title)
+            .containsExactly("信息系统工程师", "数据治理工程师");
+    }
+
+    @Test
     void attachesWorkbookEvidenceAndLocatedFieldsToImportedJob() throws Exception {
         RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
         OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
@@ -675,6 +682,35 @@ class OfficialExcelImportServiceTest {
             second.createCell(1).setCellValue("数据工程师");
             second.createCell(2).setCellValue("硕士研究生");
             second.createCell(3).setCellValue("软件工程");
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] workbookWithRepeatedPrintedHeaders() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("高层次和特殊专业技术岗位招聘计划表");
+            var headers = List.of("序号", "主管单位（部门）", "招聘单位", "招聘岗位", "招聘人数", "专业要求");
+            var header = sheet.createRow(0);
+            for (int index = 0; index < headers.size(); index++) header.createCell(index).setCellValue(headers.get(index));
+            var first = sheet.createRow(1);
+            first.createCell(0).setCellValue("1");
+            first.createCell(1).setCellValue("杭州市数据资源管理局");
+            first.createCell(2).setCellValue("杭州市信息中心");
+            first.createCell(3).setCellValue("信息系统工程师");
+            first.createCell(4).setCellValue("1");
+            first.createCell(5).setCellValue("计算机科学与技术");
+            for (int repeatedRow : List.of(2, 4)) {
+                var repeated = sheet.createRow(repeatedRow);
+                for (int index = 0; index < headers.size(); index++) repeated.createCell(index).setCellValue(headers.get(index));
+            }
+            var second = sheet.createRow(3);
+            second.createCell(0).setCellValue("2");
+            second.createCell(1).setCellValue("杭州市数据资源管理局");
+            second.createCell(2).setCellValue("杭州市大数据管理服务中心");
+            second.createCell(3).setCellValue("数据治理工程师");
+            second.createCell(4).setCellValue("1");
+            second.createCell(5).setCellValue("计算机科学与技术");
             workbook.write(output);
             return output.toByteArray();
         }
