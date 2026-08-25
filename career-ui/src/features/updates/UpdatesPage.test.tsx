@@ -49,11 +49,21 @@ describe('UpdatesPage', () => {
 
     expect(await screen.findByText('部分接入')).toBeVisible()
     expect(screen.getByText(/2024：部分完成 · 公告 3 · 岗位 1 · 失败 1/)).toBeVisible()
-    expect(screen.getByText('官网访问正常 · 2 个附件问题记录')).toBeVisible()
+    expect(screen.getByText('官网访问正常 · 历史附件问题记录 2 条')).toBeVisible()
     expect(screen.getByText('后续公告 7 · 已关联 4 · 待关联 2 · 歧义 1')).toBeVisible()
     expect(screen.getByText('P0 · 杭州')).toBeVisible()
     expect(screen.getByText('历史采集失败记录 2 条')).toBeVisible()
     expect(screen.queryByText('来源正常')).not.toBeInTheDocument()
+  })
+
+  it('shows an explicit zero when a connected source has no lifecycle notices yet', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).includes('/api/acquisition/sources')
+      ? json([{ ...source, lifecycleDocumentCount: 0, matchedLifecycleCount: 0, unmatchedLifecycleCount: 0, ambiguousLifecycleCount: 0 }])
+      : defaults(input)))
+
+    render(<AppProviders><UpdatesPage /></AppProviders>)
+
+    expect(await screen.findByText('后续公告 0 · 已关联 0 · 待关联 0 · 歧义 0')).toBeVisible()
   })
 
   it('does not present a partially successful source run as full success', async () => {
