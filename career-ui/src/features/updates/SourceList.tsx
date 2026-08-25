@@ -56,6 +56,7 @@ function SourceRow({ source }: { source: AcquisitionSource }) {
       {coverage.some(item => item.stopReason === 'FIXED_EVIDENCE_SET') && <span className="coverage-limitation">固定公告证据不能证明该年度官网列表已完整遍历</span>}
       <div className="source-health">
         <span>{accessLabels[source.accessStatus]}{source.documentIssueCount > 0 ? ` · ${source.documentIssueCount} 个附件问题记录` : ''}</span>
+        {source.lifecycleDocumentCount > 0 && <span>后续公告 {source.lifecycleDocumentCount} · 已关联 {source.matchedLifecycleCount} · 待关联 {source.unmatchedLifecycleCount} · 歧义 {source.ambiguousLifecycleCount}</span>}
         {source.historicalFailureCount > 0 && <span>历史采集失败记录 {source.historicalFailureCount} 条</span>}
         {source.consecutiveFailureCount > 0 && <span>连续运行失败 {source.consecutiveFailureCount} 次</span>}
       </div>

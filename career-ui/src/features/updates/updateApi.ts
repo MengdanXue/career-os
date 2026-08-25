@@ -20,6 +20,7 @@ export type AcquisitionSource = {
   scopeLevel: 'CITY' | 'DISTRICT' | 'ORGANIZATION'; scopeCode: string; priorityTier: 'P0' | 'P1' | 'P2';
   coverageRole: 'PRIMARY' | 'SUPPLEMENTAL' | 'DISCOVERY';
   accessStatus: 'ACCESSIBLE' | 'ACCESS_FAILED' | 'NOT_CONFIGURED' | 'UNKNOWN'; documentIssueCount: number;
+  lifecycleDocumentCount: number; matchedLifecycleCount: number; unmatchedLifecycleCount: number; ambiguousLifecycleCount: number;
   coverage: AcquisitionCoverage[]; checkpoints: AcquisitionCheckpoint[]; historicalFailureCount: number
 }
 

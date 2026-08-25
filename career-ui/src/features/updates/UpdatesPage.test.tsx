@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppProviders } from '../../app/AppProviders'
 import { UpdatesPage } from './UpdatesPage'
 
-const source = { id: '11111111-1111-1111-1111-111111111111', code: 'hangzhou-hrss', name: '杭州市人社局', entryUri: 'https://example.gov.cn', sourceType: 'OFFICIAL_GOVERNMENT', region: '浙江杭州', crawlMode: 'STATIC_HTML', enabled: true, cronExpression: '0 0 8 * * *', timeZone: 'Asia/Shanghai', lastSuccessAt: '2026-08-24T12:00:00Z', lastFailureAt: null, nextDueAt: null, consecutiveFailureCount: 0, connectionStatus: 'PARTIAL', scopeLevel: 'CITY', scopeCode: 'HANGZHOU', priorityTier: 'P0', coverageRole: 'PRIMARY', accessStatus: 'ACCESSIBLE', documentIssueCount: 2, historicalFailureCount: 2, checkpoints: [{ sourceId: '11111111-1111-1111-1111-111111111111', checkpoint: 'REGISTERED', status: 'VERIFIED', evidence: '官方来源已登记', verifiedAt: '2026-08-24T12:00:00Z' }], coverage: [{ sourceId: '11111111-1111-1111-1111-111111111111', year: 2024, status: 'PARTIAL', discoveredCount: 3, fetchedCount: 2, parsedCount: 2, targetJobCount: 1, completionBasis: null, completedAt: null, updatedAt: '2026-08-24T12:00:00Z', supportsAbsenceConclusion: false, listingPageCount: 2, filteredCount: 1, failedCount: 1, earliestPublishedOn: '2024-03-01', latestPublishedOn: '2024-08-01', stopReason: 'DOCUMENT_FAILURE' }] }
+const source = { id: '11111111-1111-1111-1111-111111111111', code: 'hangzhou-hrss', name: '杭州市人社局', entryUri: 'https://example.gov.cn', sourceType: 'OFFICIAL_GOVERNMENT', region: '浙江杭州', crawlMode: 'STATIC_HTML', enabled: true, cronExpression: '0 0 8 * * *', timeZone: 'Asia/Shanghai', lastSuccessAt: '2026-08-24T12:00:00Z', lastFailureAt: null, nextDueAt: null, consecutiveFailureCount: 0, connectionStatus: 'PARTIAL', scopeLevel: 'CITY', scopeCode: 'HANGZHOU', priorityTier: 'P0', coverageRole: 'PRIMARY', accessStatus: 'ACCESSIBLE', documentIssueCount: 2, lifecycleDocumentCount: 7, matchedLifecycleCount: 4, unmatchedLifecycleCount: 2, ambiguousLifecycleCount: 1, historicalFailureCount: 2, checkpoints: [{ sourceId: '11111111-1111-1111-1111-111111111111', checkpoint: 'REGISTERED', status: 'VERIFIED', evidence: '官方来源已登记', verifiedAt: '2026-08-24T12:00:00Z' }], coverage: [{ sourceId: '11111111-1111-1111-1111-111111111111', year: 2024, status: 'PARTIAL', discoveredCount: 3, fetchedCount: 2, parsedCount: 2, targetJobCount: 1, completionBasis: null, completedAt: null, updatedAt: '2026-08-24T12:00:00Z', supportsAbsenceConclusion: false, listingPageCount: 2, filteredCount: 1, failedCount: 1, earliestPublishedOn: '2024-03-01', latestPublishedOn: '2024-08-01', stopReason: 'DOCUMENT_FAILURE' }] }
 const admissionSummary = {
   total: 2291, raw: 2291, parsed: 0, normalized: 0,
   reviewRequired: 0, verified: 0, rejected: 0, failed: 0,
@@ -50,6 +50,7 @@ describe('UpdatesPage', () => {
     expect(await screen.findByText('部分接入')).toBeVisible()
     expect(screen.getByText(/2024：部分完成 · 公告 3 · 岗位 1 · 失败 1/)).toBeVisible()
     expect(screen.getByText('官网访问正常 · 2 个附件问题记录')).toBeVisible()
+    expect(screen.getByText('后续公告 7 · 已关联 4 · 待关联 2 · 歧义 1')).toBeVisible()
     expect(screen.getByText('P0 · 杭州')).toBeVisible()
     expect(screen.getByText('历史采集失败记录 2 条')).toBeVisible()
     expect(screen.queryByText('来源正常')).not.toBeInTheDocument()
