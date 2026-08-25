@@ -59,6 +59,7 @@ class AcquisitionApiTest {
             "官方来源已登记", NOW)));
         when(store.countImportFailures(SOURCE_ID)).thenReturn(2L);
         when(store.countDocumentImportFailures(SOURCE_ID)).thenReturn(2L);
+        when(store.lifecycleCounts(SOURCE_ID)).thenReturn(new LifecycleCounts(7, 4, 2, 1));
 
         mvc.perform(get("/api/acquisition/sources"))
             .andExpect(status().isOk())
@@ -72,6 +73,10 @@ class AcquisitionApiTest {
             .andExpect(jsonPath("$[0].coverageRole").value("PRIMARY"))
             .andExpect(jsonPath("$[0].accessStatus").value("ACCESSIBLE"))
             .andExpect(jsonPath("$[0].documentIssueCount").value(2))
+            .andExpect(jsonPath("$[0].lifecycleDocumentCount").value(7))
+            .andExpect(jsonPath("$[0].matchedLifecycleCount").value(4))
+            .andExpect(jsonPath("$[0].unmatchedLifecycleCount").value(2))
+            .andExpect(jsonPath("$[0].ambiguousLifecycleCount").value(1))
             .andExpect(jsonPath("$[0].coverage[0].listingPageCount").value(2))
             .andExpect(jsonPath("$[0].checkpoints[0].checkpoint").value("REGISTERED"))
             .andExpect(jsonPath("$[0].historicalFailureCount").value(2));
@@ -98,6 +103,7 @@ class AcquisitionApiTest {
             .andExpect(jsonPath("$[0].id").value(nullValue()))
             .andExpect(jsonPath("$[0].enabled").value(false))
             .andExpect(jsonPath("$[0].accessStatus").value("NOT_CONFIGURED"))
+            .andExpect(jsonPath("$[0].lifecycleDocumentCount").value(0))
             .andExpect(jsonPath("$[0].scopeLevel").value("DISTRICT"))
             .andExpect(jsonPath("$[0].priorityTier").value("P0"));
     }

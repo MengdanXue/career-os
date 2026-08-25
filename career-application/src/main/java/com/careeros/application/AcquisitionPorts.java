@@ -47,6 +47,7 @@ public final class AcquisitionPorts {
         List<ArtifactImportFailure> findImportFailures(UUID sourceId, UUID runId);
         long countImportFailures(UUID sourceId);
         default long countDocumentImportFailures(UUID sourceId) { return countImportFailures(sourceId); }
+        default LifecycleCounts lifecycleCounts(UUID sourceId) { return LifecycleCounts.none(); }
         ConnectionStatus findTargetSourceStatus(String sourceCode);
         void updateTargetSourceStatus(
             String sourceCode, ConnectionStatus status, UUID recruitmentSourceId, Instant updatedAt);
@@ -89,6 +90,18 @@ public final class AcquisitionPorts {
     }
 
     public record PersistedDocumentChange(AcquiredDocument document, AcquisitionChange change) {}
+
+    public record LifecycleCounts(long documents, long matched, long unmatched, long ambiguous) {
+        public LifecycleCounts {
+            if (documents < 0 || matched < 0 || unmatched < 0 || ambiguous < 0) {
+                throw new IllegalArgumentException("lifecycle counts cannot be negative");
+            }
+            if (matched + unmatched + ambiguous != documents) {
+                throw new IllegalArgumentException("lifecycle status counts must equal documents");
+            }
+        }
+        public static LifecycleCounts none() { return new LifecycleCounts(0, 0, 0, 0); }
+    }
 
     public record TargetSourceRegistration(
         String code, String name, String region, String officialRootUrl,

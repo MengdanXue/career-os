@@ -249,6 +249,24 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     }
 
     @Override @Transactional(readOnly = true)
+    public com.careeros.application.AcquisitionPorts.LifecycleCounts lifecycleCounts(UUID sourceId) {
+        Object[] row = (Object[]) entityManager.createNativeQuery("""
+            select
+                count(distinct lifecycle.source_url),
+                count(distinct lifecycle.source_url) filter (where lifecycle.match_status='MATCHED'),
+                count(distinct lifecycle.source_url) filter (where lifecycle.match_status='UNMATCHED'),
+                count(distinct lifecycle.source_url) filter (where lifecycle.match_status='AMBIGUOUS')
+            from recruitment_lifecycle_document lifecycle
+            join acquired_document document
+              on document.source_id=:sourceId
+             and document.canonical_uri=lifecycle.source_url
+            """).setParameter("sourceId", sourceId).getSingleResult();
+        return new com.careeros.application.AcquisitionPorts.LifecycleCounts(
+            ((Number) row[0]).longValue(), ((Number) row[1]).longValue(),
+            ((Number) row[2]).longValue(), ((Number) row[3]).longValue());
+    }
+
+    @Override @Transactional(readOnly = true)
     public ConnectionStatus findTargetSourceStatus(String sourceCode) {
         Object value = entityManager.createNativeQuery(
             "select connection_status from target_source_catalog where code = :code")

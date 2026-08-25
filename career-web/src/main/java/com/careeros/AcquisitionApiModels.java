@@ -29,6 +29,8 @@ final class AcquisitionApiModels {
         Instant lastSuccessAt, Instant lastFailureAt, Instant nextDueAt, int consecutiveFailureCount,
         String connectionStatus, String scopeLevel, String scopeCode, String priorityTier,
         String coverageRole, String accessStatus, long documentIssueCount,
+        long lifecycleDocumentCount, long matchedLifecycleCount,
+        long unmatchedLifecycleCount, long ambiguousLifecycleCount,
         List<CoverageResponse> coverage,
         List<CheckpointResponse> checkpoints, long historicalFailureCount
     ) {
@@ -40,15 +42,18 @@ final class AcquisitionApiModels {
                     "UNCONFIGURED", target.region(), "UNCONFIGURED", false, null, null,
                     null, null, null, 0, target.connectionStatus().name(), target.scopeLevel(),
                     target.scopeCode(), target.priorityTier(), target.coverageRole(), "NOT_CONFIGURED", 0,
+                    0, 0, 0, 0,
                     List.of(), List.of(), 0);
             }
             long documentIssues = store.countDocumentImportFailures(value.id());
+            var lifecycle = store.lifecycleCounts(value.id());
             return new SourceResponse(value.id(),value.code(),value.name(),value.entryUri().toString(),
                 value.sourceType().name(),value.region(),value.crawlMode().name(),value.enabled(),
                 value.cronExpression(),value.timeZone(),value.lastSuccessAt(),value.lastFailureAt(),
                 value.nextDueAt(),value.consecutiveFailureCount(),
                 target.connectionStatus().name(), target.scopeLevel(), target.scopeCode(),
                 target.priorityTier(), target.coverageRole(), accessStatus(value, store), documentIssues,
+                lifecycle.documents(), lifecycle.matched(), lifecycle.unmatched(), lifecycle.ambiguous(),
                 store.findSourceYearCoverage(value.id(), null).stream()
                     .sorted(java.util.Comparator.comparingInt(SourceYearCoverage::recruitmentYear))
                     .map(CoverageResponse::from).toList(),

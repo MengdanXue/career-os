@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.careeros.application.AcquisitionPorts.AcquisitionStore;
 import com.careeros.application.AcquisitionPorts.ChangeCursor;
+import com.careeros.application.AcquisitionPorts.LifecycleCounts;
 import com.careeros.domain.acquisition.AcquiredDocument;
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentKind;
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentState;
@@ -87,6 +88,38 @@ class JpaAcquisitionStoreTest {
                 assertThat(target.connectionStatus()).isEqualTo(
                     com.careeros.domain.acquisition.TargetSource.ConnectionStatus.NOT_CONNECTED);
             });
+    }
+
+    @Test
+    void countsDistinctLifecycleDocumentsByLinkageStatus(
+        @Autowired AcquisitionStore store, @Autowired JdbcTemplate jdbc
+    ) {
+        UUID eventId = UUID.randomUUID();
+        jdbc.update("insert into recruitment_event(id,title,recruitment_year,event_type,source_url) values (?,?,?,?,?)",
+            eventId, "2025年公开招聘公告", 2025, "PUBLIC_INSTITUTION", "https://official/original");
+        insertLifecycle(jdbc, store.saveDocument(document(UUID.randomUUID())), "MATCHED", eventId, "INTERVIEW");
+        insertLifecycle(jdbc, store.saveDocument(document(UUID.randomUUID())), "UNMATCHED", null, "PHYSICAL_EXAM");
+        insertLifecycle(jdbc, store.saveDocument(document(UUID.randomUUID())), "AMBIGUOUS", null, "PUBLICATION");
+
+        assertThat(store.lifecycleCounts(SOURCE_ID))
+            .isEqualTo(new LifecycleCounts(3, 1, 1, 1));
+    }
+
+    private static void insertLifecycle(
+        JdbcTemplate jdbc, AcquiredDocument document, String status, UUID eventId, String stage
+    ) {
+        UUID evidenceId = UUID.randomUUID();
+        jdbc.update("""
+            insert into evidence(id,evidence_type,source_url,source_title,content_hash,captured_at)
+            values (?,'OFFICIAL_NOTICE',?,'生命周期公告',?,?)
+            """, evidenceId, document.canonicalUri().toString(), "e".repeat(64),
+            java.sql.Timestamp.from(NOW));
+        jdbc.update("""
+            insert into recruitment_lifecycle_document(
+                id,source_url,title,recruitment_year,stage,evidence_id,matched_event_id,match_status,match_basis)
+            values (?,?,?,?,?,?,?,?,?)
+            """, UUID.randomUUID(), document.canonicalUri().toString(), "生命周期公告", 2025,
+            stage, evidenceId, eventId, status, "TEST_FIXTURE");
     }
 
     @Test
