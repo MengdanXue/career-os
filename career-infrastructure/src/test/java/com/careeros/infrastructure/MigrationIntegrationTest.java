@@ -98,7 +98,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(41);
+        assertThat(result.migrationsExecuted).isEqualTo(42);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -154,7 +154,8 @@ class MigrationIntegrationTest {
               var districtPriority = connection.prepareStatement("select priority_tier, count(*) from target_source_catalog where scope_level='DISTRICT' group by priority_tier order by priority_tier");
               var lifecycleTable = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name='recruitment_lifecycle_document'");
               var xihuSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_XIHU_GOV' and source.enabled and source.configuration ->> 'historicalPaginationMode'='JCMS_PARAM_JSON' and source.configuration ->> 'adapterType'='JCMS_LISTING' and source.configuration ->> 'titleExcludeRegex'='招聘会|培训|讲座' and source.configuration -> 'allowedHosts' @> '[\"zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn\"]'::jsonb and target.connection_status='PARTIAL'");
-              var gongshuSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_GONGSHU_GOV' and source.enabled and source.entry_uri='https://www.gongshu.gov.cn/col/col1229226160/index.html' and source.configuration ->> 'historicalPaginationMode'='JCMS_PARAM_JSON' and source.configuration ->> 'adapterType'='JCMS_LISTING' and source.configuration ->> 'titleExcludeRegex'='招聘会|培训|讲座' and source.configuration -> 'allowedHosts' @> '[\"zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn\"]'::jsonb and target.connection_status='PARTIAL'")) {
+              var gongshuSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_GONGSHU_GOV' and source.enabled and source.entry_uri='https://www.gongshu.gov.cn/col/col1229226160/index.html' and source.configuration ->> 'historicalPaginationMode'='JCMS_PARAM_JSON' and source.configuration ->> 'adapterType'='JCMS_LISTING' and source.configuration ->> 'titleExcludeRegex'='招聘会|培训|讲座' and source.configuration -> 'allowedHosts' @> '[\"zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn\"]'::jsonb and target.connection_status='PARTIAL'");
+              var qiantangSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_QIANTANG_GOV' and source.enabled and source.entry_uri='https://www.qiantang.gov.cn/col/col1657687/index.html' and source.configuration ->> 'historicalPaginationMode'='JCMS_PARAM_JSON' and source.configuration ->> 'adapterType'='JCMS_LISTING' and (source.configuration ->> 'incrementalListingMaxPages')::int=10 and (source.configuration ->> 'historicalMaxPages')::int=200 and target.connection_status='PARTIAL'")) {
             try (var rows = tables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(14); }
             try (var rows = candidates.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = pendingIndex.executeQuery()) {
@@ -218,6 +219,7 @@ class MigrationIntegrationTest {
             try (var rows = lifecycleTable.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = xihuSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = gongshuSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+            try (var rows = qiantangSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
         }
 
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -236,7 +238,7 @@ class MigrationIntegrationTest {
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("EXPECTED");
                 assertThat(rows.next()).isFalse();
             }
-            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(21); }
+            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(24); }
             try (var rows = educationFactConstraint.executeQuery()) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString(1)).contains("EDUCATION_RECORDS", "GENDER", "POLITICAL_AFFILIATION", "EMPLOYMENT_HISTORY");

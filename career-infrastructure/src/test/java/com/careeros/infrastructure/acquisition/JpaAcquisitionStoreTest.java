@@ -67,8 +67,8 @@ class JpaAcquisitionStoreTest {
         assertThat(store.findSources()).extracting(source -> source.code())
             .containsExactlyInAnyOrder("ZJ_HRSS_INSTITUTION", "HZ_HRSS_INSTITUTION",
                 "HDU_RECRUITMENT", "ZJGSU_RECRUITMENT", "HZ_FIRST_HOSPITAL", "HZ_XIHU_GOV",
-                "HZ_GONGSHU_GOV");
-        assertThat(store.findDueSources(Instant.now().plusSeconds(60), 10)).hasSize(7);
+                "HZ_GONGSHU_GOV", "HZ_QIANTANG_GOV");
+        assertThat(store.findDueSources(Instant.now().plusSeconds(60), 10)).hasSize(8);
     }
 
     @Test

@@ -141,7 +141,7 @@ public class OfficialExcelImportService {
         }
         if(recognizedSheets==0){
             if(substantiveSheets>0&&nonTargetSheets==substantiveSheets)throw new NonTargetWorkbookException("附件内容仅为教学科研人员计划，不在候选人目标岗位范围内");
-            if(substantiveSheets>0&&nonJobSheets==substantiveSheets)throw new NonJobWorkbookException("附件内容属于报名、应聘汇总或人员名单，不是岗位计划表");
+            if(substantiveSheets>0&&nonJobSheets==substantiveSheets)throw new NonJobWorkbookException("附件内容属于报名、应聘汇总、人员名单或专业参考目录，不是岗位计划表");
             throw new IllegalArgumentException("未找到同时包含招聘单位和岗位名称的表头，已拒绝导入");
         }
         var result=upserts.upsert(new JobUpsertBatch(
@@ -199,7 +199,8 @@ public class OfficialExcelImportService {
             for(Cell cell:row){String value=normalizeHeader(formatter.formatCellValue(cell));if(!value.isBlank())labels.add(value);}
         }
         if(labels.stream().anyMatch(value->value.contains("应聘信息汇总表")||value.contains("报名表")
-            ||value.contains("申请表")||value.contains("亲属关系申报")||value.contains("入围人员名单")))return true;
+            ||value.contains("申请表")||value.contains("亲属关系申报")||value.contains("入围人员名单")
+            ||value.contains("专业参考目录")||value.equals("专业目录")))return true;
         boolean hasName=labels.stream().anyMatch(value->value.equals("姓名")||value.endsWith("姓名"));
         boolean hasPersonalData=labels.stream().anyMatch(value->value.contains("身份证")||value.contains("联系电话")
             ||value.contains("毕业院校")||value.contains("面试成绩")||value.contains("准考证号"));

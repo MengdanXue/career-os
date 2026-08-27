@@ -11,6 +11,7 @@ import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -140,6 +141,29 @@ class ConfigurableSourceListingReaderTest {
             .hasMessageContaining("cycle");
     }
 
+    @Test
+    void boundedIncrementalJcmsTraversalFindsRecruitmentBeyondTheCurrentGeneralNoticePage() {
+        RecruitmentSource source = qiantangSource();
+        URI first = jcmsUri(source, 1, 20);
+        URI second = jcmsUri(source, 2, 20);
+        var fetcher = new MapFetcher(Map.of(
+            first, jcmsPage(100,
+                "/col/col1657687/art/2026/art_a111.html", "关于规划道路项目的公示"),
+            second, jcmsPage(100,
+                "/col/col1657687/art/2026/art_b222.html", "2026年钱塘区事业单位公开招聘工作人员公告")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(source, new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).singleElement().satisfies(link -> {
+            assertThat(link.recruitmentYear()).isEqualTo(2026);
+            assertThat(link.link().uri()).hasToString(
+                "https://www.qiantang.gov.cn/col/col1657687/art/2026/art_b222.html");
+        });
+        assertThat(fetcher.requests()).containsExactly(first, second);
+    }
+
     private static RecruitmentSource source() {
         Instant now = Instant.parse("2026-08-24T12:00:00Z");
         return new RecruitmentSource(
@@ -179,6 +203,44 @@ class ConfigurableSourceListingReaderTest {
                 "titleIncludeRegex", "招聘|招考|选聘|引进",
                 "titleExcludeRegex", "拟聘|公示|成绩|体检|递补"
             ), null, null, now, 0, now, now);
+    }
+
+    private static RecruitmentSource qiantangSource() {
+        Instant now = Instant.parse("2026-08-24T12:00:00Z");
+        return new RecruitmentSource(
+            UUID.fromString("01992f09-0000-7000-8000-000000000403"),
+            "HZ_QIANTANG_GOV", "杭州市钱塘区政府招聘",
+            URI.create("https://www.qiantang.gov.cn/"),
+            URI.create("https://www.qiantang.gov.cn/col/col1657687/index.html"),
+            SourceType.OFFICIAL_GOVERNMENT, "杭州钱塘", CrawlMode.STATIC_HTML,
+            true, "0 20 9 * * *", "Asia/Shanghai", Duration.ofMillis(1_500),
+            Map.ofEntries(
+                Map.entry("adapterType", "JCMS_LISTING"),
+                Map.entry("historicalPaginationMode", "JCMS_PARAM_JSON"),
+                Map.entry("listingApiUri", "https://www.qiantang.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=3176&tplSetId=0ZBvCXCKwwIstYiI5LRg9&pageType=column&tagId=%E5%88%97%E8%A1%A8%E9%A1%B5&editType=null&pageId=1657687"),
+                Map.entry("historicalPageSize", 20),
+                Map.entry("historicalMaxPages", 200),
+                Map.entry("incrementalListingMaxPages", 2),
+                Map.entry("articleUrlRegex", "^https://www\\.qiantang\\.gov\\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\\.html$"),
+                Map.entry("linkSelector", "a[href]"),
+                Map.entry("titleIncludeRegex", "招聘|招考|选聘|引进|雇员"),
+                Map.entry("titleExcludeRegex", "招聘会|培训|讲座")
+            ), null, null, now, 0, now, now);
+    }
+
+    private static URI jcmsUri(RecruitmentSource source, int page, int pageSize) {
+        String base = source.configuration().get("listingApiUri").toString();
+        String param = URLEncoder.encode(
+            "{\"pageNo\":" + page + ",\"pageSize\":" + pageSize + "}", StandardCharsets.UTF_8);
+        return URI.create(base + "&paramJson=" + param);
+    }
+
+    private static byte[] jcmsPage(int count, String href, String title) {
+        String escaped = ("<div count=\"" + count + "\"><a href='" + href + "'>" + title + "</a></div>")
+            .replace("\\", "\\\\").replace("\"", "\\\"");
+        return ("{\"success\":true,\"data\":{\"html\":\"" + escaped
+            + "\"}}")
+            .getBytes(StandardCharsets.UTF_8);
     }
 
     private static byte[] page(String href, String title) {

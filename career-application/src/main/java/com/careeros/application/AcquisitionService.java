@@ -396,11 +396,7 @@ public final class AcquisitionService {
         store.saveRun(SourceCrawlRun.running(runId, source.id(), trigger, started));
         Counts counts = new Counts();
         try {
-            FetchedDocument list = fetchTimed(source, request(source, listingUri(source), null));
-            if (list.status() != 200 || list.content().length == 0) {
-                throw new FetchFailedException("List page did not return content: " + list.status());
-            }
-            List<DiscoveredLink> details = discoverer.discover(source, list.finalUri(), list.content());
+            List<DiscoveredLink> details = discoverIncremental(source);
             if (details.isEmpty()) {
                 throw new FetchFailedException(
                     "Incremental listing yielded zero candidate announcements; discovery contract is unverified");
@@ -463,6 +459,23 @@ public final class AcquisitionService {
             updateSourceHealth(source, trigger, RunStatus.FAILED, true);
             return store.saveRun(failed);
         }
+    }
+
+    private List<DiscoveredLink> discoverIncremental(RecruitmentSource source) {
+        if (source.configuration().containsKey("incrementalListingMaxPages")) {
+            if (listings == null) {
+                throw new IllegalStateException(
+                    "SourceListingReader is required for bounded incremental listing traversal");
+            }
+            return listings.read(source, new ListingQuery(Set.of(), false)).links().stream()
+                .map(YearDiscoveredLink::link)
+                .toList();
+        }
+        FetchedDocument list = fetchTimed(source, request(source, listingUri(source), null));
+        if (list.status() != 200 || list.content().length == 0) {
+            throw new FetchFailedException("List page did not return content: " + list.status());
+        }
+        return discoverer.discover(source, list.finalUri(), list.content());
     }
 
     private void saveIncrementalCoverage(UUID sourceId, Map<Integer, YearCounts> byYear) {

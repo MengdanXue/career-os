@@ -43,6 +43,24 @@ class OfficialExcelImportServiceTest {
     }
 
     @Test
+    void identifiesProfessionalReferenceDirectoryAsANonJobWorkbook() throws Exception {
+        RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
+        OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
+        JobUpsertService upserts = mock(JobUpsertService.class);
+        OfficialJobAdmissionService admissions = mock(OfficialJobAdmissionService.class);
+        when(events.findFirstBySourceUrl(any())).thenReturn(Optional.empty());
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        assertThatThrownBy(() -> new OfficialExcelImportService(
+            events, organizations, upserts, admissions).importWorkbook(
+                new ByteArrayInputStream(professionalReferenceDirectoryWorkbook()),
+                new OfficialExcelImportService.ImportCommand(
+                    "2025年紧缺岗位政府雇员公开招聘公告", "https://example.test/notice", 2025,
+                    LocalDate.of(2025, 1, 27), null, "杭州", EventType.PUBLIC_INSTITUTION)))
+            .isInstanceOf(OfficialExcelImportService.NonJobWorkbookException.class);
+    }
+
+    @Test
     void identifiesTeachingResearchPlanAsOutsideTheCandidateScope() throws Exception {
         RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
         OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
@@ -504,6 +522,25 @@ class OfficialExcelImportServiceTest {
             for (int index = 0; index < headers.size(); index++) {
                 header.createCell(index).setCellValue(headers.get(index));
             }
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] professionalReferenceDirectoryWorkbook() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("专业参考目录");
+            sheet.createRow(0).createCell(0).setCellValue("2025年公务员招考专业参考目录");
+            var header = sheet.createRow(1);
+            List<String> headers = List.of("学历层次", "专业类别名称", "大类专业目录", "具体专业名称");
+            for (int index = 0; index < headers.size(); index++) {
+                header.createCell(index).setCellValue(headers.get(index));
+            }
+            var row = sheet.createRow(2);
+            row.createCell(0).setCellValue("研究生");
+            row.createCell(1).setCellValue("工学类");
+            row.createCell(2).setCellValue("计算机类");
+            row.createCell(3).setCellValue("计算机科学与技术");
             workbook.write(output);
             return output.toByteArray();
         }

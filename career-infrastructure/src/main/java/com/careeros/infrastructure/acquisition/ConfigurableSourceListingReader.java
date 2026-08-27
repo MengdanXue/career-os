@@ -48,6 +48,13 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(query, "query");
         String mode = String.valueOf(source.configuration().get("historicalPaginationMode"));
+        if (!query.historical()) {
+            if (!"JCMS_PARAM_JSON".equals(mode)) {
+                throw new IllegalArgumentException(
+                    "Bounded incremental traversal currently requires JCMS_PARAM_JSON");
+            }
+            return readIncrementalJcms(source);
+        }
         return switch (mode) {
             case "STATIC_PAGE_SUFFIX" -> readStaticSuffix(source, query);
             case "LINKED_PAGE" -> readLinkedPages(source, query);
@@ -55,6 +62,32 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             case "FIXED_HTTPS_EVIDENCE" -> readFixedEvidence(source, query);
             default -> throw new IllegalArgumentException("Unsupported historicalPaginationMode: " + mode);
         };
+    }
+
+    private ListingResult readIncrementalJcms(RecruitmentSource source) {
+        int pageSize = positive(source.configuration(), "historicalPageSize");
+        int maxPages = positive(source.configuration(), "incrementalListingMaxPages");
+        LinkedHashMap<URI, YearDiscoveredLink> accepted = new LinkedHashMap<>();
+        Set<String> pageFingerprints = new HashSet<>();
+        Integer total = null;
+        for (int page = 1; page <= maxPages; page++) {
+            FetchedDocument fetched = fetch(source, jcmsPageUri(source, page, pageSize));
+            int reported = listingTotal(fetched.content());
+            if (total == null) total = reported;
+            else if (!total.equals(reported)) {
+                throw new FetchFailedException("Incremental listing total changed during traversal");
+            }
+            if (!pageFingerprints.add(sha256(fetched.content())) && (long) (page - 1) * pageSize < total) {
+                throw new FetchFailedException("Incremental listing repeated a non-terminal page");
+            }
+            for (DiscoveredLink link : canonicalDistinct(
+                discoverer.discover(source, fetched.finalUri(), fetched.content()))) {
+                recruitmentYear(link)
+                    .ifPresent(year -> accepted.putIfAbsent(link.uri(), new YearDiscoveredLink(link, year)));
+            }
+            if ((long) page * pageSize >= total) break;
+        }
+        return new ListingResult(List.copyOf(accepted.values()), Map.of());
     }
 
     private ListingResult readLinkedPages(RecruitmentSource source, ListingQuery query) {

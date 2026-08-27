@@ -42,10 +42,15 @@ sources:
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.qiantang.gov.cn/
     listingUrl: https://www.qiantang.gov.cn/col/col1657687/index.html
-    strategy: STATIC_HTML
+    strategy: JCMS_LISTING
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
-    articleUrlRegex: '^https://www\.qiantang\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
+    enabled: true
+    articleUrlRegex: '^https://www\.qiantang\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+    linkSelector: 'a[href]'
+    titleIncludeRegex: '招聘|招考|选聘|引进|雇员'
+    titleExcludeRegex: '招聘会|培训|讲座'
+    historicalPaginationMode: JCMS_PARAM_JSON
+    adapterType: JCMS_LISTING
   - code: HZ_XIAOSHAN_GOV
     name: 萧山区政府事业单位考试
     routeCode: PUBLIC_TECH

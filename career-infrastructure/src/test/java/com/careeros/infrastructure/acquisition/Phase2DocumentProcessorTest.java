@@ -191,7 +191,7 @@ class Phase2DocumentProcessorTest {
 
     @Test
     void processorVersionChangesWhenWorkbookInterpretationChanges() {
-        assertThat(processor.version()).isEqualTo("official-fact-fusion-v12");
+        assertThat(processor.version()).isEqualTo("official-fact-fusion-v13");
     }
 
     @Test

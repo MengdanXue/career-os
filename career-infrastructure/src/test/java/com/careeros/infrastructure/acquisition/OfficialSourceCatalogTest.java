@@ -34,6 +34,15 @@ class OfficialSourceCatalogTest {
         assertThat(gongshu.configuration())
             .containsEntry("historicalPaginationMode", "JCMS_PARAM_JSON")
             .containsEntry("adapterType", "JCMS_LISTING");
+        var qiantang = catalog.sources().stream().filter(source -> source.code().equals("HZ_QIANTANG_GOV"))
+            .findFirst().orElseThrow();
+        assertThat(qiantang.enabled()).isTrue();
+        assertThat(qiantang.listingUrl())
+            .isEqualTo("https://www.qiantang.gov.cn/col/col1657687/index.html");
+        assertThat(qiantang.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(qiantang.configuration())
+            .containsEntry("historicalPaginationMode", "JCMS_PARAM_JSON")
+            .containsEntry("adapterType", "JCMS_LISTING");
     }
 
     @Test
@@ -131,5 +140,26 @@ class OfficialSourceCatalogTest {
             .containsExactly(
                 "https://www.gongshu.gov.cn/col/col1229226160/art/2026/art_8be90ae6320b4263859b753cdacf43f4.html",
                 "https://www.gongshu.gov.cn/col/col1229226160/art/2026/art_a78ec64bb23a43c29f53f0411821ba3f.html");
+    }
+
+    @Test
+    void qiantangJcmsContractAcceptsCurrentAndLegacyRecruitmentLifecycleUrls() {
+        var source = OfficialSourceCatalog.load().sources().stream()
+            .filter(value -> value.code().equals("HZ_QIANTANG_GOV")).findFirst().orElseThrow();
+        byte[] response = """
+            {"success":true,"data":{"html":"<div count='2902'>
+              <a href='/col/col1657687/art/2026/art_8be90ae6320b4263859b753cdacf43f4.html'>
+                2026年钱塘区事业单位公开招聘工作人员公告</a>
+              <a href='/art/2025/5/6/art_1657687_58975146.html'>
+                2025年钱塘新区管理委员会紧缺岗位政府雇员公开招聘拟聘人员公示</a>
+              <a href='/col/col1657687/art/2026/art_f333.html'>关于道路项目的公示</a>
+            </div>"}}
+            """.getBytes(StandardCharsets.UTF_8);
+
+        assertThat(new StaticHtmlSourceDiscoverer().discover(source, response))
+            .extracting(link -> link.uri().toString())
+            .containsExactly(
+                "https://www.qiantang.gov.cn/col/col1657687/art/2026/art_8be90ae6320b4263859b753cdacf43f4.html",
+                "https://www.qiantang.gov.cn/art/2025/5/6/art_1657687_58975146.html");
     }
 }

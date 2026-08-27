@@ -7,6 +7,8 @@ import com.careeros.application.AcquiredDocumentProcessor.ProcessingResult;
 import com.careeros.application.AcquisitionHttpPorts.DiscoveredLink;
 import com.careeros.application.AcquisitionHttpPorts.FetchRequest;
 import com.careeros.application.AcquisitionHttpPorts.FetchedDocument;
+import com.careeros.application.AcquisitionHttpPorts.ListingResult;
+import com.careeros.application.AcquisitionHttpPorts.YearDiscoveredLink;
 import com.careeros.application.AcquisitionPorts.*;
 import com.careeros.application.ExtractionPorts.ArtifactStore;
 import com.careeros.domain.DomainEnums.EventType;
@@ -164,6 +166,34 @@ class AcquisitionServiceTest {
         fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
 
         assertThat(fixture.fetcher.requested).startsWith(LIST_API);
+    }
+
+    @Test
+    void incrementalRunUsesBoundedListingReaderWhenTheSourceRequiresMultiPageDiscovery() {
+        RecruitmentSource source = sourceWithBoundedIncrementalListing();
+        InMemoryStore store = new InMemoryStore(source);
+        FakeFetcher fetcher = new FakeFetcher();
+        FakeDiscoverer discoverer = new FakeDiscoverer();
+        FakeAttachmentDiscoverer attachments = new FakeAttachmentDiscoverer();
+        FakeProcessor processor = new FakeProcessor();
+        MemoryArtifacts artifacts = new MemoryArtifacts();
+        List<AcquisitionHttpPorts.ListingQuery> queries = new ArrayList<>();
+        AcquisitionHttpPorts.SourceListingReader reader = (value, query) -> {
+            queries.add(query);
+            return new ListingResult(
+                List.of(new YearDiscoveredLink(new DiscoveredLink(DETAIL, "2026年公开招聘公告"), 2026)),
+                Map.of());
+        };
+        AcquisitionService service = new AcquisitionService(store,
+            (code, wait, work) -> Optional.of(work.get()), discoverer, reader, fetcher, attachments,
+            processor, artifacts, (value, after) -> after.plus(Duration.ofDays(1)),
+            AcquisitionObserver.NOOP, Clock.fixed(NOW, ZoneOffset.UTC), 26_214_400);
+
+        SourceCrawlRun run = service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(queries).singleElement().satisfies(query -> assertThat(query.historical()).isFalse());
+        assertThat(fetcher.requested).containsExactly(DETAIL);
     }
 
     @Test
@@ -504,6 +534,17 @@ class AcquisitionServiceTest {
                 "historicalPaginationMode", "JCMS_PARAM_JSON",
                 "historicalPageSize", 2,
                 "historicalMaxPages", 10), null, null, NOW, 0, NOW, NOW);
+    }
+
+    private static RecruitmentSource sourceWithBoundedIncrementalListing() {
+        RecruitmentSource value = source();
+        Map<String, Object> configuration = new LinkedHashMap<>(value.configuration());
+        configuration.put("incrementalListingMaxPages", 10);
+        return new RecruitmentSource(value.id(), value.code(), value.name(), value.baseUri(), value.entryUri(),
+            value.sourceType(), value.region(), value.crawlMode(), value.enabled(), value.cronExpression(),
+            value.timeZone(), value.minimumRequestInterval(), configuration, value.lastSuccessAt(),
+            value.lastFailureAt(), value.nextDueAt(), value.consecutiveFailureCount(),
+            value.createdAt(), value.updatedAt());
     }
 
     private static final class FakeDiscoverer implements AcquisitionHttpPorts.SourceDiscoverer {
