@@ -23,6 +23,29 @@ import org.junit.jupiter.api.Test;
 
 class AcquisitionHttpPortsTest {
     @Test
+    void discoveredLinkCarriesAnOptionalExactTransportContract() {
+        var audited = new HttpReadContract(
+            TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            Set.of("official.example"),
+            Set.of("/public/jobs"));
+
+        var legacy = new DiscoveredLink(
+            URI.create("https://official.example/jobs/notice"), "Legacy notice");
+        var contracted = new DiscoveredLink(
+            URI.create("http://official.example/public/jobs/notice"), "Audited notice", audited);
+
+        assertThat(legacy.readContract()).isNull();
+        assertThat(contracted.readContract()).isEqualTo(audited);
+        assertThat(audited.authorizesTarget(contracted.uri())).isTrue();
+        assertThat(audited.authorizesTarget(
+            URI.create("http://other.example/public/jobs/notice"))).isFalse();
+        assertThat(audited.authorizesTarget(
+            URI.create("http://official.example/private/notice"))).isFalse();
+        assertThat(audited.authorizesTarget(
+            URI.create("http://official.example/public/jobs/%252e%252e/private"))).isFalse();
+    }
+
+    @Test
     void legacyFetchRequestConstructorsDefaultToSafeHttpsGet() {
         var request = new FetchRequest(
             URI.create("https://official.example/notices"), Set.of("OFFICIAL.EXAMPLE"),

@@ -28,6 +28,13 @@ public final class AcquisitionHttpPorts {
 
     public interface AttachmentDiscoverer {
         List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html);
+
+        default List<DiscoveredLink> discover(
+            RecruitmentSource source, DiscoveredLink page, byte[] html
+        ) {
+            Objects.requireNonNull(page, "page");
+            return discover(source, page.uri(), html);
+        }
     }
 
     public interface SourceListingReader {
@@ -118,7 +125,11 @@ public final class AcquisitionHttpPorts {
         }
     }
 
-    public record DiscoveredLink(URI uri, String title) {
+    public record DiscoveredLink(URI uri, String title, HttpReadContract readContract) {
+        public DiscoveredLink(URI uri, String title) {
+            this(uri, title, null);
+        }
+
         public DiscoveredLink {
             Objects.requireNonNull(uri, "uri");
             if (title == null || title.isBlank()) throw new IllegalArgumentException("title is required");
@@ -136,6 +147,9 @@ public final class AcquisitionHttpPorts {
         Set<String> exactHosts,
         Set<String> allowedPathPrefixes
     ) {
+        private static final java.util.regex.Pattern UNSAFE_RAW_PATH =
+            java.util.regex.Pattern.compile("(?i)(%2e|%2f|%5c|%25|\\\\)");
+
         public HttpReadContract {
             Objects.requireNonNull(transportPolicy, "transportPolicy");
             exactHosts = exactHosts == null ? Set.of() : exactHosts.stream()
@@ -153,6 +167,29 @@ public final class AcquisitionHttpPorts {
                     throw new IllegalArgumentException("AUDITED_HTTP_READ_ONLY requires nonempty path prefixes");
                 }
             }
+        }
+
+        public boolean authorizesTarget(URI uri) {
+            if (uri == null || !uri.isAbsolute() || uri.getHost() == null
+                || uri.getRawUserInfo() != null) return false;
+            String host = uri.getHost().toLowerCase(Locale.ROOT);
+            boolean loopback = host.equals("localhost") || host.equals("127.0.0.1") || host.equals("::1");
+            if (!exactHosts.contains(host)) return false;
+            if (transportPolicy == TransportPolicy.HTTPS_ONLY) {
+                boolean allowedScheme = "https".equalsIgnoreCase(uri.getScheme())
+                    || loopback && "http".equalsIgnoreCase(uri.getScheme());
+                return allowedScheme && (loopback || uri.getPort() == -1 || uri.getPort() == 443);
+            }
+            if (!"http".equalsIgnoreCase(uri.getScheme())
+                || !loopback && uri.getPort() != -1 && uri.getPort() != 80) return false;
+            String rawPath = uri.getRawPath();
+            if (rawPath != null && UNSAFE_RAW_PATH.matcher(rawPath).find()) return false;
+            String path = uri.normalize().getPath();
+            if (path == null || path.isEmpty()) path = "/";
+            String targetPath = path;
+            return allowedPathPrefixes.stream().anyMatch(prefix -> targetPath.equals(prefix)
+                || prefix.endsWith("/") && targetPath.startsWith(prefix)
+                || targetPath.startsWith(prefix + "/"));
         }
 
         private static String exactHost(String value) {

@@ -7,7 +7,9 @@ import com.careeros.application.AcquiredDocumentProcessor.ProcessingResult;
 import com.careeros.application.AcquisitionHttpPorts.DiscoveredLink;
 import com.careeros.application.AcquisitionHttpPorts.FetchRequest;
 import com.careeros.application.AcquisitionHttpPorts.FetchedDocument;
+import com.careeros.application.AcquisitionHttpPorts.HttpReadContract;
 import com.careeros.application.AcquisitionHttpPorts.ListingResult;
+import com.careeros.application.AcquisitionHttpPorts.TransportPolicy;
 import com.careeros.application.AcquisitionHttpPorts.TransportRisk;
 import com.careeros.application.AcquisitionHttpPorts.YearDiscoveredLink;
 import com.careeros.application.AcquisitionPorts.*;
@@ -172,15 +174,6 @@ class AcquisitionServiceTest {
     }
 
     @Test
-    void usesConfiguredDeterministicListingApiInsteadOfEmptyJcmsShell() {
-        Fixture fixture = new Fixture();
-
-        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
-
-        assertThat(fixture.fetcher.requested).startsWith(LIST_API);
-    }
-
-    @Test
     void incrementalRunUsesBoundedListingReaderWhenTheSourceRequiresMultiPageDiscovery() {
         RecruitmentSource source = sourceWithBoundedIncrementalListing();
         InMemoryStore store = new InMemoryStore(source);
@@ -206,6 +199,87 @@ class AcquisitionServiceTest {
         assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
         assertThat(queries).singleElement().satisfies(query -> assertThat(query.historical()).isFalse());
         assertThat(fetcher.requested).containsExactly(DETAIL);
+    }
+
+    @Test
+    void nonJcmsIncrementalRunAlwaysDelegatesToTheListingReader() {
+        RecruitmentSource source = sourceWithoutJcmsConfiguration();
+        InMemoryStore store = new InMemoryStore(source);
+        FakeFetcher fetcher = new FakeFetcher();
+        List<AcquisitionHttpPorts.ListingQuery> queries = new ArrayList<>();
+        AcquisitionHttpPorts.SourceListingReader reader = (value, query) -> {
+            queries.add(query);
+            return new ListingResult(
+                List.of(new YearDiscoveredLink(new DiscoveredLink(DETAIL, "2026年公开招聘公告"), 2026)),
+                Map.of());
+        };
+        AcquisitionService service = new AcquisitionService(store,
+            (code, wait, work) -> Optional.of(work.get()), new FakeDiscoverer(), reader, fetcher,
+            new FakeAttachmentDiscoverer(), new FakeProcessor(), new MemoryArtifacts(),
+            (value, after) -> after.plus(Duration.ofDays(1)), AcquisitionObserver.NOOP,
+            Clock.fixed(NOW, ZoneOffset.UTC), 26_214_400);
+
+        SourceCrawlRun run = service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(queries).containsExactly(new AcquisitionHttpPorts.ListingQuery(Set.of(), false));
+        assertThat(fetcher.requested).containsExactly(DETAIL);
+    }
+
+    @Test
+    void auditedHttpListingContractIsReusedForTheDiscoveredDetailFetch() {
+        URI detail = URI.create("http://legacy.example/public/jobs/art/2026/notice.html");
+        var contract = new HttpReadContract(TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            Set.of("legacy.example"), Set.of("/public/jobs"));
+        InMemoryStore store = new InMemoryStore(sourceWithoutJcmsConfiguration());
+        FakeFetcher fetcher = new FakeFetcher();
+        fetcher.finalDetailUri = detail;
+        AcquisitionHttpPorts.SourceListingReader reader = (value, query) -> new ListingResult(
+            List.of(new YearDiscoveredLink(
+                new DiscoveredLink(detail, "2026年公开招聘公告", contract), 2026)), Map.of());
+        AcquisitionService service = new AcquisitionService(store,
+            (code, wait, work) -> Optional.of(work.get()), new FakeDiscoverer(), reader, fetcher,
+            new FakeAttachmentDiscoverer(), new FakeProcessor(), new MemoryArtifacts(),
+            (value, after) -> after.plus(Duration.ofDays(1)), AcquisitionObserver.NOOP,
+            Clock.fixed(NOW, ZoneOffset.UTC), 26_214_400);
+
+        SourceCrawlRun run = service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(fetcher.fetchRequests).singleElement().satisfies(request -> {
+            assertThat(request.uri()).isEqualTo(detail);
+            assertThat(request.readContract()).isEqualTo(contract);
+        });
+    }
+
+    @Test
+    void auditedHttpDetailContractFlowsThroughAttachmentDiscoveryAndFetch() {
+        URI detail = URI.create("http://legacy.example/public/jobs/art/2026/notice.html");
+        URI attachment = URI.create("http://legacy.example/public/jobs/files/plan.xlsx");
+        var contract = new HttpReadContract(TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            Set.of("legacy.example"), Set.of("/public/jobs"));
+        InMemoryStore store = new InMemoryStore(sourceWithoutJcmsConfiguration());
+        FakeFetcher fetcher = new FakeFetcher();
+        fetcher.finalDetailUri = detail;
+        FakeAttachmentDiscoverer attachments = new FakeAttachmentDiscoverer();
+        attachments.links = List.of(new DiscoveredLink(attachment, "岗位表", contract));
+        AcquisitionHttpPorts.SourceListingReader reader = (value, query) -> new ListingResult(
+            List.of(new YearDiscoveredLink(
+                new DiscoveredLink(detail, "2026年公开招聘公告", contract), 2026)), Map.of());
+        AcquisitionService service = new AcquisitionService(store,
+            (code, wait, work) -> Optional.of(work.get()), new FakeDiscoverer(), reader, fetcher,
+            attachments, new FakeProcessor(), new MemoryArtifacts(),
+            (value, after) -> after.plus(Duration.ofDays(1)), AcquisitionObserver.NOOP,
+            Clock.fixed(NOW, ZoneOffset.UTC), 26_214_400);
+
+        SourceCrawlRun run = service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(attachments.parent).isEqualTo(new DiscoveredLink(
+            detail, "2026年公开招聘公告", contract));
+        assertThat(fetcher.fetchRequests).extracting(FetchRequest::uri)
+            .containsExactly(detail, attachment);
+        assertThat(fetcher.fetchRequests.get(1).readContract()).isEqualTo(contract);
     }
 
     @Test
@@ -269,10 +343,31 @@ class AcquisitionServiceTest {
         SourceCrawlRun run = fixture.service.backfill(SOURCE_ID, Set.of(2024, 2025, 2026));
 
         assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
-        assertThat(fixture.fetcher.requested.stream().filter(uri -> uri.getPath().equals("/api/list")))
-            .hasSize(2);
+        assertThat(fixture.reader.queries)
+            .containsExactly(new AcquisitionHttpPorts.ListingQuery(Set.of(2024, 2025, 2026), true));
         assertThat(fixture.store.documents).containsKeys(detail2024, detail2025, detail2026)
             .doesNotContainKey(detail2023);
+    }
+
+    @Test
+    void legacySinglePageHistoricalFallbackCannotClaimCompleteCoverage() {
+        RecruitmentSource source = sourceWithoutJcmsConfiguration();
+        InMemoryStore store = new InMemoryStore(source);
+        FakeFetcher fetcher = new FakeFetcher();
+        AcquisitionService service = new AcquisitionService(store,
+            (code, wait, work) -> Optional.of(work.get()), new FakeDiscoverer(), fetcher,
+            new FakeAttachmentDiscoverer(), new FakeProcessor(), new MemoryArtifacts(),
+            (value, after) -> after.plus(Duration.ofDays(1)), AcquisitionObserver.NOOP,
+            Clock.fixed(NOW, ZoneOffset.UTC), 26_214_400);
+
+        SourceCrawlRun run = service.backfill(SOURCE_ID, Set.of(2026));
+
+        assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(store.coverages.get(2026).status())
+            .isEqualTo(SourceYearCoverage.CoverageStatus.PARTIAL);
+        assertThat(store.coverages.get(2026).supportsAbsenceConclusion()).isFalse();
+        assertThat(store.coverages.get(2026).completionBasis()).isNull();
+        assertThat(store.coverages.get(2026).completedAt()).isNull();
     }
 
     @Test
@@ -490,7 +585,8 @@ class AcquisitionServiceTest {
         fixture.service.run(SOURCE_ID, RunTrigger.SCHEDULED);
         var checkpoint = fixture.store.checkpoints.get(
             com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.LIVE_SMOKE_VERIFIED);
-        fixture.fetcher.failedUris.add(LIST_API);
+        fixture.fetcher.listFailure = new AcquisitionHttpPorts.FetchFailedException(
+            "Could not read HTTP response", new java.io.IOException("connection reset"));
 
         SourceCrawlRun failed = fixture.service.run(SOURCE_ID, RunTrigger.SCHEDULED);
 
@@ -515,6 +611,7 @@ class AcquisitionServiceTest {
         final InMemoryStore store;
         final FakeFetcher fetcher = new FakeFetcher();
         final FakeDiscoverer discoverer = new FakeDiscoverer();
+        final FakeListingReader reader = new FakeListingReader(fetcher, discoverer);
         final FakeAttachmentDiscoverer attachments = new FakeAttachmentDiscoverer();
         final FakeProcessor processor = new FakeProcessor();
         final MemoryArtifacts artifacts = new MemoryArtifacts();
@@ -527,7 +624,7 @@ class AcquisitionServiceTest {
         Fixture(RecruitmentSource source, Clock clock) {
             store = new InMemoryStore(source);
             service = new AcquisitionService(store,
-                (code, wait, work) -> Optional.of(work.get()), discoverer, fetcher, attachments,
+                (code, wait, work) -> Optional.of(work.get()), discoverer, reader, fetcher, attachments,
                 processor, artifacts, (value, after) -> after.plus(Duration.ofDays(1)),
                 AcquisitionObserver.NOOP, clock, 26_214_400);
         }
@@ -559,6 +656,19 @@ class AcquisitionServiceTest {
             value.createdAt(), value.updatedAt());
     }
 
+    private static RecruitmentSource sourceWithoutJcmsConfiguration() {
+        RecruitmentSource value = source();
+        Map<String, Object> configuration = new LinkedHashMap<>(value.configuration());
+        configuration.remove("historicalPaginationMode");
+        configuration.remove("historicalPageSize");
+        configuration.remove("historicalMaxPages");
+        return new RecruitmentSource(value.id(), value.code(), value.name(), value.baseUri(), value.entryUri(),
+            value.sourceType(), value.region(), value.crawlMode(), value.enabled(), value.cronExpression(),
+            value.timeZone(), value.minimumRequestInterval(), configuration, value.lastSuccessAt(),
+            value.lastFailureAt(), value.nextDueAt(), value.consecutiveFailureCount(),
+            value.createdAt(), value.updatedAt());
+    }
+
     private static final class FakeDiscoverer implements AcquisitionHttpPorts.SourceDiscoverer {
         final Map<String, List<DiscoveredLink>> pages = new HashMap<>();
         final Map<String, List<DiscoveredLink>> rawPages = new HashMap<>();
@@ -578,6 +688,7 @@ class AcquisitionServiceTest {
     private static final class FakeFetcher implements AcquisitionHttpPorts.DocumentFetcher {
         URI finalDetailUri = DETAIL;
         final List<URI> requested = new ArrayList<>();
+        final List<FetchRequest> fetchRequests = new ArrayList<>();
         byte[] detail = "<html>第一版招聘公告</html>".getBytes(StandardCharsets.UTF_8);
         String detailMediaType = "text/html";
         TransportRisk detailTransportRisk = TransportRisk.NONE;
@@ -589,6 +700,7 @@ class AcquisitionServiceTest {
         final Set<URI> failedUris = new HashSet<>();
         @Override public FetchedDocument fetch(FetchRequest request) {
             requested.add(request.uri());
+            fetchRequests.add(request);
             if (listFailure != null && (request.uri().equals(LIST) || request.uri().equals(LIST_API))) {
                 throw listFailure;
             }
@@ -611,9 +723,88 @@ class AcquisitionServiceTest {
         }
     }
 
+    private static final class FakeListingReader implements AcquisitionHttpPorts.SourceListingReader {
+        private final FakeFetcher fetcher;
+        private final FakeDiscoverer discoverer;
+        private final List<AcquisitionHttpPorts.ListingQuery> queries = new ArrayList<>();
+
+        private FakeListingReader(FakeFetcher fetcher, FakeDiscoverer discoverer) {
+            this.fetcher = fetcher;
+            this.discoverer = discoverer;
+        }
+
+        @Override public ListingResult read(RecruitmentSource source, AcquisitionHttpPorts.ListingQuery query) {
+            queries.add(query);
+            if (fetcher.listFailure != null) throw fetcher.listFailure;
+            if (!query.historical()) {
+                List<YearDiscoveredLink> links = discoverer.discover(source, LIST_API,
+                    "<html>list</html>".getBytes(StandardCharsets.UTF_8)).stream()
+                    .map(link -> new YearDiscoveredLink(link, year(link)))
+                    .toList();
+                return new ListingResult(links, Map.of());
+            }
+            if (fetcher.historicalListingStatus != 200) {
+                throw new AcquisitionHttpPorts.FetchFailedException(
+                    "Historical list page did not return content: " + fetcher.historicalListingStatus);
+            }
+            List<Map.Entry<String, List<DiscoveredLink>>> pages = discoverer.pages.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("page-"))
+                .sorted(Map.Entry.comparingByKey())
+                .toList();
+            LinkedHashMap<URI, DiscoveredLink> candidates = new LinkedHashMap<>();
+            LinkedHashMap<URI, DiscoveredLink> raw = new LinkedHashMap<>();
+            for (Map.Entry<String, List<DiscoveredLink>> page : pages) {
+                int before = raw.size();
+                List<DiscoveredLink> rawPage = discoverer.rawPages.getOrDefault(page.getKey(), page.getValue());
+                rawPage.forEach(link -> raw.putIfAbsent(link.uri(), link));
+                page.getValue().forEach(link -> candidates.putIfAbsent(link.uri(), link));
+                if (before > 0 && raw.size() == before && before < fetcher.historicalListingTotal) {
+                    throw new AcquisitionHttpPorts.FetchFailedException(
+                        "Historical listing repeated a non-terminal page");
+                }
+            }
+            if (raw.size() != fetcher.historicalListingTotal) {
+                throw new AcquisitionHttpPorts.FetchFailedException(
+                    "Historical listing unique entry count did not match reported total");
+            }
+            List<YearDiscoveredLink> accepted = candidates.values().stream()
+                .map(link -> new YearDiscoveredLink(link, year(link)))
+                .filter(link -> query.recruitmentYears().contains(link.recruitmentYear()))
+                .toList();
+            Map<Integer, AcquisitionHttpPorts.ListingEvidence> evidence = new LinkedHashMap<>();
+            int pageCount = Math.max(1, pages.size());
+            String basis = "official listing total=" + fetcher.historicalListingTotal
+                + "; traversed pages=" + pageCount;
+            for (int recruitmentYear : query.recruitmentYears()) {
+                int annual = (int) accepted.stream()
+                    .filter(link -> link.recruitmentYear() == recruitmentYear).count();
+                evidence.put(recruitmentYear, new AcquisitionHttpPorts.ListingEvidence(
+                    pageCount, fetcher.historicalListingTotal, annual,
+                    Math.max(0, raw.size() - candidates.size()), 0, null, null,
+                    true, "REPORTED_TOTAL_REACHED", basis));
+            }
+            return new ListingResult(accepted, evidence);
+        }
+
+        private static int year(DiscoveredLink link) {
+            var path = java.util.regex.Pattern.compile("/(20\\d{2})(?:/|$)").matcher(link.uri().getPath());
+            if (path.find()) return Integer.parseInt(path.group(1));
+            var title = java.util.regex.Pattern.compile("(20\\d{2})").matcher(link.title());
+            if (title.find()) return Integer.parseInt(title.group(1));
+            throw new IllegalArgumentException("Test listing link has no recruitment year: " + link.uri());
+        }
+    }
+
     private static final class FakeAttachmentDiscoverer implements AcquisitionHttpPorts.AttachmentDiscoverer {
         List<DiscoveredLink> links = List.of();
+        DiscoveredLink parent;
         @Override public List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html) { return links; }
+        @Override public List<DiscoveredLink> discover(
+            RecruitmentSource source, DiscoveredLink page, byte[] html
+        ) {
+            parent = page;
+            return links;
+        }
     }
 
     private static final class FakeProcessor implements AcquiredDocumentProcessor {

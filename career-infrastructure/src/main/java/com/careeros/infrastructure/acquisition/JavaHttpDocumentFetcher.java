@@ -149,6 +149,7 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
         if (!uri.isAbsolute() || host.isEmpty() || uri.getRawUserInfo() != null) {
             throw new FetchRejectedException("Source URI must be absolute, credential-free, and have an exact host");
         }
+        if (request.readContract().authorizesTarget(uri)) return;
         if (request.readContract().transportPolicy() == TransportPolicy.HTTPS_ONLY) {
             boolean https = "https".equalsIgnoreCase(uri.getScheme());
             boolean testHttp = loopback && "http".equalsIgnoreCase(uri.getScheme());
@@ -158,10 +159,10 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
             if (!loopback && uri.getPort() != -1 && uri.getPort() != 443) {
                 throw new FetchRejectedException("Official HTTPS source URI must use the default port");
             }
-            if (!request.allowedHosts().contains(host)) {
+            if (!request.readContract().exactHosts().contains(host)) {
                 throw new FetchRejectedException("Host is outside source allowlist: " + host);
             }
-            return;
+            throw new FetchRejectedException("Target is outside source HTTPS read contract: " + uri);
         }
         if (!"http".equalsIgnoreCase(uri.getScheme())) {
             throw new FetchRejectedException("AUDITED_HTTP_READ_ONLY permits plain HTTP targets only");
@@ -179,6 +180,7 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
         if (!pathAllowed(uri, request.readContract().allowedPathPrefixes())) {
             throw new FetchRejectedException("Target is outside the audited path contract: " + uri.getPath());
         }
+        throw new FetchRejectedException("Target is outside the audited HTTP read contract: " + uri);
     }
 
     static boolean pathAllowed(URI uri, java.util.Set<String> prefixes) {

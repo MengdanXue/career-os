@@ -87,7 +87,8 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             ListingResult result = readEntry(source, entry, scopedQuery(entry, query));
             result.links().forEach(link -> links.putIfAbsent(canonical(link.link().uri()),
                 new YearDiscoveredLink(
-                    new DiscoveredLink(canonical(link.link().uri()), link.link().title()),
+                    new DiscoveredLink(canonical(link.link().uri()), link.link().title(),
+                        entry.readContract()),
                     link.recruitmentYear())));
             byEntry.put(entry.code(), new ListingEntryEvidence(
                 entry.code(), entry.completenessRequired(), result.evidenceByYear()));

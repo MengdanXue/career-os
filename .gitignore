@@ -10,6 +10,7 @@ Thumbs.db
 !.env.example
 config/candidate-profile.json
 **/var/artifacts/
+var/test-tmp/
 *.log
 career-ui/node_modules/
 career-ui/*.tsbuildinfo

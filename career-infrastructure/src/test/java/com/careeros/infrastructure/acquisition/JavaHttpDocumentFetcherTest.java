@@ -93,6 +93,24 @@ class JavaHttpDocumentFetcherTest {
     }
 
     @Test
+    void auditedHttpRejectsUnauthorizedDiscoveredTargetsBeforeAnySend() {
+        var contract = new HttpReadContract(TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            Set.of("localhost"), Set.of("/public"));
+        List<URI> unauthorized = List.of(
+            URI.create(server.baseUrl() + "/private/attachment.xlsx"),
+            URI.create("http://127.0.0.1:" + server.port() + "/public/detail.html"));
+
+        for (URI uri : unauthorized) {
+            FetchRequest request = new FetchRequest(uri, Set.of("localhost"), null, null,
+                Duration.ofSeconds(20), 1024, null, Duration.ZERO, FetchMethod.GET, contract);
+            assertThatThrownBy(() -> fetcher.fetch(request))
+                .as(uri.toString())
+                .isInstanceOf(FetchRejectedException.class);
+        }
+        assertThat(server.getAllServeEvents()).isEmpty();
+    }
+
+    @Test
     void auditedHttpRejectsEncodedPathTraversalAndDelimiterBypasses() {
         FetchRequest request = auditedOfficialRequest(URI.create("http://official.example/public/list"));
 

@@ -24,6 +24,31 @@ import org.junit.jupiter.api.Test;
 
 class ConfigurableSourceListingReaderTest {
     @Test
+    void auditedListingEntryAnnotatesItsDiscoveredDetailWithTheSameReadContract() {
+        URI listing = URI.create("http://legacy.example/public/jobs/index.html");
+        Map<String, Object> entry = baseEntry("legacy", "CAMPAIGN_STATE", listing.toString());
+        entry.put("transportPolicy", "AUDITED_HTTP_READ_ONLY");
+        entry.put("allowedHosts", List.of("legacy.example"));
+        entry.put("allowedPathPrefixes", List.of("/public/jobs"));
+        entry.put("articleUrlRegex", "^http://legacy\\.example/public/jobs/art_[0-9]+\\.html$");
+        var fetcher = new MapFetcher(Map.of(
+            listing, page("/public/jobs/art_1.html", "2026年招聘公告")));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).singleElement().satisfies(link -> {
+            assertThat(link.link().uri())
+                .isEqualTo(URI.create("http://legacy.example/public/jobs/art_1.html"));
+            assertThat(link.link().readContract()).isNotNull();
+            assertThat(link.link().readContract().transportPolicy().name())
+                .isEqualTo("AUDITED_HTTP_READ_ONLY");
+            assertThat(link.link().readContract().allowedPathPrefixes())
+                .containsExactly("/public/jobs");
+        });
+    }
+
+    @Test
     void entryEvidenceIsScopedToTheIntersectionOfRequestedAndApplicableYears() {
         Map<String, Object> entry2024 = baseEntry(
             "archive-2024", "LINKED_PAGE", "https://official.example/2024/index.html");

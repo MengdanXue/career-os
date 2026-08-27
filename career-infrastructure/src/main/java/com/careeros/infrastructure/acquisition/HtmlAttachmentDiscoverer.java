@@ -2,6 +2,7 @@ package com.careeros.infrastructure.acquisition;
 
 import com.careeros.application.AcquisitionHttpPorts.AttachmentDiscoverer;
 import com.careeros.application.AcquisitionHttpPorts.DiscoveredLink;
+import com.careeros.application.AcquisitionHttpPorts.HttpReadContract;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -17,26 +18,38 @@ import org.jsoup.Jsoup;
 public final class HtmlAttachmentDiscoverer implements AttachmentDiscoverer {
     @Override
     public List<DiscoveredLink> discover(RecruitmentSource source, URI pageUri, byte[] html) {
+        return discover(source, new DiscoveredLink(pageUri, "official announcement"), html);
+    }
+
+    @Override
+    public List<DiscoveredLink> discover(
+        RecruitmentSource source, DiscoveredLink page, byte[] html
+    ) {
         Set<String> hosts = allowedHosts(source);
         String selector = source.configuration().getOrDefault("attachmentSelector", "a[href]").toString();
         var distinct = new LinkedHashMap<URI, DiscoveredLink>();
-        var document = Jsoup.parse(new String(html, StandardCharsets.UTF_8), pageUri.toString());
+        var document = Jsoup.parse(new String(html, StandardCharsets.UTF_8), page.uri().toString());
         for (var anchor : document.select(selector)) {
             String href = anchor.attr("href").trim();
             if (href.isEmpty()) continue;
             URI uri;
-            try { uri = CanonicalUri.normalize(pageUri.resolve(href)); }
+            try { uri = CanonicalUri.normalize(page.uri().resolve(href)); }
             catch (IllegalArgumentException ignored) { continue; }
-            if (!"https".equalsIgnoreCase(uri.getScheme())
-                || !hosts.contains(uri.getHost().toLowerCase(Locale.ROOT))
+            if (!authorized(page.readContract(), hosts, uri)
                 || !supportedCandidate(uri)) continue;
             String title = anchor.text().strip();
             if (title.isEmpty()) title = filename(uri);
-            distinct.putIfAbsent(uri, new DiscoveredLink(uri, title));
+            distinct.putIfAbsent(uri, new DiscoveredLink(uri, title, page.readContract()));
         }
         var result = new ArrayList<>(distinct.values());
         result.sort(java.util.Comparator.comparing(link -> link.uri().toString()));
         return List.copyOf(result);
+    }
+
+    private static boolean authorized(HttpReadContract contract, Set<String> legacyHosts, URI uri) {
+        if (contract != null) return contract.authorizesTarget(uri);
+        return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null
+            && legacyHosts.contains(uri.getHost().toLowerCase(Locale.ROOT));
     }
 
     private static Set<String> allowedHosts(RecruitmentSource source) {

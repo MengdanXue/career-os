@@ -18,7 +18,6 @@ import com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint;
 import com.careeros.domain.acquisition.SourceOnboardingCheckpoint.CheckpointStatus;
 import java.io.IOException;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.*;
@@ -29,7 +28,6 @@ public final class AcquisitionService {
     private static final Pattern URL_DATE = Pattern.compile("/(20\\d{2})/(\\d{1,2})/(\\d{1,2})/");
     private static final Pattern URL_ARTICLE_YEAR = Pattern.compile("/art/(20\\d{2})(?:/|$)");
     private static final Pattern TITLE_YEAR = Pattern.compile("(20\\d{2})");
-    private static final Pattern LISTING_TOTAL = Pattern.compile("\\bcount\\s*=\\s*\"(\\d+)\"");
     private final AcquisitionStore store;
     private final SourceRunLock lock;
     private final SourceDiscoverer discoverer;
@@ -77,7 +75,7 @@ public final class AcquisitionService {
     ) {
         this.store=Objects.requireNonNull(store); this.lock=Objects.requireNonNull(lock);
         this.discoverer=Objects.requireNonNull(discoverer); this.fetcher=Objects.requireNonNull(fetcher);
-        this.listings=listings;
+        this.listings=listings == null ? this::readLegacySinglePage : listings;
         this.attachments=Objects.requireNonNull(attachments); this.processor=Objects.requireNonNull(processor);
         this.artifacts=Objects.requireNonNull(artifacts); this.nextRuns=Objects.requireNonNull(nextRuns);
         this.observer=Objects.requireNonNull(observer);
@@ -281,90 +279,7 @@ public final class AcquisitionService {
     }
 
     private ListingResult historicalListing(RecruitmentSource source, Set<Integer> recruitmentYears) {
-        if (listings != null) {
-            return listings.read(source, new ListingQuery(recruitmentYears, true));
-        }
-        HistoricalListing legacy = historicalDetails(source);
-        List<YearDiscoveredLink> links = legacy.details().stream()
-            .map(link -> linkYear(link).map(year -> new YearDiscoveredLink(link, year)))
-            .flatMap(Optional::stream)
-            .filter(link -> recruitmentYears.contains(link.recruitmentYear()))
-            .toList();
-        Map<Integer, ListingEvidence> evidence = new LinkedHashMap<>();
-        String basis = "official listing total=" + legacy.total()
-            + "; traversed pages=" + legacy.pages() + "; pageSize=" + legacy.pageSize();
-        for (int year : recruitmentYears) {
-            int annual = (int) links.stream().filter(link -> link.recruitmentYear() == year).count();
-            evidence.put(year, new ListingEvidence(legacy.pages(), legacy.total(), annual,
-                Math.max(0, legacy.total() - links.size()), 0, null, null,
-                true, "REPORTED_TOTAL_REACHED", basis));
-        }
-        return new ListingResult(links, evidence);
-    }
-
-    private HistoricalListing historicalDetails(RecruitmentSource source) {
-        if (!"JCMS_PARAM_JSON".equals(source.configuration().get("historicalPaginationMode"))) {
-            throw new IllegalArgumentException("Source does not declare verifiable historical pagination");
-        }
-        int pageSize = positiveConfiguration(source, "historicalPageSize");
-        int maxPages = positiveConfiguration(source, "historicalMaxPages");
-        LinkedHashMap<URI, DiscoveredLink> rawDistinct = new LinkedHashMap<>();
-        LinkedHashMap<URI, DiscoveredLink> candidateDistinct = new LinkedHashMap<>();
-        Set<String> pageFingerprints = new HashSet<>();
-        Integer total = null;
-        for (int page = 1; page <= maxPages; page++) {
-            URI pageUri = listingPageUri(source, page, pageSize);
-            FetchedDocument listing = fetchTimed(source, request(source, pageUri, null));
-            if (listing.status() != 200 || listing.content().length == 0) {
-                throw new FetchFailedException("Historical list page did not return content: " + listing.status());
-            }
-            int reported = listingTotal(listing.content());
-            if (total == null) total = reported;
-            else if (total != reported) throw new FetchFailedException("Historical listing total changed during traversal");
-            String pageFingerprint = sha256(listing.content());
-            if (!pageFingerprints.add(pageFingerprint) && (long) (page - 1) * pageSize < total) {
-                throw new FetchFailedException("Historical listing repeated a non-terminal page");
-            }
-            int beforePage = rawDistinct.size();
-            for (DiscoveredLink link : discoverer.discoverAll(source, listing.finalUri(), listing.content())) {
-                rawDistinct.putIfAbsent(link.uri(), link);
-            }
-            for (DiscoveredLink link : discoverer.discover(source, listing.finalUri(), listing.content())) {
-                candidateDistinct.putIfAbsent(link.uri(), link);
-            }
-            if (page > 1 && rawDistinct.size() == beforePage && beforePage < total) {
-                throw new FetchFailedException("Historical listing page did not add any new entry");
-            }
-            if ((long) page * pageSize >= total) {
-                if (rawDistinct.size() != total) {
-                    throw new FetchFailedException("Historical listing unique entry count did not match reported total");
-                }
-                return new HistoricalListing(List.copyOf(candidateDistinct.values()), total, page, pageSize);
-            }
-        }
-        throw new FetchFailedException("Historical listing exceeded configured page limit");
-    }
-
-    private static int positiveConfiguration(RecruitmentSource source, String key) {
-        Object value = source.configuration().get(key);
-        int parsed = value instanceof Number number ? number.intValue()
-            : value == null ? -1 : Integer.parseInt(value.toString());
-        if (parsed < 1) throw new IllegalArgumentException(key + " must be positive");
-        return parsed;
-    }
-
-    private static URI listingPageUri(RecruitmentSource source, int page, int pageSize) {
-        URI base = listingUri(source);
-        String param = URLEncoder.encode(
-            "{\"pageNo\":" + page + ",\"pageSize\":" + pageSize + "}", StandardCharsets.UTF_8);
-        return URI.create(base + (base.getRawQuery() == null ? "?" : "&") + "paramJson=" + param);
-    }
-
-    private static int listingTotal(byte[] content) {
-        String normalized = new String(content, StandardCharsets.UTF_8).replace("\\\"", "\"");
-        var matcher = LISTING_TOTAL.matcher(normalized);
-        if (!matcher.find()) throw new FetchFailedException("Historical listing does not report a total count");
-        return Integer.parseInt(matcher.group(1));
+        return listings.read(source, new ListingQuery(recruitmentYears, true));
     }
 
     private static Optional<Integer> linkYear(DiscoveredLink link) {
@@ -462,20 +377,29 @@ public final class AcquisitionService {
     }
 
     private List<DiscoveredLink> discoverIncremental(RecruitmentSource source) {
-        if (source.configuration().containsKey("incrementalListingMaxPages")) {
-            if (listings == null) {
-                throw new IllegalStateException(
-                    "SourceListingReader is required for bounded incremental listing traversal");
-            }
-            return listings.read(source, new ListingQuery(Set.of(), false)).links().stream()
-                .map(YearDiscoveredLink::link)
-                .toList();
-        }
+        return listings.read(source, new ListingQuery(Set.of(), false)).links().stream()
+            .map(YearDiscoveredLink::link)
+            .toList();
+    }
+
+    private ListingResult readLegacySinglePage(RecruitmentSource source, ListingQuery query) {
         FetchedDocument list = fetchTimed(source, request(source, listingUri(source), null));
         if (list.status() != 200 || list.content().length == 0) {
             throw new FetchFailedException("List page did not return content: " + list.status());
         }
-        return discoverer.discover(source, list.finalUri(), list.content());
+        int currentYear = clock.instant().atZone(ZoneId.of(source.timeZone())).getYear();
+        List<YearDiscoveredLink> links = discoverer.discover(source, list.finalUri(), list.content()).stream()
+            .map(link -> new YearDiscoveredLink(link, linkYear(link).orElse(currentYear)))
+            .filter(link -> !query.historical() || query.recruitmentYears().contains(link.recruitmentYear()))
+            .toList();
+        if (!query.historical()) return new ListingResult(links, Map.of());
+        Map<Integer, ListingEvidence> incomplete = new LinkedHashMap<>();
+        for (int year : query.recruitmentYears()) {
+            int annual = (int) links.stream().filter(link -> link.recruitmentYear() == year).count();
+            incomplete.put(year, new ListingEvidence(1, links.size(), annual, 0, 0,
+                null, null, false, "LEGACY_SINGLE_PAGE_INCOMPLETE", null));
+        }
+        return new ListingResult(links, incomplete);
     }
 
     private void saveIncrementalCoverage(UUID sourceId, Map<Integer, YearCounts> byYear) {
@@ -521,7 +445,7 @@ public final class AcquisitionService {
         Optional<AcquiredDocument> prior = store.findDocument(source.id(), link.uri());
         FetchedDocument response;
         try {
-            response = fetchTimed(source, request(source, link.uri(), prior.orElse(null)));
+            response = fetchTimed(source, request(source, link, prior.orElse(null)));
         } catch (RuntimeException failure) {
             counts.failed++;
             counts.sourceFailures++;
@@ -635,14 +559,15 @@ public final class AcquisitionService {
     ) {
         if (outcome.response != null && outcome.response.content().length > 0
             && isHtml(outcome.response.mediaType())) {
-            return attachments.discover(source, detail.uri(), outcome.response.content());
+            return attachments.discover(source, detail, outcome.response.content());
         }
         if (isHtml(outcome.document.mediaType())) {
-            return attachments.discover(source, detail.uri(), readStored(outcome.document));
+            return attachments.discover(source, detail, readStored(outcome.document));
         }
         return store.findDocuments(source.id()).stream()
             .filter(document -> outcome.document.id().equals(document.parentDocumentId()))
-            .map(document -> new DiscoveredLink(document.canonicalUri(), detail.title()))
+            .map(document -> new DiscoveredLink(
+                document.canonicalUri(), detail.title(), detail.readContract()))
             .toList();
     }
 
@@ -650,7 +575,14 @@ public final class AcquisitionService {
         return "text/html".equals(mediaType) || "application/xhtml+xml".equals(mediaType);
     }
 
-    private FetchRequest request(RecruitmentSource source, URI uri, AcquiredDocument prior) {
+    private FetchRequest request(RecruitmentSource source, DiscoveredLink link, AcquiredDocument prior) {
+        URI uri = link.uri();
+        if (link.readContract() != null) {
+            return new FetchRequest(uri, link.readContract().exactHosts(),
+                prior == null ? null : prior.etag(), prior == null ? null : prior.lastModified(),
+                Duration.ofSeconds(20), maxDocumentBytes, source.id(), source.minimumRequestInterval(),
+                FetchMethod.GET, link.readContract());
+        }
         Set<String> hosts = new LinkedHashSet<>();
         hosts.add(source.baseUri().getHost());
         hosts.add(source.entryUri().getHost());
@@ -659,6 +591,10 @@ public final class AcquisitionService {
         return new FetchRequest(uri, hosts, prior == null ? null : prior.etag(),
             prior == null ? null : prior.lastModified(), Duration.ofSeconds(20), maxDocumentBytes,
             source.id(), source.minimumRequestInterval());
+    }
+
+    private FetchRequest request(RecruitmentSource source, URI uri, AcquiredDocument prior) {
+        return request(source, new DiscoveredLink(uri, "official listing"), prior);
     }
 
     private static URI listingUri(RecruitmentSource source) {
@@ -830,7 +766,6 @@ public final class AcquisitionService {
         return false;
     }
 
-    private record HistoricalListing(List<DiscoveredLink> details, int total, int pages, int pageSize) {}
     private record DocumentOutcome(
         AcquiredDocument document, FetchedDocument response, ProcessingResult processing, boolean parsed
     ) {}

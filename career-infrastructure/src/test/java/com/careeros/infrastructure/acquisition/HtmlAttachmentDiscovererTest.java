@@ -2,6 +2,9 @@ package com.careeros.infrastructure.acquisition;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.careeros.application.AcquisitionHttpPorts.DiscoveredLink;
+import com.careeros.application.AcquisitionHttpPorts.HttpReadContract;
+import com.careeros.application.AcquisitionHttpPorts.TransportPolicy;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
@@ -15,6 +18,28 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class HtmlAttachmentDiscovererTest {
+    @Test
+    void auditedHttpParentAllowsOnlyAttachmentsInsideItsExactContractAndPropagatesIt() {
+        var contract = new HttpReadContract(TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            java.util.Set.of("legacy.example"), java.util.Set.of("/public/jobs"));
+        var parent = new DiscoveredLink(
+            URI.create("http://legacy.example/public/jobs/notice.html"), "招聘公告", contract);
+        byte[] html = """
+            <a href='/public/jobs/files/plan.xlsx'>岗位表</a>
+            <a href='/private/plan.xlsx'>越权路径</a>
+            <a href='http://other.example/public/jobs/plan.xlsx'>越权主机</a>
+            <a href='/public/jobs/%252e%252e/private/plan.xlsx'>编码绕过</a>
+            """.getBytes(StandardCharsets.UTF_8);
+
+        var links = new HtmlAttachmentDiscoverer().discover(source(), parent, html);
+
+        assertThat(links).singleElement().satisfies(link -> {
+            assertThat(link.uri())
+                .isEqualTo(URI.create("http://legacy.example/public/jobs/files/plan.xlsx"));
+            assertThat(link.readContract()).isEqualTo(contract);
+        });
+    }
+
     @Test
     void findsSupportedAttachmentsOnOfficialAndConfiguredHostsOnly() {
         byte[] html = """

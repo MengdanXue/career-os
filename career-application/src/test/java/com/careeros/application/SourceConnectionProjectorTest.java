@@ -2,6 +2,7 @@ package com.careeros.application;
 
 import static com.careeros.domain.acquisition.TargetSource.ConnectionStatus.CONNECTED;
 import static com.careeros.domain.acquisition.TargetSource.ConnectionStatus.FAILED;
+import static com.careeros.domain.acquisition.TargetSource.ConnectionStatus.NOT_CONNECTED;
 import static com.careeros.domain.acquisition.TargetSource.ConnectionStatus.PARTIAL;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -59,6 +60,30 @@ class SourceConnectionProjectorTest {
     }
 
     @Test
+    void incompleteRequiredHistoricalYearKeepsFreshVerifiedSourcePartial() {
+        var recording = new RecordingStore(source("HDU_RECRUITMENT"), List.of(
+            coverage(2024, CoverageStatus.COMPLETE), coverage(2025, CoverageStatus.PARTIAL),
+            coverage(2026, CoverageStatus.NO_TARGET_RECORDS)), Optional.of(run(RunStatus.SUCCEEDED)),
+            verifiedLifecycle());
+
+        new SourceConnectionProjector(recording.proxy(), Duration.ofDays(2)).refresh(SOURCE_ID, NOW);
+
+        assertThat(recording.updatedStatus).isEqualTo(PARTIAL);
+    }
+
+    @Test
+    void disabledSourceIsNotConnectedEvenWithConclusiveEvidence() {
+        var recording = new RecordingStore(source("HDU_RECRUITMENT", false, 0), List.of(
+            coverage(2024, CoverageStatus.COMPLETE), coverage(2025, CoverageStatus.COMPLETE),
+            coverage(2026, CoverageStatus.NO_TARGET_RECORDS)), Optional.of(run(RunStatus.SUCCEEDED)),
+            verifiedLifecycle());
+
+        new SourceConnectionProjector(recording.proxy(), Duration.ofDays(2)).refresh(SOURCE_ID, NOW);
+
+        assertThat(recording.updatedStatus).isEqualTo(NOT_CONNECTED);
+    }
+
+    @Test
     void backfillWithoutIncrementalVerificationRemainsPartial() {
         var recording = new RecordingStore(source("HDU_RECRUITMENT"), List.of(
             coverage(2024, CoverageStatus.COMPLETE), coverage(2025, CoverageStatus.COMPLETE),
@@ -92,9 +117,13 @@ class SourceConnectionProjectorTest {
     }
 
     private static RecruitmentSource source(String code, int consecutiveFailures) {
+        return source(code, true, consecutiveFailures);
+    }
+
+    private static RecruitmentSource source(String code, boolean enabled, int consecutiveFailures) {
         return new RecruitmentSource(SOURCE_ID, code, code, URI.create("https://official.example/"),
             URI.create("https://official.example/list"), SourceType.OFFICIAL_ORGANIZATION, "杭州",
-            CrawlMode.STATIC_HTML, true, "0 0 8 * * *", "Asia/Shanghai", Duration.ZERO,
+            CrawlMode.STATIC_HTML, enabled, "0 0 8 * * *", "Asia/Shanghai", Duration.ZERO,
             Map.of(), null, null, NOW, consecutiveFailures, NOW, NOW);
     }
 
