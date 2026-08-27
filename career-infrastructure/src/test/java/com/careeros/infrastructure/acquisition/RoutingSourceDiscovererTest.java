@@ -42,6 +42,58 @@ class RoutingSourceDiscovererTest {
             .hasMessageContaining("UNKNOWN_ADAPTER");
     }
 
+    @Test
+    void entrySpecificRoutingUsesTheAdapterDeclaredByTheActiveEntry() {
+        RecruitmentSource source = source("UNKNOWN_AT_SOURCE");
+        Map<String, Object> entryValues = new java.util.LinkedHashMap<>(source.configuration());
+        entryValues.put("adapterType", "STATIC_HTML");
+        entryValues.put("historicalPaginationMode", "LINKED_PAGE");
+        entryValues.put("code", "primary");
+        entryValues.put("entryUri", "https://www.hz-hospital.com/jobs");
+        entryValues.put("mode", "LINKED_PAGE");
+        RecruitmentSource configured = new RecruitmentSource(
+            source.id(), source.code(), source.name(), source.baseUri(), source.entryUri(),
+            source.sourceType(), source.region(), source.crawlMode(), source.enabled(),
+            source.cronExpression(), source.timeZone(), source.minimumRequestInterval(),
+            Map.of("adapterType", "UNKNOWN_AT_SOURCE", "listingEntries", java.util.List.of(entryValues)),
+            source.lastSuccessAt(), source.lastFailureAt(), source.nextDueAt(),
+            source.consecutiveFailureCount(), source.createdAt(), source.updatedAt());
+        ListingEntryContract entry = ListingEntryContract.from(configured).getFirst();
+
+        var links = discoverer.discover(configured, entry, entry.entryUri(),
+            "<a href='/content/details/id/228230?cid=68'>公开招聘编外工作人员</a>"
+                .getBytes(StandardCharsets.UTF_8));
+
+        assertThat(links).hasSize(1);
+    }
+
+    @Test
+    void hospitalRoutingUsesFiltersDeclaredByTheActiveEntry() {
+        RecruitmentSource source = source("HOSPITAL_OFFICIAL_EVIDENCE");
+        Map<String, Object> entryValues = new java.util.LinkedHashMap<>(source.configuration());
+        entryValues.put("code", "lifecycle");
+        entryValues.put("entryUri", "https://www.hz-hospital.com/notices");
+        entryValues.put("role", "LIFECYCLE");
+        entryValues.put("mode", "LINKED_PAGE");
+        entryValues.put("titleIncludeRegex", "面试");
+        entryValues.put("titleExcludeRegex", "(?!)");
+        RecruitmentSource configured = new RecruitmentSource(
+            source.id(), source.code(), source.name(), source.baseUri(), source.entryUri(),
+            source.sourceType(), source.region(), source.crawlMode(), source.enabled(),
+            source.cronExpression(), source.timeZone(), source.minimumRequestInterval(),
+            Map.of("adapterType", "HOSPITAL_OFFICIAL_EVIDENCE",
+                "listingEntries", java.util.List.of(entryValues)),
+            source.lastSuccessAt(), source.lastFailureAt(), source.nextDueAt(),
+            source.consecutiveFailureCount(), source.createdAt(), source.updatedAt());
+        ListingEntryContract entry = ListingEntryContract.from(configured).getFirst();
+
+        var links = discoverer.discover(configured, entry, entry.entryUri(),
+            "<a href='/content/details/id/228230?cid=68'>招聘面试通知</a>"
+                .getBytes(StandardCharsets.UTF_8));
+
+        assertThat(links).hasSize(1);
+    }
+
     private static RecruitmentSource source(String adapterType) {
         Instant now = Instant.parse("2026-08-24T12:00:00Z");
         return new RecruitmentSource(

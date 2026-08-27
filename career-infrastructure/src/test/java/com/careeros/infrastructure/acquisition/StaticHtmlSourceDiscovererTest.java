@@ -15,6 +15,21 @@ import org.junit.jupiter.api.Test;
 
 class StaticHtmlSourceDiscovererTest {
     @Test
+    void entrySpecificDiscoveryUsesTheActiveEntryFiltersAndHosts() {
+        RecruitmentSource source = multiEntrySource();
+        ListingEntryContract lifecycle = ListingEntryContract.from(source).getLast();
+        byte[] html = ("<a href='https://lifecycle.example/art/2026/8/20/art_1.html'>2026年面试通知</a>"
+            + "<a href='https://official.example/art/2026/8/20/art_2.html'>2026年招聘公告</a>")
+            .getBytes(StandardCharsets.UTF_8);
+
+        var links = new StaticHtmlSourceDiscoverer().discover(
+            source, lifecycle, lifecycle.entryUri(), html);
+
+        assertThat(links).singleElement().satisfies(link ->
+            assertThat(link.uri()).hasToString("https://lifecycle.example/art/2026/8/20/art_1.html"));
+    }
+
+    @Test
     void findsOnlyCanonicalOfficialRecruitmentArticles() {
         RecruitmentSource source = source();
         byte[] html = """
@@ -65,6 +80,28 @@ class StaticHtmlSourceDiscovererTest {
                 "linkSelector", "a[href]",
                 "titleIncludeRegex", "招聘|招考|选聘|引进",
                 "titleExcludeRegex", "拟聘|公示|成绩|体检|递补"),
+            null, null, now, 0, now, now);
+    }
+
+    private static RecruitmentSource multiEntrySource() {
+        Instant now = Instant.parse("2026-08-15T00:00:00Z");
+        Map<String, Object> primary = Map.ofEntries(
+            Map.entry("code", "primary"), Map.entry("entryUri", "https://official.example/jobs"),
+            Map.entry("mode", "LINKED_PAGE"), Map.entry("articleUrlRegex", "^https://official\\.example/art/.+$"),
+            Map.entry("linkSelector", "a[href]"), Map.entry("titleIncludeRegex", "招聘"),
+            Map.entry("titleExcludeRegex", "面试"));
+        Map<String, Object> lifecycle = Map.ofEntries(
+            Map.entry("code", "lifecycle"), Map.entry("entryUri", "https://lifecycle.example/notices"),
+            Map.entry("role", "LIFECYCLE"), Map.entry("mode", "LINKED_PAGE"),
+            Map.entry("allowedHosts", java.util.List.of("lifecycle.example")),
+            Map.entry("articleUrlRegex", "^https://lifecycle\\.example/art/.+$"),
+            Map.entry("linkSelector", "a[href]"), Map.entry("titleIncludeRegex", "面试"),
+            Map.entry("titleExcludeRegex", "招聘公告"));
+        return new RecruitmentSource(UUID.randomUUID(), "MULTI", "多入口",
+            URI.create("https://official.example/"), URI.create("https://official.example/jobs"),
+            SourceType.OFFICIAL_GOVERNMENT, "杭州", CrawlMode.STATIC_HTML, true,
+            "0 10 8 * * *", "Asia/Shanghai", Duration.ofSeconds(1),
+            Map.of("listingEntries", java.util.List.of(primary, lifecycle)),
             null, null, now, 0, now, now);
     }
 }

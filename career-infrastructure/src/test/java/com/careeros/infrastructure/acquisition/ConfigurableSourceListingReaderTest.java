@@ -16,12 +16,455 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ConfigurableSourceListingReaderTest {
+    @Test
+    void entryEvidenceIsScopedToTheIntersectionOfRequestedAndApplicableYears() {
+        Map<String, Object> entry2024 = baseEntry(
+            "archive-2024", "LINKED_PAGE", "https://official.example/2024/index.html");
+        entry2024.put("recruitmentYears", List.of(2024));
+        entry2024.put("historicalMaxPages", 2);
+        entry2024.put("nextPageSelector", "a.next[href]");
+        Map<String, Object> entry2026 = baseEntry(
+            "current-2026", "LINKED_PAGE", "https://official.example/2026/index.html");
+        entry2026.put("recruitmentYears", List.of(2026));
+        entry2026.put("historicalMaxPages", 2);
+        entry2026.put("nextPageSelector", "a.next[href]");
+        var fetcher = new MapFetcher(Map.of(
+            URI.create("https://official.example/2024/index.html"),
+                page("/art/2024/8/20/art_1.html", "2024年招聘公告"),
+            URI.create("https://official.example/2026/index.html"),
+                page("/art/2026/8/20/art_2.html", "2026年招聘公告")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(sourceWithEntries(List.of(entry2024, entry2026)),
+                new ListingQuery(Set.of(2024, 2026), true));
+
+        assertThat(result.evidenceByEntry().get("archive-2024").evidenceByYear())
+            .containsOnlyKeys(2024);
+        assertThat(result.evidenceByEntry().get("current-2026").evidenceByYear())
+            .containsOnlyKeys(2026);
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+    }
+
+    @Test
+    void aYearWithoutAnApplicableRequiredEntryRemainsIncomplete() {
+        Map<String, Object> entry = baseEntry(
+            "archive-2024", "LINKED_PAGE", "https://official.example/2024/index.html");
+        entry.put("recruitmentYears", List.of(2024));
+        entry.put("historicalMaxPages", 2);
+        entry.put("nextPageSelector", "a.next[href]");
+
+        var result = new ConfigurableSourceListingReader(new MapFetcher(Map.of()),
+            new StaticHtmlSourceDiscoverer()).read(sourceWithEntries(List.of(entry)),
+                new ListingQuery(Set.of(2025), true));
+
+        assertThat(result.evidenceByEntry()).isEmpty();
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isFalse();
+        assertThat(result.evidenceByYear().get(2025).stopReason())
+            .isEqualTo("NO_APPLICABLE_REQUIRED_ENTRY");
+    }
+
+    @Test
+    void anOptionalCampaignEntryCannotProveAnnualCompletenessByItself() {
+        Map<String, Object> entry = baseEntry(
+            "campaign", "CAMPAIGN_STATE", "https://official.example/campaign");
+        entry.put("completenessRequired", false);
+        var fetcher = new MapFetcher(Map.of(
+            URI.create("https://official.example/campaign"),
+            page("/art/2026/8/20/art_1.html", "2026年招聘公告")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(sourceWithEntries(List.of(entry)), new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isFalse();
+        assertThat(result.evidenceByYear().get(2026).stopReason())
+            .isEqualTo("NO_APPLICABLE_REQUIRED_ENTRY");
+    }
+
+    @Test
+    void canonicalDedupNormalizesHostDefaultPortAndTrackingParametersAcrossEntries() {
+        Map<String, Object> first = baseEntry(
+            "first", "FIXED_EVIDENCE", "https://official.example/evidence-a");
+        first.put("historicalEvidenceByYear", Map.of("2026", List.of(
+            "https://OFFICIAL.EXAMPLE:443/art/2026/8/20/art_1.html?utm_source=archive")));
+        Map<String, Object> second = baseEntry(
+            "second", "FIXED_EVIDENCE", "https://official.example/evidence-b");
+        second.put("historicalEvidenceByYear", Map.of("2026", List.of(
+            "https://official.example/art/2026/8/20/art_1.html")));
+
+        var result = new ConfigurableSourceListingReader(new MapFetcher(Map.of()),
+            new StaticHtmlSourceDiscoverer()).read(sourceWithEntries(List.of(first, second)),
+                new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.links()).singleElement().satisfies(link ->
+            assertThat(link.link().uri()).hasToString(
+                "https://official.example/art/2026/8/20/art_1.html"));
+    }
+
+    @Test
+    void boundedIncrementalQueryReturnsDiscoveredLinksAtItsPageLimit() {
+        Map<String, Object> entry = baseEntry(
+            "query", "QUERY_PAGE", "https://official.example/notices");
+        entry.put("historicalMaxPages", 9);
+        entry.put("incrementalListingMaxPages", 2);
+        entry.put("pageParameter", "page");
+        var fetcher = new MapFetcher(Map.of(
+            URI.create("https://official.example/notices?page=1"),
+                page("/art/2026/8/20/art_1.html", "2026年招聘公告"),
+            URI.create("https://official.example/notices?page=2"),
+                page("/art/2026/8/21/art_2.html", "2026年招聘公告（二）")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).hasSize(2);
+        assertThat(result.evidenceByYear()).isEmpty();
+    }
+
+    @Test
+    void boundedIncrementalTemplateReturnsDiscoveredLinksAtItsPageLimit() {
+        Map<String, Object> entry = baseEntry(
+            "template", "STATIC_SUFFIX_TEMPLATE", "https://official.example/list1.htm");
+        entry.put("pageUriTemplate", "https://official.example/list{page}.htm");
+        entry.put("historicalMaxPages", 9);
+        entry.put("incrementalListingMaxPages", 2);
+        var fetcher = new MapFetcher(Map.of(
+            URI.create("https://official.example/list1.htm"),
+                page("/art/2026/8/20/art_1.html", "2026年招聘公告"),
+            URI.create("https://official.example/list2.htm"),
+                page("/art/2026/8/21/art_2.html", "2026年招聘公告（二）")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).hasSize(2);
+        assertThat(result.evidenceByYear()).isEmpty();
+    }
+
+    @Test
+    void boundedIncrementalLinkedTraversalReturnsDiscoveredLinksAtItsPageLimit() {
+        Map<String, Object> entry = baseEntry(
+            "linked", "LINKED_PAGE", "https://official.example/list1.html");
+        entry.put("historicalMaxPages", 9);
+        entry.put("incrementalListingMaxPages", 2);
+        entry.put("nextPageSelector", "a.next[href]");
+        var fetcher = new MapFetcher(Map.of(
+            URI.create("https://official.example/list1.html"), linkedPage(
+                "/art/2026/8/20/art_1.html", "2026年招聘公告", "/list2.html"),
+            URI.create("https://official.example/list2.html"), linkedPage(
+                "/art/2026/8/21/art_2.html", "2026年招聘公告（二）", "/list3.html")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).hasSize(2);
+        assertThat(result.evidenceByYear()).isEmpty();
+    }
+
+    @Test
+    void boundedIncrementalJsonApiReturnsDiscoveredLinksAtItsPageLimit() {
+        Map<String, Object> entry = baseEntry(
+            "api", "JSON_API", "https://official.example/api/notices");
+        entry.put("historicalMaxPages", 9);
+        entry.put("incrementalListingMaxPages", 2);
+        entry.put("historicalPageSize", 1);
+        entry.put("pageParameter", "current");
+        entry.put("pageSizeParameter", "size");
+        entry.put("jsonItemsPath", "data.records");
+        entry.put("jsonTotalPath", "data.total");
+        entry.put("jsonUrlField", "url");
+        entry.put("jsonTitleField", "title");
+        var fetcher = new MapFetcher(Map.of(
+            URI.create("https://official.example/api/notices?current=1&size=1"),
+                jsonApiPage(50, "/art/2026/8/20/art_1.html", "2026年招聘公告"),
+            URI.create("https://official.example/api/notices?current=2&size=1"),
+                jsonApiPage(50, "/art/2026/8/21/art_2.html", "2026年招聘公告（二）")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).hasSize(2);
+        assertThat(result.evidenceByYear()).isEmpty();
+    }
+
+    @Test
+    void staticTemplateUsesConfiguredUrisAndConfirmsTheTerminalEmptyPage() {
+        Map<String, Object> entry = baseEntry(
+            "template", "STATIC_SUFFIX_TEMPLATE", "https://official.example/News130a1.htm");
+        entry.put("pageUriTemplate", "https://official.example/News130a{page}.htm");
+        entry.put("historicalMaxPages", 5);
+        entry.put("emptyPageConfirmationPages", 1);
+        URI first = URI.create("https://official.example/News130a1.htm");
+        URI second = URI.create("https://official.example/News130a2.htm");
+        URI third = URI.create("https://official.example/News130a3.htm");
+        var fetcher = new MapFetcher(Map.of(
+            first, page("/art/2026/8/20/art_1.html", "2026年招聘公告"),
+            second, "<html/>".getBytes(StandardCharsets.UTF_8),
+            third, "<html/>".getBytes(StandardCharsets.UTF_8)
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(fetcher.requests()).containsExactly(first, second, third);
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+    }
+
+    @Test
+    void staticTemplateRejectsAnEmptyMiddlePage() {
+        Map<String, Object> entry = baseEntry(
+            "template", "STATIC_SUFFIX_TEMPLATE", "https://official.example/News130a1.htm");
+        entry.put("pageUriTemplate", "https://official.example/News130a{page}.htm");
+        entry.put("historicalMaxPages", 5);
+        entry.put("emptyPageConfirmationPages", 1);
+        var fetcher = new MapFetcher(Map.of(
+            URI.create("https://official.example/News130a1.htm"),
+                page("/art/2026/8/20/art_1.html", "2026年招聘公告"),
+            URI.create("https://official.example/News130a2.htm"), "<html/>".getBytes(StandardCharsets.UTF_8),
+            URI.create("https://official.example/News130a3.htm"),
+                page("/art/2025/8/20/art_2.html", "2025年招聘公告")
+        ));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2025, 2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("empty middle page");
+    }
+
+    @Test
+    void queryPaginationPreservesExistingParameters() {
+        Map<String, Object> entry = baseEntry(
+            "query", "QUERY_PAGE", "https://official.example/notices?category=jobs&lang=zh");
+        entry.put("historicalMaxPages", 3);
+        entry.put("pageParameter", "page");
+        URI first = URI.create("https://official.example/notices?category=jobs&lang=zh&page=1");
+        URI second = URI.create("https://official.example/notices?category=jobs&lang=zh&page=2");
+        var fetcher = new MapFetcher(Map.of(
+            first, page("/art/2026/8/20/art_1.html", "2026年招聘公告"),
+            second, "<html/>".getBytes(StandardCharsets.UTF_8)
+        ));
+
+        new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(fetcher.requests()).containsExactly(first, second);
+    }
+
+    @Test
+    void queryPaginationPreservesAlreadyEncodedParameterValues() {
+        Map<String, Object> entry = baseEntry(
+            "query", "QUERY_PAGE", "https://official.example/notices?category=%E6%8B%9B%E8%81%98");
+        entry.put("historicalMaxPages", 2);
+        entry.put("pageParameter", "page");
+        URI first = URI.create("https://official.example/notices?category=%E6%8B%9B%E8%81%98&page=1");
+        URI second = URI.create("https://official.example/notices?category=%E6%8B%9B%E8%81%98&page=2");
+        var fetcher = new MapFetcher(Map.of(
+            first, page("/art/2026/8/20/art_1.html", "2026年招聘公告"),
+            second, "<html/>".getBytes(StandardCharsets.UTF_8)
+        ));
+
+        new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(fetcher.requests()).containsExactly(first, second);
+    }
+
+    @Test
+    void queryPaginationRejectsRepeatedNonTerminalPages() {
+        Map<String, Object> entry = baseEntry(
+            "query", "QUERY_PAGE", "https://official.example/notices");
+        entry.put("historicalMaxPages", 3);
+        entry.put("pageParameter", "page");
+        byte[] repeated = page("/art/2026/8/20/art_1.html", "2026年招聘公告");
+        var fetcher = new MapFetcher(Map.of(
+            URI.create("https://official.example/notices?page=1"), repeated,
+            URI.create("https://official.example/notices?page=2"), repeated
+        ));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("repeated a non-terminal page");
+    }
+
+    @Test
+    void queryPaginationFailsAtTheConfiguredMaximumWithoutATerminalPage() {
+        Map<String, Object> entry = baseEntry(
+            "query", "QUERY_PAGE", "https://official.example/notices");
+        entry.put("historicalMaxPages", 2);
+        entry.put("pageParameter", "page");
+        var fetcher = new MapFetcher(Map.of(
+            URI.create("https://official.example/notices?page=1"),
+                page("/art/2026/8/20/art_1.html", "2026年招聘公告"),
+            URI.create("https://official.example/notices?page=2"),
+                page("/art/2026/8/21/art_2.html", "2026年招聘公告（二）")
+        ));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("exceeded configured page limit");
+    }
+
+    @Test
+    void multiEntryJcmsRejectsAReportedTotalThatDoesNotMatchUniqueEntries() {
+        Map<String, Object> entry = baseEntry(
+            "jcms", "JCMS_PARAM_JSON", "https://official.example/column/index.html");
+        entry.put("listingApiUri", "https://official.example/api/list?channel=jobs");
+        entry.put("historicalPageSize", 2);
+        entry.put("historicalMaxPages", 3);
+        RecruitmentSource source = singleEntrySource(entry);
+        URI first = URI.create("https://official.example/api/list?channel=jobs&paramJson="
+            + URLEncoder.encode("{\"pageNo\":1,\"pageSize\":2}", StandardCharsets.UTF_8));
+        var fetcher = new MapFetcher(Map.of(
+            first, jcmsPage(2, "/art/2026/8/20/art_1.html", "2026年招聘公告")
+        ));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(source, new ListingQuery(Set.of(2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("reported total");
+    }
+
+    @Test
+    void jsonApiExtractsDeclaredItemsAndReconcilesTheTotal() {
+        Map<String, Object> entry = baseEntry(
+            "api", "JSON_API", "https://official.example/api/notices?category=jobs");
+        entry.put("historicalMaxPages", 3);
+        entry.put("historicalPageSize", 10);
+        entry.put("pageParameter", "current");
+        entry.put("pageSizeParameter", "size");
+        entry.put("jsonItemsPath", "data.records");
+        entry.put("jsonTotalPath", "data.total");
+        entry.put("jsonUrlField", "url");
+        entry.put("jsonTitleField", "title");
+        URI first = URI.create("https://official.example/api/notices?category=jobs&current=1&size=10");
+        byte[] json = "{\"data\":{\"total\":1,\"records\":[{\"url\":\"/art/2026/8/20/art_1.html\",\"title\":\"2026年招聘公告\"}]}}"
+            .getBytes(StandardCharsets.UTF_8);
+
+        var result = new ConfigurableSourceListingReader(new MapFetcher(Map.of(first, json)),
+            new StaticHtmlSourceDiscoverer()).read(singleEntrySource(entry),
+                new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.links()).singleElement().satisfies(link ->
+            assertThat(link.link().uri()).hasToString("https://official.example/art/2026/8/20/art_1.html"));
+        assertThat(result.evidenceByEntry().get("api").evidenceByYear().get(2026).stopReason())
+            .isEqualTo("REPORTED_TOTAL_REACHED");
+    }
+
+    @Test
+    void jsonApiRejectsADeclaredTotalMismatch() {
+        Map<String, Object> entry = baseEntry(
+            "api", "JSON_API", "https://official.example/api/notices");
+        entry.put("historicalMaxPages", 2);
+        entry.put("historicalPageSize", 10);
+        entry.put("pageParameter", "current");
+        entry.put("pageSizeParameter", "size");
+        entry.put("jsonItemsPath", "data.records");
+        entry.put("jsonTotalPath", "data.total");
+        entry.put("jsonUrlField", "url");
+        entry.put("jsonTitleField", "title");
+        URI first = URI.create("https://official.example/api/notices?current=1&size=10");
+        byte[] json = "{\"data\":{\"total\":2,\"records\":[{\"url\":\"/art/2026/8/20/art_1.html\",\"title\":\"2026年招聘公告\"}]}}"
+            .getBytes(StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(new MapFetcher(Map.of(first, json)),
+            new StaticHtmlSourceDiscoverer()).read(singleEntrySource(entry),
+                new ListingQuery(Set.of(2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("reported total");
+    }
+
+    @Test
+    void embeddedDataExtractsConfiguredOfficialPositions() {
+        Map<String, Object> entry = baseEntry(
+            "embedded", "EMBEDDED_DATA", "https://official.example/positions");
+        entry.put("embeddedDataSelector", "script#positions");
+        entry.put("embeddedItemsPath", "positions");
+        entry.put("jsonUrlField", "url");
+        entry.put("jsonTitleField", "title");
+        byte[] html = ("<script id='positions' type='application/json'>"
+            + "{\"positions\":[{\"url\":\"/art/2026/8/20/art_1.html\",\"title\":\"2026年招聘工程师\"}]}"
+            + "</script>").getBytes(StandardCharsets.UTF_8);
+
+        var result = new ConfigurableSourceListingReader(
+            new MapFetcher(Map.of(URI.create("https://official.example/positions"), html)),
+            new StaticHtmlSourceDiscoverer()).read(singleEntrySource(entry),
+                new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.links()).singleElement().satisfies(link ->
+            assertThat(link.link().title()).isEqualTo("2026年招聘工程师"));
+    }
+
+    @Test
+    void multiEntryTraversalDeduplicatesCanonicalLinksAndOrdersLifecycleFirst() {
+        URI primary = URI.create("https://official.example/jobs/index.html");
+        URI lifecycle = URI.create("https://official.example/lifecycle/index.html");
+        var fetcher = new MapFetcher(Map.of(
+            primary, page("/art/2026/8/20/art_1.html?utm_source=primary", "2026年公开招聘公告"),
+            lifecycle, ("<a href='/art/2026/8/20/art_1.html'>2026年招聘面试通知</a>"
+                + "<a href='/art/2026/8/21/art_2.html'>2026年招聘资格复审通知</a>")
+                .getBytes(StandardCharsets.UTF_8)
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(multiEntrySource(true), new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.links()).extracting(link -> link.link().uri().toString())
+            .containsExactly(
+                "https://official.example/art/2026/8/20/art_1.html",
+                "https://official.example/art/2026/8/21/art_2.html");
+        assertThat(result.links().getFirst().link().title()).contains("面试");
+        assertThat(result.evidenceByEntry()).containsOnlyKeys("primary", "lifecycle");
+    }
+
+    @Test
+    void incompleteRequiredEntryKeepsAggregatedYearIncomplete() {
+        URI primary = URI.create("https://official.example/jobs/index.html");
+        URI lifecycle = URI.create("https://official.example/lifecycle/index.html");
+        var fetcher = new MapFetcher(Map.of(
+            primary, page("/art/2026/8/20/art_1.html", "2026年公开招聘公告"),
+            lifecycle, page("/art/2026/8/21/art_2.html", "2026年招聘面试通知")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(multiEntrySource(true), new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.evidenceByEntry().get("primary").evidenceByYear().get(2026).traversalComplete())
+            .isTrue();
+        assertThat(result.evidenceByEntry().get("lifecycle").evidenceByYear().get(2026).traversalComplete())
+            .isFalse();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isFalse();
+    }
+
+    @Test
+    void incompleteOptionalEntryDoesNotBlockAggregatedYearCompletion() {
+        URI primary = URI.create("https://official.example/jobs/index.html");
+        URI lifecycle = URI.create("https://official.example/lifecycle/index.html");
+        var fetcher = new MapFetcher(Map.of(
+            primary, page("/art/2026/8/20/art_1.html", "2026年公开招聘公告"),
+            lifecycle, page("/art/2026/8/21/art_2.html", "2026年招聘面试通知")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(multiEntrySource(false), new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+    }
+
     @Test
     void staticSuffixTraversalStopsOnlyAtAnUnambiguousEmptyPage() {
         URI first = URI.create("https://renshi.hdu.edu.cn/rczp/list.htm");
@@ -228,6 +671,78 @@ class ConfigurableSourceListingReaderTest {
             ), null, null, now, 0, now, now);
     }
 
+    private static RecruitmentSource multiEntrySource(boolean lifecycleRequired) {
+        Instant now = Instant.parse("2026-08-24T12:00:00Z");
+        Map<String, Object> primary = new LinkedHashMap<>();
+        primary.put("code", "primary");
+        primary.put("entryUri", "https://official.example/jobs/index.html");
+        primary.put("role", "PRIMARY");
+        primary.put("mode", "LINKED_PAGE");
+        primary.put("recruitmentYears", List.of(2026));
+        primary.put("completenessRequired", true);
+        primary.put("historicalMaxPages", 3);
+        primary.put("nextPageSelector", "a.next[href]");
+        primary.put("articleUrlRegex", "^https://official\\.example/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+\\.html$");
+        primary.put("linkSelector", "a[href]");
+        primary.put("titleIncludeRegex", "招聘");
+        primary.put("titleExcludeRegex", "面试|复审");
+
+        Map<String, Object> lifecycle = new LinkedHashMap<>();
+        lifecycle.put("code", "lifecycle");
+        lifecycle.put("entryUri", "https://official.example/lifecycle/index.html");
+        lifecycle.put("role", "LIFECYCLE");
+        lifecycle.put("mode", "CAMPAIGN_STATE");
+        lifecycle.put("recruitmentYears", List.of(2026));
+        lifecycle.put("completenessRequired", lifecycleRequired);
+        lifecycle.put("articleUrlRegex", primary.get("articleUrlRegex"));
+        lifecycle.put("linkSelector", "a[href]");
+        lifecycle.put("titleIncludeRegex", "面试|复审");
+        lifecycle.put("titleExcludeRegex", "(?!)");
+
+        return new RecruitmentSource(
+            UUID.fromString("01992f09-0000-7000-8000-000000000499"),
+            "MULTI", "多入口官方来源",
+            URI.create("https://official.example/"),
+            URI.create("https://official.example/jobs/index.html"),
+            SourceType.OFFICIAL_GOVERNMENT, "杭州", CrawlMode.STATIC_HTML,
+            true, "0 30 8 * * *", "Asia/Shanghai", Duration.ofMillis(1_500),
+            Map.of("adapterType", "STATIC_HTML", "listingEntries", List.of(primary, lifecycle)),
+            null, null, now, 0, now, now);
+    }
+
+    private static Map<String, Object> baseEntry(String code, String mode, String entryUri) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("code", code);
+        entry.put("entryUri", entryUri);
+        entry.put("mode", mode);
+        entry.put("role", "PRIMARY");
+        entry.put("recruitmentYears", List.of(2024, 2025, 2026));
+        entry.put("completenessRequired", true);
+        entry.put("adapterType", "STATIC_HTML");
+        entry.put("articleUrlRegex", "^https://official\\.example/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+\\.html$");
+        entry.put("linkSelector", "a[href]");
+        entry.put("titleIncludeRegex", "招聘");
+        entry.put("titleExcludeRegex", "(?!)");
+        return entry;
+    }
+
+    private static RecruitmentSource singleEntrySource(Map<String, Object> entry) {
+        return sourceWithEntries(List.of(entry));
+    }
+
+    private static RecruitmentSource sourceWithEntries(List<Map<String, Object>> entries) {
+        Instant now = Instant.parse("2026-08-24T12:00:00Z");
+        return new RecruitmentSource(
+            UUID.fromString("01992f09-0000-7000-8000-000000000498"),
+            "SINGLE_ENTRY", "单入口官方来源",
+            URI.create("https://official.example/"),
+            URI.create("https://official.example/index.html"),
+            SourceType.OFFICIAL_GOVERNMENT, "杭州", CrawlMode.STATIC_HTML,
+            true, "0 30 8 * * *", "Asia/Shanghai", Duration.ofMillis(1_500),
+            Map.of("adapterType", "STATIC_HTML", "listingEntries", entries),
+            null, null, now, 0, now, now);
+    }
+
     private static URI jcmsUri(RecruitmentSource source, int page, int pageSize) {
         String base = source.configuration().get("listingApiUri").toString();
         String param = URLEncoder.encode(
@@ -251,6 +766,12 @@ class ConfigurableSourceListingReaderTest {
     private static byte[] linkedPage(String href, String title, String nextHref) {
         String next = nextHref == null ? "" : "<a class=\"next\" href=\"" + nextHref + "\">下一页</a>";
         return ("<html><body><a href=\"" + href + "\">" + title + "</a>" + next + "</body></html>")
+            .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static byte[] jsonApiPage(int total, String url, String title) {
+        return ("{\"data\":{\"total\":" + total + ",\"records\":[{\"url\":\""
+            + url + "\",\"title\":\"" + title + "\"}]}}")
             .getBytes(StandardCharsets.UTF_8);
     }
 
