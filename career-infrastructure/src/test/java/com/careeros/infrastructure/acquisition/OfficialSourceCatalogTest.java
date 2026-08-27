@@ -25,6 +25,15 @@ class OfficialSourceCatalogTest {
         assertThat(xihu.configuration())
             .containsEntry("historicalPaginationMode", "JCMS_PARAM_JSON")
             .containsEntry("adapterType", "JCMS_LISTING");
+        var gongshu = catalog.sources().stream().filter(source -> source.code().equals("HZ_GONGSHU_GOV"))
+            .findFirst().orElseThrow();
+        assertThat(gongshu.enabled()).isTrue();
+        assertThat(gongshu.listingUrl())
+            .isEqualTo("https://www.gongshu.gov.cn/col/col1229226160/index.html");
+        assertThat(gongshu.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(gongshu.configuration())
+            .containsEntry("historicalPaginationMode", "JCMS_PARAM_JSON")
+            .containsEntry("adapterType", "JCMS_LISTING");
     }
 
     @Test
@@ -98,7 +107,29 @@ class OfficialSourceCatalogTest {
             .extracting(link -> link.uri().toString())
             .containsExactly(
                 "https://www.hzxh.gov.cn/col/col1229349919/art/2025/art_a900cfc4dba7403887a8cc0a165aadf1.html",
-                "https://www.hzxh.gov.cn/col/col1229349919/art/2025/art_b900cfc4dba7403887a8cc0a165aadf2.html",
-                "https://www.hzxh.gov.cn/col/col1368377/art/2026/art_fda023d7591c4fbf820b53260da8962a.html");
+                "https://www.hzxh.gov.cn/col/col1368377/art/2026/art_fda023d7591c4fbf820b53260da8962a.html",
+                "https://www.hzxh.gov.cn/col/col1229349919/art/2025/art_b900cfc4dba7403887a8cc0a165aadf2.html");
+    }
+
+    @Test
+    void gongshuJcmsContractKeepsInitialAndLifecycleNoticesButRejectsExternalAggregates() {
+        var source = OfficialSourceCatalog.load().sources().stream()
+            .filter(value -> value.code().equals("HZ_GONGSHU_GOV")).findFirst().orElseThrow();
+        byte[] response = """
+            {"success":true,"data":{"html":"<div class='default_pgContainer'>
+              <a href='/col/col1229226160/art/2026/art_8be90ae6320b4263859b753cdacf43f4.html'>
+                2026年杭州市拱墅区卫生健康局事业单位公开招聘工作人员公告</a>
+              <a href='/col/col1229226160/art/2026/art_a78ec64bb23a43c29f53f0411821ba3f.html'>
+                2026年拱墅区卫生健康局公开招聘事业单位工作人员综合成绩公示</a>
+              <a href='https://hrss.hangzhou.gov.cn/art/2024/1/1/art_external.html'>
+                杭州市事业单位统一招聘公告</a>
+            </div>","count":"8"}}
+            """.getBytes(StandardCharsets.UTF_8);
+
+        assertThat(new StaticHtmlSourceDiscoverer().discover(source, response))
+            .extracting(link -> link.uri().toString())
+            .containsExactly(
+                "https://www.gongshu.gov.cn/col/col1229226160/art/2026/art_8be90ae6320b4263859b753cdacf43f4.html",
+                "https://www.gongshu.gov.cn/col/col1229226160/art/2026/art_a78ec64bb23a43c29f53f0411821ba3f.html");
     }
 }

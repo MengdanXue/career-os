@@ -73,6 +73,29 @@ class JavaHttpDocumentFetcherTest {
             .hasMessageContaining("HTTPS");
     }
 
+    @Test void upgradesAllowlistedSameHostHttpRedirectWithoutSendingPlainHttp() {
+        var request = new FetchRequest(URI.create("https://official.example/notice"),
+            Set.of("official.example"), null, null, Duration.ofSeconds(20), 1024);
+
+        URI target = JavaHttpDocumentFetcher.resolveRedirectTarget(request.uri(),
+            "http://official.example/file.pdf?download=1", request);
+
+        assertThat(target).isEqualTo(URI.create("https://official.example/file.pdf?download=1"));
+        JavaHttpDocumentFetcher.requireAllowed(target, request);
+    }
+
+    @Test void doesNotUpgradeHttpRedirectOutsideSourceAllowlist() {
+        var request = new FetchRequest(URI.create("https://official.example/notice"),
+            Set.of("official.example"), null, null, Duration.ofSeconds(20), 1024);
+
+        URI target = JavaHttpDocumentFetcher.resolveRedirectTarget(request.uri(),
+            "http://external.example/file.pdf", request);
+
+        assertThatThrownBy(() -> JavaHttpDocumentFetcher.requireAllowed(target, request))
+            .isInstanceOf(FetchRejectedException.class)
+            .hasMessageContaining("HTTPS");
+    }
+
     @Test void rejectsNonDefaultPortForOfficialHosts() {
         var request = new FetchRequest(URI.create("https://official.example/notice"),
             Set.of("official.example"), null, null, Duration.ofSeconds(20), 1024);

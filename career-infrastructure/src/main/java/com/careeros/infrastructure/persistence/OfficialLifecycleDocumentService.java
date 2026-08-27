@@ -55,14 +55,30 @@ public class OfficialLifecycleDocumentService {
         if (targetStem.isEmpty()) return List.of();
         List<Candidate> matches = new ArrayList<>();
         for (Candidate candidate : jdbc.query("""
-            select id, title from recruitment_event
+            select id, title, source_url from recruitment_event
             where recruitment_year=? and source_url<>?
             """, (row, ignored) -> new Candidate(
-                row.getObject("id", UUID.class), row.getString("title")), year, sourceUrl)) {
+                row.getObject("id", UUID.class), row.getString("title"), row.getString("source_url")), year, sourceUrl)) {
             String candidateStem = RecruitmentLifecycle.campaignStem(candidate.title());
             if (matches(targetStem, candidateStem)) matches.add(candidate);
         }
-        return List.copyOf(matches);
+        return collapseDuplicateArtifacts(matches);
+    }
+
+    private static List<Candidate> collapseDuplicateArtifacts(List<Candidate> candidates) {
+        if (candidates.size() < 2) return List.copyOf(candidates);
+        String title = candidates.getFirst().title();
+        if (candidates.stream().anyMatch(candidate -> !candidate.title().equals(title))) {
+            return List.copyOf(candidates);
+        }
+        List<Candidate> htmlNotices = candidates.stream()
+            .filter(candidate -> candidate.sourceUrl().toLowerCase(java.util.Locale.ROOT).endsWith(".html"))
+            .toList();
+        boolean remainingAreDownloads = candidates.stream()
+            .filter(candidate -> !htmlNotices.contains(candidate))
+            .allMatch(candidate -> candidate.sourceUrl().contains("/document/download"));
+        return htmlNotices.size() == 1 && remainingAreDownloads
+            ? List.of(htmlNotices.getFirst()) : List.copyOf(candidates);
     }
 
     private static boolean matches(String left, String right) {
@@ -134,7 +150,7 @@ public class OfficialLifecycleDocumentService {
         }
     }
 
-    private record Candidate(UUID id, String title) {}
+    private record Candidate(UUID id, String title, String sourceUrl) {}
 
     public record Result(MatchStatus status, UUID matchedEventId, int stageCount) {
         public Result {

@@ -3,6 +3,7 @@ package com.careeros.infrastructure.acquisition;
 import com.careeros.application.AcquisitionHttpPorts.DiscoveredLink;
 import com.careeros.application.AcquisitionHttpPorts.SourceDiscoverer;
 import com.careeros.domain.acquisition.RecruitmentSource;
+import com.careeros.domain.RecruitmentLifecycle;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -58,7 +59,7 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
             distinct.putIfAbsent(resolved, new DiscoveredLink(resolved, title));
         }
         var result = new ArrayList<>(distinct.values());
-        result.sort(java.util.Comparator.comparing(link -> link.uri().toString()));
+        result.sort(discoveryOrder());
         return List.copyOf(result);
     }
 
@@ -87,8 +88,14 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
             distinct.putIfAbsent(resolved, new DiscoveredLink(resolved, title));
         }
         var result = new ArrayList<>(distinct.values());
-        result.sort(java.util.Comparator.comparing(link -> link.uri().toString()));
+        result.sort(discoveryOrder());
         return List.copyOf(result);
+    }
+
+    private static java.util.Comparator<DiscoveredLink> discoveryOrder() {
+        return java.util.Comparator
+            .comparing((DiscoveredLink link) -> !RecruitmentLifecycle.classify(link.title()).isEmpty())
+            .thenComparing(link -> link.uri().toString());
     }
 
     private static String required(Map<String, Object> config, String key) {

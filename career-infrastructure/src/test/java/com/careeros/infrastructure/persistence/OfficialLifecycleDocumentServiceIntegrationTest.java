@@ -124,6 +124,26 @@ class OfficialLifecycleDocumentServiceIntegrationTest {
     }
 
     @Test
+    void prefersTheSingleHtmlNoticeWhenItsWorkbookCreatedTheSameCampaignEvent(
+        @Autowired OfficialLifecycleDocumentService service,
+        @Autowired RecruitmentEventJpaRepository events,
+        @Autowired JdbcTemplate jdbc
+    ) {
+        var htmlEvent = event(events, CAMPAIGN + "公告",
+            "https://www.hzxh.gov.cn/col/col1/art/2025/art_campaign.html");
+        event(events, CAMPAIGN + "公告",
+            "https://www.hzxh.gov.cn/api-gateway/front/document/download?fileName=jobs.xls");
+        UUID evidenceId = evidence(jdbc, "https://www.hzxh.gov.cn/lifecycle/score");
+
+        var result = service.recordIfLifecycle(
+            CAMPAIGN + "综合成绩公示", "https://www.hzxh.gov.cn/lifecycle/score",
+            2025, LocalDate.of(2025, 6, 15), evidenceId).orElseThrow();
+
+        assertThat(result.status()).isEqualTo(MATCHED);
+        assertThat(result.matchedEventId()).isEqualTo(htmlEvent.id);
+    }
+
+    @Test
     void ignoresAnInitialRecruitmentNotice(
         @Autowired OfficialLifecycleDocumentService service,
         @Autowired JdbcTemplate jdbc

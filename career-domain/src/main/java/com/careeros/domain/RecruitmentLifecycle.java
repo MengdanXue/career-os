@@ -10,6 +10,7 @@ public final class RecruitmentLifecycle {
     private static final Pattern RECRUITMENT = Pattern.compile("公开招聘|招聘|招考|选聘|人才引进");
     private static final Pattern LEADING_NOISE = Pattern.compile("^(?:关于|公布|发布|转发)+");
     private static final Pattern TRAILING_NOTICE = Pattern.compile("(?:的)?(?:公告|通知|简章)$");
+    private static final Pattern YEAR_FOLLOWED_BY_HANGZHOU = Pattern.compile("^(\\d{4}年(?:度)?)杭州市");
     private static final Pattern SEPARATORS = Pattern.compile("[\\s\\p{Punct}，。；：、（）()《》〈〉【】\u2014\u2013]+", Pattern.UNICODE_CHARACTER_CLASS);
 
     private RecruitmentLifecycle() {}
@@ -32,6 +33,8 @@ public final class RecruitmentLifecycle {
         else value = TRAILING_NOTICE.matcher(value).replaceFirst("");
         value = value.replaceFirst("(?:有关事项|相关事项)$", "")
             .replaceFirst("的$", "");
+        value = YEAR_FOLLOWED_BY_HANGZHOU.matcher(value).replaceFirst("$1")
+            .replace("公开招聘事业单位", "事业单位公开招聘");
         value = SEPARATORS.matcher(value).replaceAll("");
         return value.length() >= 8 && RECRUITMENT.matcher(value).find() ? value : "";
     }

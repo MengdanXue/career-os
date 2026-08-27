@@ -408,17 +408,31 @@ public final class AcquisitionService {
             verifyCheckpoint(source.id(), Checkpoint.CONTRACT_VERIFIED,
                 "incremental listing parsed candidates=" + details.size());
             counts.discovered = details.size();
+            Map<Integer, YearCounts> byYear = new LinkedHashMap<>();
             for (DiscoveredLink detail : details) {
+                YearCounts yearCounts = linkYear(detail)
+                    .map(year -> byYear.computeIfAbsent(year, ignored -> new YearCounts()))
+                    .orElse(null);
+                if (yearCounts != null) yearCounts.discovered++;
+                int failuresBefore = counts.failed;
                 DocumentOutcome outcome = acquire(source, runId, detail, null, DocumentKind.ANNOUNCEMENT,
                     detail.title(), counts);
+                if (yearCounts != null) yearCounts.record(outcome, counts.failed - failuresBefore);
                 if (outcome.document == null) continue;
                 List<DiscoveredLink> attachmentLinks = discoverAttachments(source, detail, outcome);
                 counts.discovered += attachmentLinks.size();
+                if (yearCounts != null) yearCounts.discovered += attachmentLinks.size();
                 for (DiscoveredLink attachment : attachmentLinks) {
-                    acquire(source, runId, attachment, outcome.document, DocumentKind.ATTACHMENT,
+                    failuresBefore = counts.failed;
+                    DocumentOutcome attachmentOutcome = acquire(source, runId, attachment, outcome.document,
+                        DocumentKind.ATTACHMENT,
                         detail.title(), counts);
+                    if (yearCounts != null) {
+                        yearCounts.record(attachmentOutcome, counts.failed - failuresBefore);
+                    }
                 }
             }
+            saveIncrementalCoverage(source.id(), byYear);
             RunStatus status = counts.failed == 0 ? RunStatus.SUCCEEDED
                 : counts.hasSuccess() ? RunStatus.PARTIALLY_SUCCEEDED : RunStatus.FAILED;
             SourceCrawlRun completed = terminal(runId, source.id(), trigger, status, started, counts,
@@ -449,6 +463,37 @@ public final class AcquisitionService {
             updateSourceHealth(source, trigger, RunStatus.FAILED, true);
             return store.saveRun(failed);
         }
+    }
+
+    private void saveIncrementalCoverage(UUID sourceId, Map<Integer, YearCounts> byYear) {
+        Instant now = clock.instant();
+        for (var entry : byYear.entrySet()) {
+            int year = entry.getKey();
+            YearCounts values = entry.getValue();
+            SourceYearCoverage previous = store.findSourceYearCoverage(sourceId, year).stream()
+                .findFirst().orElse(null);
+            if (previous != null && (previous.supportsAbsenceConclusion()
+                || previous.status() == SourceYearCoverage.CoverageStatus.PARTIAL
+                    && !"INCREMENTAL_WINDOW_ONLY".equals(previous.stopReason()))) {
+                continue;
+            }
+            values.targetJobs = Math.toIntExact(store.countActiveTargetJobs(sourceId, year));
+            store.saveSourceYearCoverage(new SourceYearCoverage(sourceId, year,
+                SourceYearCoverage.CoverageStatus.PARTIAL,
+                max(previous, SourceYearCoverage::discoveredCount, values.discovered),
+                max(previous, SourceYearCoverage::fetchedCount, values.fetched),
+                max(previous, SourceYearCoverage::parsedCount, values.parsed),
+                values.targetJobs,
+                null, null, now, 0, 0, values.failed, null, null, "INCREMENTAL_WINDOW_ONLY"));
+        }
+    }
+
+    private static int max(
+        SourceYearCoverage previous,
+        java.util.function.ToIntFunction<SourceYearCoverage> getter,
+        int current
+    ) {
+        return previous == null ? current : Math.max(getter.applyAsInt(previous), current);
     }
 
     private DocumentOutcome acquire(

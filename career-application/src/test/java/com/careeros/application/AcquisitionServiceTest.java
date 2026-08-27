@@ -50,6 +50,54 @@ class AcquisitionServiceTest {
     }
 
     @Test
+    void incrementalRunRecordsObservedYearWithoutClaimingHistoricalCompleteness() {
+        Fixture fixture = new Fixture();
+        fixture.store.targetJobs.put(2026, 15L);
+
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        SourceYearCoverage coverage = fixture.store.coverages.get(2026);
+        assertThat(coverage.status()).isEqualTo(SourceYearCoverage.CoverageStatus.PARTIAL);
+        assertThat(coverage.discoveredCount()).isEqualTo(1);
+        assertThat(coverage.fetchedCount()).isEqualTo(1);
+        assertThat(coverage.parsedCount()).isEqualTo(1);
+        assertThat(coverage.targetJobCount()).isEqualTo(15);
+        assertThat(coverage.supportsAbsenceConclusion()).isFalse();
+        assertThat(coverage.stopReason()).isEqualTo("INCREMENTAL_WINDOW_ONLY");
+    }
+
+    @Test
+    void incrementalCoverageRefreshesTargetJobCountAfterReclassification() {
+        Fixture fixture = new Fixture();
+        fixture.store.targetJobs.put(2026, 5L);
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        fixture.store.targetJobs.put(2026, 0L);
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        SourceYearCoverage coverage = fixture.store.coverages.get(2026);
+        assertThat(coverage.discoveredCount()).isEqualTo(1);
+        assertThat(coverage.fetchedCount()).isEqualTo(1);
+        assertThat(coverage.parsedCount()).isEqualTo(1);
+        assertThat(coverage.targetJobCount()).isZero();
+        assertThat(coverage.stopReason()).isEqualTo("INCREMENTAL_WINDOW_ONLY");
+    }
+
+    @Test
+    void incrementalObservationDoesNotDowngradeConclusiveHistoricalCoverage() {
+        Fixture fixture = historicalFixture();
+        fixture.store.targetJobs.put(2026, 2L);
+        fixture.service.backfill(SOURCE_ID, Set.of(2026));
+        SourceYearCoverage verified = fixture.store.coverages.get(2026);
+
+        fixture.fetcher.historicalListing = false;
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(fixture.store.coverages.get(2026)).isEqualTo(verified);
+        assertThat(verified.supportsAbsenceConclusion()).isTrue();
+    }
+
+    @Test
     void unchangedDocumentIsReprocessedOnceWhenProcessorVersionChanges() {
         Fixture fixture = new Fixture();
         fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);

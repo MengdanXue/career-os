@@ -30,4 +30,21 @@ class OfficialJobFieldMapperTest {
         assertThat(job.candidateScope()).contains("应届毕业生");
         assertThat(job.jobCategory()).isEqualTo("专业技术");
     }
+
+    @Test
+    void doesNotTreatDomainWorkThatMentionsResearchAsCandidateTargetResearch() {
+        assertThat(OfficialJobFieldMapper.jobFamily(
+            "财务人员", "从事医院财务管理及相关研究工作", "会计学、财务管理", "区卫生健康局"))
+            .isEqualTo(com.careeros.domain.DomainEnums.JobFamily.OTHER);
+    }
+
+    @Test
+    void keepsExplicitResearchPositionsInResearchFamily() {
+        assertThat(OfficialJobFieldMapper.jobFamily(
+            "科研助理", "承担科研项目支撑", "计算机科学与技术", "人工智能研究院"))
+            .isEqualTo(com.careeros.domain.DomainEnums.JobFamily.AI);
+        assertThat(OfficialJobFieldMapper.jobFamily(
+            "科研助理", "承担科研项目支撑", "生物学", "生命科学研究院"))
+            .isEqualTo(com.careeros.domain.DomainEnums.JobFamily.RESEARCH);
+    }
 }

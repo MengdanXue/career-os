@@ -73,7 +73,7 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
                 if (redirects++ >= maxRedirects) throw new FetchRejectedException("Too many redirects for " + request.uri());
                 String location = response.headers().firstValue("Location")
                     .orElseThrow(() -> new FetchRejectedException("Redirect has no Location header"));
-                current = CanonicalUri.normalize(current.resolve(location));
+                current = resolveRedirectTarget(current, location, request);
                 requireAllowed(current, request);
                 continue;
             }
@@ -139,6 +139,17 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
         if (!request.allowedHosts().contains(host)) {
             throw new FetchRejectedException("Host is outside source allowlist: " + host);
         }
+    }
+
+    static URI resolveRedirectTarget(URI current, String location, FetchRequest request) {
+        URI target = CanonicalUri.normalize(current.resolve(location));
+        String host = target.getHost() == null ? "" : target.getHost().toLowerCase(Locale.ROOT);
+        if ("https".equalsIgnoreCase(current.getScheme())
+            && "http".equalsIgnoreCase(target.getScheme())
+            && request.allowedHosts().contains(host)) {
+            target = URI.create("https" + target.toString().substring("http".length()));
+        }
+        return CanonicalUri.normalize(target);
     }
 
     private static byte[] readBounded(InputStream input, long maxBytes) {

@@ -66,8 +66,9 @@ class JpaAcquisitionStoreTest {
     void seededSourcesAreEnabledAndDue(@Autowired AcquisitionStore store) {
         assertThat(store.findSources()).extracting(source -> source.code())
             .containsExactlyInAnyOrder("ZJ_HRSS_INSTITUTION", "HZ_HRSS_INSTITUTION",
-                "HDU_RECRUITMENT", "ZJGSU_RECRUITMENT", "HZ_FIRST_HOSPITAL", "HZ_XIHU_GOV");
-        assertThat(store.findDueSources(Instant.now().plusSeconds(60), 10)).hasSize(6);
+                "HDU_RECRUITMENT", "ZJGSU_RECRUITMENT", "HZ_FIRST_HOSPITAL", "HZ_XIHU_GOV",
+                "HZ_GONGSHU_GOV");
+        assertThat(store.findDueSources(Instant.now().plusSeconds(60), 10)).hasSize(7);
     }
 
     @Test
@@ -84,9 +85,9 @@ class JpaAcquisitionStoreTest {
             });
         assertThat(store.findTargetSources()).filteredOn(target -> target.code().equals("HZ_GONGSHU_GOV"))
             .singleElement().satisfies(target -> {
-                assertThat(target.recruitmentSourceId()).isNull();
+                assertThat(target.recruitmentSourceId()).isNotNull();
                 assertThat(target.connectionStatus()).isEqualTo(
-                    com.careeros.domain.acquisition.TargetSource.ConnectionStatus.NOT_CONNECTED);
+                    com.careeros.domain.acquisition.TargetSource.ConnectionStatus.PARTIAL);
             });
     }
 

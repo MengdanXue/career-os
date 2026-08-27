@@ -47,6 +47,16 @@ class RecruitmentLifecycleTest {
     }
 
     @Test
+    void derivesTheSameStemWhenAnOfficialLifecycleTitleMovesThePublicInstitutionPhrase() {
+        String initial = RecruitmentLifecycle.campaignStem(
+            "2026年杭州市拱墅区卫生健康局事业单位公开招聘工作人员公告");
+        String scoreResult = RecruitmentLifecycle.campaignStem(
+            "2026年拱墅区卫生健康局公开招聘事业单位工作人员综合成绩公示");
+
+        assertThat(scoreResult).isEqualTo(initial);
+    }
+
+    @Test
     void refusesAStemWithoutRecruitmentMeaning() {
         assertThat(RecruitmentLifecycle.campaignStem("杭州市西湖区2025年度工作总结")).isEmpty();
         assertThat(RecruitmentLifecycle.campaignStem("关于公布成绩的通知")).isEmpty();

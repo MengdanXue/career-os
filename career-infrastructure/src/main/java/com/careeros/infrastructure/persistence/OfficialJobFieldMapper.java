@@ -41,6 +41,7 @@ public final class OfficialJobFieldMapper {
     }
 
     static JobFamily jobFamily(String title, String duties, String majors, String department) {
+        String position = text(title);
         String role = text(title) + text(duties) + text(department);
         String all = role + text(majors);
         if (role.contains("信息中心") || role.contains("信息管理") || role.contains("信息化")
@@ -54,7 +55,8 @@ public final class OfficialJobFieldMapper {
         if (all.contains("计算机")) return JobFamily.INFORMATION_SYSTEMS;
         if (all.contains("数字")) return JobFamily.DIGITALIZATION;
         if (all.contains("运维") || all.contains("网络") || all.contains("通信")) return JobFamily.IT_OPERATIONS;
-        if (all.contains("研究")) return JobFamily.RESEARCH;
+        if (position.contains("研究") || position.contains("科研") || position.contains("研发")
+            || position.contains("实验")) return JobFamily.RESEARCH;
         return JobFamily.OTHER;
     }
 
