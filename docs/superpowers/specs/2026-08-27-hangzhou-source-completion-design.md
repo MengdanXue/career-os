@@ -154,15 +154,17 @@
 
 ### 6.1 杭州市第一人民医院
 
-移除已 DNS 失效的 `zp.hz-hospital.com` 页面作为日常抓取目标，保留其历史证据状态。当前增量入口改为：
+移除已 DNS 失效的 `zp.hz-hospital.com` 与 `renshi.wechathospital.com` 页面作为日常抓取目标，保留其历史证据状态。`/dynamic/articles_tag2/id/68` 是“医院新闻”栏目，不得作为招聘入口。
 
-`https://www.hz-hospital.com/dynamic/articles_tag2/id/68?page=N`
+医院官网仍链接的当前招聘系统为 `http://124.160.72.42:8080/apply/index.action`。当前公告与招聘生命周期共用以下链接分页入口：
 
-详情继续使用：
+`http://124.160.72.42:8080/apply/getMore.action?pageNumber=1`
 
-`https://www.hz-hospital.com/content/details/id/{id}?cid={cid}`
+使用 `LINKED_PAGE` 和精确下一页选择器，以第 13 页无下一页作为当前终止证据；第 14 页会重复第 13 页，不能使用“空页终止”。公告详情、附件和当前岗位状态分别限制为 `/apply/getNotice.action`、`/apply/downloadAccessory.action`、`/file_zp/attached/` 与 `/department/detailInfomore.action`。
 
-2024 年保持 `PARTIAL`，直到找到仍可访问的官方替代档案。
+该系统是非默认端口的明文 HTTP。接入前必须把审计传输契约扩展为精确 authority `124.160.72.42:8080`，只允许 GET/HEAD、上述路径和逐跳重定向复核，不使用 Cookie、登录、表单或 POST。医院官网的 `/recruit/list1`、`/recruit/list2`、`/recruit/articles_tag3/id/98` 仅保留为 2013—2021 的旧档案证据。
+
+2024 年无可访问官方档案，必须保持 `PARTIAL`；2025—2026 只有在 13 页公告、详情、附件和解析计数对账后才可对当前招聘系统形成完整结论，因此来源总体仍为 `PARTIAL`。
 
 ### 6.2 杭州市中医院
 

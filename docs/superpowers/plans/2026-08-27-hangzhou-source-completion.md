@@ -221,7 +221,10 @@ Run Step 2 plus the infrastructure module, then:
 - Create: career-infrastructure/src/main/resources/db/migration/V45__onboard_hangzhou_source_completion_batch1.sql
 - Modify: career-infrastructure/src/main/resources/official-source-catalog.yml
 - Modify: career-infrastructure/src/main/java/com/careeros/infrastructure/acquisition/OfficialSourceCatalog.java
-- Test: OfficialSourceCatalogTest.java, MigrationIntegrationTest.java
+- Modify: career-application/src/main/java/com/careeros/application/AcquisitionHttpPorts.java
+- Modify: career-infrastructure/src/main/java/com/careeros/infrastructure/acquisition/ListingEntryContract.java
+- Modify: career-infrastructure/src/main/java/com/careeros/infrastructure/acquisition/JavaHttpDocumentFetcher.java
+- Test: OfficialSourceCatalogTest.java, MigrationIntegrationTest.java, AcquisitionHttpPortsTest.java, JavaHttpDocumentFetcherTest.java
 
 **Interfaces:**
 - Adds IDs ...0404–...0411 for Fuyang, Linan, Shangcheng, Jiande, Tonglu, TCM Hospital, Xixi Hospital, Data Group.
@@ -229,7 +232,7 @@ Run Step 2 plus the infrastructure module, then:
 
 - [ ] **Step 1: Write failing exact-contract tests**
 
-Assert eight sources, exact entries/hosts/years/UUIDs/checkpoints/coverage, and First Hospital using dynamic/articles_tag2 without zp.hz-hospital.com daily evidence.
+Assert eight sources, exact entries/hosts/years/UUIDs/checkpoints/coverage. First Hospital must exclude `/dynamic/articles_tag2/id/68`, `zp.hz-hospital.com`, and `renshi.wechathospital.com` from daily evidence; use linked-page announcement/lifecycle entries rooted at exact authority `124.160.72.42:8080`, plus a non-conclusive campaign-state entry. Prove page 13 terminates by missing next link and page 14 repetition cannot establish completion.
 
 - [ ] **Step 2: Verify RED**
 
@@ -237,7 +240,7 @@ Assert eight sources, exact entries/hosts/years/UUIDs/checkpoints/coverage, and 
 
 - [ ] **Step 3: Add V45 and YAML mirror**
 
-Use idempotent upserts, staggered crons, independent host/path rules, initial PARTIAL, and REGISTERED/VERIFIED. Retain First Hospital 2024 PARTIAL and clear obsolete consecutive failure state.
+First extend audited HTTP contracts with an explicit exact-port/authority allowlist while preserving default-port-only behavior for existing contracts. Keep GET/HEAD only, exact path prefixes, no credentials/cookies, and revalidate every redirect. Then use idempotent source upserts, staggered crons, independent host/path rules, initial PARTIAL, and REGISTERED/VERIFIED. Retain First Hospital 2024 PARTIAL, allow 2025—2026 conclusions only after the 13-page archive reconciles, and clear obsolete consecutive failure state.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
