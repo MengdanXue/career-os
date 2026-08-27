@@ -9,6 +9,7 @@ import com.careeros.application.AcquisitionPorts.LifecycleCounts;
 import com.careeros.domain.acquisition.AcquiredDocument;
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentKind;
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentState;
+import com.careeros.domain.acquisition.AcquiredDocument.TransportRisk;
 import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.ArtifactImportFailure;
@@ -207,6 +208,23 @@ class JpaAcquisitionStoreTest {
     }
 
     @Test
+    void persistsPlaintextTransportRiskAndDefaultsLegacyDocumentsToNone(
+        @Autowired AcquisitionStore store
+    ) {
+        AcquiredDocument legacy = document(UUID.randomUUID());
+        AcquiredDocument plaintext = document(UUID.randomUUID(),
+            URI.create("http://official.example/public/notice"),
+            TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+
+        assertThat(store.saveDocument(legacy).transportRisk()).isEqualTo(TransportRisk.NONE);
+        assertThat(store.saveDocument(plaintext).transportRisk())
+            .isEqualTo(TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+        assertThat(store.findDocument(SOURCE_ID, plaintext.canonicalUri()))
+            .get().extracting(AcquiredDocument::transportRisk)
+            .isEqualTo(TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+    }
+
+    @Test
     void cursorUsesIdAsTieBreakerAndDuplicateNaturalChangeIsRejected(@Autowired AcquisitionStore store) {
         SourceCrawlRun run = store.saveRun(SourceCrawlRun.running(
             UUID.fromString("01992f09-0000-7000-8000-000000000501"), SOURCE_ID, RunTrigger.MANUAL, NOW));
@@ -250,6 +268,15 @@ class JpaAcquisitionStoreTest {
             null, DocumentKind.ANNOUNCEMENT, "text/html", "a".repeat(64), "etag", null,
             URI.create("file:///artifacts/" + id), DocumentState.ACTIVE, NOW, NOW, NOW,
             null, 0, 200, "a".repeat(64), 0);
+    }
+
+    private static AcquiredDocument document(
+        UUID id, URI canonicalUri, TransportRisk transportRisk
+    ) {
+        return new AcquiredDocument(id, SOURCE_ID, canonicalUri,
+            null, DocumentKind.ANNOUNCEMENT, "text/html", "a".repeat(64), "etag", null,
+            URI.create("file:///artifacts/" + id), transportRisk, DocumentState.ACTIVE,
+            NOW, NOW, NOW, null, 0, 200, "a".repeat(64), null, 0);
     }
 
     private static AcquisitionChange change(

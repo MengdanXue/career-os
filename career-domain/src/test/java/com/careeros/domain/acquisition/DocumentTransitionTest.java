@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentKind;
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentState;
+import com.careeros.domain.acquisition.AcquiredDocument.TransportRisk;
 import com.careeros.domain.acquisition.DocumentTransition.TransitionType;
 import java.net.URI;
 import java.time.Duration;
@@ -26,6 +27,50 @@ class DocumentTransitionTest {
         assertThat(result.shouldProcess()).isTrue();
         assertThat(result.document().contentFingerprint()).isEqualTo(FIRST);
         assertThat(result.document().state()).isEqualTo(DocumentState.ACTIVE);
+    }
+
+    @Test
+    void plaintextOfficialHttpRiskRemainsOnTheAcquiredDocument() {
+        URI http = URI.create("http://official.example/public/notice.html");
+
+        var result = DocumentTransition.decide(null, FetchObservation.ok(
+            http, 200, FIRST, "text/html", null, null), NOW);
+
+        assertThat(result.document().transportRisk())
+            .isEqualTo(TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+        assertThat(result.document().processed(FIRST, "parser-v1").transportRisk())
+            .isEqualTo(TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+    }
+
+    @Test
+    void explicitObservationRiskIsUsedEvenWhenTheStableUriLooksLikeHttps() {
+        var observation = FetchObservation.ok(URI_VALUE, 200, FIRST, "text/html", null, null,
+            TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+
+        var result = DocumentTransition.decide(null, observation, NOW);
+
+        assertThat(result.document().transportRisk()).isEqualTo(TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+        assertThat(result.bind(UUID.randomUUID(), null, DocumentKind.ANNOUNCEMENT,
+            URI.create("memory:/stored")).transportRisk()).isEqualTo(TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+    }
+
+    @Test
+    void explicitPlaintextRiskIsPreservedAcrossUpdateNotModifiedAndGoneTransitions() {
+        var prior = document(FIRST, FIRST, DocumentState.ACTIVE, 0, null,
+            TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+
+        var updated = DocumentTransition.decide(prior, FetchObservation.ok(
+            URI_VALUE, 200, SECOND, "text/html", null, null, TransportRisk.NONE), NOW);
+        var notModified = DocumentTransition.decide(prior, new FetchObservation(
+            URI_VALUE, 304, FetchObservation.ObservationType.NOT_MODIFIED, null, null, null, null,
+            TransportRisk.NONE), NOW);
+        var gone = DocumentTransition.decide(prior, new FetchObservation(
+            URI_VALUE, 404, FetchObservation.ObservationType.GONE, null, null, null, null,
+            TransportRisk.NONE), NOW);
+
+        assertThat(updated.document().transportRisk()).isEqualTo(TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+        assertThat(notModified.document().transportRisk()).isEqualTo(TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
+        assertThat(gone.document().transportRisk()).isEqualTo(TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
     }
 
     @Test
@@ -127,6 +172,17 @@ class DocumentTransitionTest {
         int goneCount,
         Instant lastGoneAt
     ) {
+        return document(fingerprint, processedFingerprint, state, goneCount, lastGoneAt, TransportRisk.NONE);
+    }
+
+    private static AcquiredDocument document(
+        String fingerprint,
+        String processedFingerprint,
+        DocumentState state,
+        int goneCount,
+        Instant lastGoneAt,
+        TransportRisk transportRisk
+    ) {
         return new AcquiredDocument(
             UUID.fromString("01992f09-0000-7000-8000-000000000401"),
             UUID.fromString("01992f09-0000-7000-8000-000000000301"),
@@ -138,6 +194,7 @@ class DocumentTransitionTest {
             "etag-1",
             null,
             URI.create("file:///artifact"),
+            transportRisk,
             state,
             NOW.minus(Duration.ofDays(2)),
             NOW.minus(Duration.ofDays(1)),
@@ -146,6 +203,7 @@ class DocumentTransitionTest {
             goneCount,
             200,
             processedFingerprint,
+            null,
             0
         );
     }

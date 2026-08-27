@@ -120,7 +120,7 @@ The active entry supplies article regex and title filters. Preserve legacy overl
 - Modify: career-domain/src/main/java/com/careeros/domain/acquisition/AcquiredDocument.java
 - Modify: career-infrastructure/src/main/java/com/careeros/infrastructure/acquisition/AcquisitionJpaModels.java
 - Modify: career-infrastructure/src/main/java/com/careeros/infrastructure/acquisition/JpaAcquisitionStore.java
-- Create: career-infrastructure/src/main/resources/db/migration/V43__audited_transport_and_job_identity.sql
+- Create: career-infrastructure/src/main/resources/db/migration/V43__audited_transport.sql
 - Test: JavaHttpDocumentFetcherTest.java, JpaAcquisitionStoreTest.java, MigrationIntegrationTest.java
 
 **Interfaces:**
@@ -187,7 +187,7 @@ Both workflows call listingReader.read with historical false/true. Keep stable i
 - Modify: career-domain/src/main/java/com/careeros/domain/DomainEnums.java
 - Modify: career-domain/src/main/java/com/careeros/domain/JobPosting.java
 - Modify: OfficialJobFieldMapper.java, OfficialExcelImportService.java, HospitalOfficialPageParser.java, HospitalOfficialJobImportService.java, DefaultJobUpsertService.java, JpaModels.java
-- Modify: V43__audited_transport_and_job_identity.sql
+- Create: career-infrastructure/src/main/resources/db/migration/V44__official_job_identity.sql
 - Test: corresponding mapper/importer/parser/upsert tests
 
 **Interfaces:**
@@ -204,7 +204,7 @@ Cases: 事业编制, 员额/备案制, 单位正式聘用, 国企正式劳动合
 
 - [ ] **Step 3: Extend domain/schema and row-first normalization**
 
-Add compatible domain fields and nullable actual_employer/worksite/evidence storage in V43. Row fields win; announcement defaults are fallback. Include normalized values in content fingerprints and evidence fragments.
+Add compatible domain fields and nullable actual_employer/worksite/evidence storage in the forward-only V44 migration. Row fields win; announcement defaults are fallback. Include normalized values in content fingerprints and evidence fragments. Do not modify the already committed V43 transport migration.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
@@ -218,7 +218,7 @@ Run Step 2 plus the infrastructure module, then:
 ### Task 6: Batch 1 contracts and First Hospital recovery
 
 **Files:**
-- Create: career-infrastructure/src/main/resources/db/migration/V44__onboard_hangzhou_source_completion_batch1.sql
+- Create: career-infrastructure/src/main/resources/db/migration/V45__onboard_hangzhou_source_completion_batch1.sql
 - Modify: career-infrastructure/src/main/resources/official-source-catalog.yml
 - Modify: career-infrastructure/src/main/java/com/careeros/infrastructure/acquisition/OfficialSourceCatalog.java
 - Test: OfficialSourceCatalogTest.java, MigrationIntegrationTest.java
@@ -235,7 +235,7 @@ Assert eight sources, exact entries/hosts/years/UUIDs/checkpoints/coverage, and 
 
     mvn -pl career-infrastructure -am '-Dtest=OfficialSourceCatalogTest,MigrationIntegrationTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
 
-- [ ] **Step 3: Add V44 and YAML mirror**
+- [ ] **Step 3: Add V45 and YAML mirror**
 
 Use idempotent upserts, staggered crons, independent host/path rules, initial PARTIAL, and REGISTERED/VERIFIED. Retain First Hospital 2024 PARTIAL and clear obsolete consecutive failure state.
 
@@ -286,7 +286,7 @@ No production fix is made without first reproducing it deterministically.
 ### Task 8: Batch 2 multi-channel contracts and acceptance
 
 **Files:**
-- Create: career-infrastructure/src/main/resources/db/migration/V45__onboard_hangzhou_source_completion_batch2.sql
+- Create: career-infrastructure/src/main/resources/db/migration/V46__onboard_hangzhou_source_completion_batch2.sql
 - Modify: official-source-catalog.yml
 - Test: catalog, migration, reader, discoverer, and fetcher tests
 - Update: docs/hangzhou-source-status-matrix.md
@@ -298,7 +298,7 @@ No production fix is made without first reproducing it deterministically.
 
 Assert old/new district lanes, UUID regexes, HZNU HRSS official cross-host links, Capital API/archive roles, Children's recruitment host, and no third-party canonical authority.
 
-- [ ] **Step 2: Verify RED, implement V45/YAML, verify GREEN, commit**
+- [ ] **Step 2: Verify RED, implement V46/YAML, verify GREEN, commit**
 
     git commit -m "feat: onboard Hangzhou source batch two"
 
@@ -316,7 +316,7 @@ Use the Task 7 script. A bounded Playwright discovery adapter is permitted only 
 ### Task 9: Batch 3 custom and audited-HTTP sources
 
 **Files:**
-- Create: V46__onboard_hangzhou_source_completion_batch3.sql
+- Create: V47__onboard_hangzhou_source_completion_batch3.sql
 - Modify: official-source-catalog.yml
 - Create: EmbeddedPositionDiscoverer.java and ScriptPropertySourceDiscoverer.java
 - Modify: RoutingSourceDiscoverer.java
@@ -334,7 +334,7 @@ Westlake extracts only research_team; Metro stores campaign state without histor
 
 Missing/malformed configured embedded data is a contract failure.
 
-- [ ] **Step 3: Add V46 and catalog mirror**
+- [ ] **Step 3: Add V47 and catalog mirror**
 
 ZJUT/UCAS use exact audited HTTP hosts/path prefixes. Metro uses CAMPAIGN_STATE. Westlake uses the official accessible English host.
 
@@ -430,4 +430,3 @@ Fix every Critical/Important finding with a failing regression test first.
     gh repo view career-os --json visibility,url
 
 Expected: PRIVATE visibility, clean worktree, and all verified batch commits on the remote branch.
-

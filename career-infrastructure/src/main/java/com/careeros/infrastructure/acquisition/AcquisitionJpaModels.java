@@ -2,6 +2,7 @@ package com.careeros.infrastructure.acquisition;
 
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentKind;
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentState;
+import com.careeros.domain.acquisition.AcquiredDocument.TransportRisk;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
@@ -89,6 +90,7 @@ final class AcquisitionJpaModels {
         @Column String etag;
         @Column(name = "last_modified") String lastModified;
         @Column(name = "storage_uri", nullable = false) String storageUri;
+        @Enumerated(EnumType.STRING) @Column(name = "transport_risk", nullable = false) TransportRisk transportRisk;
         @Enumerated(EnumType.STRING) @Column(name = "document_state", nullable = false) DocumentState state;
         @Column(name = "first_seen_at", nullable = false) Instant firstSeenAt;
         @Column(name = "last_seen_at", nullable = false) Instant lastSeenAt;

@@ -4,6 +4,7 @@ import static com.careeros.domain.acquisition.AcquiredDocument.DocumentState.ACT
 import static com.careeros.domain.acquisition.AcquiredDocument.DocumentState.DEACTIVATED;
 
 import com.careeros.domain.acquisition.AcquiredDocument.DocumentKind;
+import com.careeros.domain.acquisition.AcquiredDocument.TransportRisk;
 import com.careeros.domain.acquisition.FetchObservation.ObservationType;
 import java.net.URI;
 import java.time.Duration;
@@ -37,7 +38,8 @@ public record DocumentTransition(
             var added = new AcquiredDocument(
                 UUID.randomUUID(), UUID.randomUUID(), observation.uri(), null, DocumentKind.ANNOUNCEMENT,
                 observation.mediaType(), observation.contentFingerprint(), observation.etag(), observation.lastModified(),
-                URI.create("memory:/pending"), ACTIVE, now, now, now, null, 0, observation.status(), null, 0);
+                URI.create("memory:/pending"), observation.transportRisk(), ACTIVE, now, now, now, null, 0,
+                observation.status(), null, null, 0);
             return new DocumentTransition(TransitionType.ADDED, added, true, null, added.contentFingerprint());
         }
         if (!previous.canonicalUri().equals(observation.uri())) {
@@ -54,7 +56,8 @@ public record DocumentTransition(
             boolean deactivate = previous.state() == ACTIVE && goneCount >= 2 && separated;
             var gone = copy(previous, previous.mediaType(), previous.contentFingerprint(), previous.etag(),
                 previous.lastModified(), previous.storageUri(), deactivate ? DEACTIVATED : previous.state(),
-                now, deactivate ? now : previous.lastChangedAt(), now, goneCount, observation.status());
+                now, deactivate ? now : previous.lastChangedAt(), now, goneCount, observation.status(),
+                mergeRisk(previous.transportRisk(), observation.transportRisk()));
             return new DocumentTransition(deactivate ? TransitionType.DEACTIVATED : TransitionType.UNCHANGED,
                 gone, false, previous.contentFingerprint(), previous.contentFingerprint());
         }
@@ -67,7 +70,8 @@ public record DocumentTransition(
             fingerprint,
             observation.etag() == null ? previous.etag() : observation.etag(),
             observation.lastModified() == null ? previous.lastModified() : observation.lastModified(),
-            previous.storageUri(), ACTIVE, now, changed ? now : previous.lastChangedAt(), null, 0, observation.status());
+            previous.storageUri(), ACTIVE, now, changed ? now : previous.lastChangedAt(), null, 0,
+            observation.status(), mergeRisk(previous.transportRisk(), observation.transportRisk()));
         boolean retryProcessing = !fingerprint.equals(previous.lastProcessedFingerprint());
         return new DocumentTransition(changed ? TransitionType.UPDATED : TransitionType.UNCHANGED,
             success, changed || retryProcessing, previous.contentFingerprint(), fingerprint);
@@ -76,7 +80,7 @@ public record DocumentTransition(
     public AcquiredDocument bind(UUID sourceId, UUID parentDocumentId, DocumentKind kind, URI storageUri) {
         return new AcquiredDocument(document.id(), sourceId, document.canonicalUri(), parentDocumentId, kind,
             document.mediaType(), document.contentFingerprint(), document.etag(), document.lastModified(), storageUri,
-            document.state(), document.firstSeenAt(), document.lastSeenAt(), document.lastChangedAt(),
+            document.transportRisk(), document.state(), document.firstSeenAt(), document.lastSeenAt(), document.lastChangedAt(),
             document.lastGoneAt(), document.consecutiveGoneCount(), document.lastHttpStatus(),
             document.lastProcessedFingerprint(), document.lastProcessorVersion(), document.version());
     }
@@ -84,12 +88,18 @@ public record DocumentTransition(
     private static AcquiredDocument copy(
         AcquiredDocument value, String mediaType, String fingerprint, String etag, String lastModified,
         URI storageUri, AcquiredDocument.DocumentState state, Instant seen, Instant changed, Instant gone,
-        int goneCount, int status
+        int goneCount, int status, TransportRisk transportRisk
     ) {
         return new AcquiredDocument(value.id(), value.sourceId(), value.canonicalUri(), value.parentDocumentId(),
-            value.kind(), mediaType, fingerprint, etag, lastModified, storageUri, state, value.firstSeenAt(), seen,
+            value.kind(), mediaType, fingerprint, etag, lastModified, storageUri, transportRisk, state, value.firstSeenAt(), seen,
             changed, gone, goneCount, status, value.lastProcessedFingerprint(), value.lastProcessorVersion(),
             value.version());
+    }
+
+    private static TransportRisk mergeRisk(TransportRisk previous, TransportRisk observed) {
+        return previous == TransportRisk.PLAINTEXT_OFFICIAL_HTTP
+            || observed == TransportRisk.PLAINTEXT_OFFICIAL_HTTP
+            ? TransportRisk.PLAINTEXT_OFFICIAL_HTTP : TransportRisk.NONE;
     }
 
     public enum TransitionType { ADDED, UPDATED, UNCHANGED, DEACTIVATED, NONE }

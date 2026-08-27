@@ -726,11 +726,19 @@ public final class AcquisitionService {
     }
 
     private static FetchObservation observation(FetchedDocument response, URI stableUri) {
-        if (response.notModified()) return FetchObservation.notModified(stableUri, response.etag(), response.lastModified());
-        if (response.gone()) return FetchObservation.gone(stableUri, response.status());
-        if (response.status() != 200) return FetchObservation.failure(stableUri, response.status());
+        AcquiredDocument.TransportRisk risk = switch (response.transportRisk()) {
+            case NONE -> AcquiredDocument.TransportRisk.NONE;
+            case PLAINTEXT_OFFICIAL_HTTP -> AcquiredDocument.TransportRisk.PLAINTEXT_OFFICIAL_HTTP;
+        };
+        if (response.notModified()) return new FetchObservation(stableUri, 304,
+            FetchObservation.ObservationType.NOT_MODIFIED, null, null, response.etag(),
+            response.lastModified(), risk);
+        if (response.gone()) return new FetchObservation(stableUri, response.status(),
+            FetchObservation.ObservationType.GONE, null, null, null, null, risk);
+        if (response.status() != 200) return new FetchObservation(stableUri, response.status(),
+            FetchObservation.ObservationType.FAILURE, null, null, null, null, risk);
         return FetchObservation.ok(stableUri, response.status(), sha256(response.content()),
-            response.mediaType(), response.etag(), response.lastModified());
+            response.mediaType(), response.etag(), response.lastModified(), risk);
     }
 
     private static ChangeType changeType(TransitionType type) {

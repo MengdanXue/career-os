@@ -5,7 +5,10 @@ import com.careeros.application.AcquisitionHttpPorts.FetchFailedException;
 import com.careeros.application.AcquisitionHttpPorts.FetchRejectedException;
 import com.careeros.application.AcquisitionHttpPorts.FetchRequest;
 import com.careeros.application.AcquisitionHttpPorts.FetchedDocument;
+import com.careeros.application.AcquisitionHttpPorts.FetchMethod;
 import com.careeros.application.AcquisitionHttpPorts.ResponseTooLargeException;
+import com.careeros.application.AcquisitionHttpPorts.TransportPolicy;
+import com.careeros.application.AcquisitionHttpPorts.TransportRisk;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,8 +23,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 public final class JavaHttpDocumentFetcher implements DocumentFetcher {
+    private static final Pattern UNSAFE_RAW_PATH = Pattern.compile("(?i)(%2e|%2f|%5c|%25|\\\\)");
     private final HttpClient client;
     private final MediaTypeDetector mediaTypes;
     private final Sleeper sleeper;
@@ -89,13 +94,16 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
                 close(response.body());
                 throw new FetchRejectedException("HTTP status " + status + " for " + current);
             }
-            byte[] content = status == 304 || status == 404 || status == 410
+            byte[] content = request.method() == FetchMethod.HEAD
+                || status == 304 || status == 404 || status == 410
                 ? closeAndEmpty(response.body()) : readBounded(response.body(), request.maxBytes());
             String headerType = response.headers().firstValue("Content-Type").orElse(null);
             String mediaType = content.length == 0 ? null : mediaTypes.detect(current, headerType, content);
             return new FetchedDocument(current, status, mediaType, content,
                 response.headers().firstValue("ETag").orElse(request.etag()),
-                response.headers().firstValue("Last-Modified").orElse(request.lastModified()));
+                response.headers().firstValue("Last-Modified").orElse(request.lastModified()),
+                request.readContract().transportPolicy() == TransportPolicy.AUDITED_HTTP_READ_ONLY
+                    ? TransportRisk.PLAINTEXT_OFFICIAL_HTTP : TransportRisk.NONE);
         }
     }
 
@@ -118,7 +126,9 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
     }
 
     private HttpRequest buildRequest(URI uri, FetchRequest request) {
-        var builder = HttpRequest.newBuilder(uri).GET().timeout(request.requestTimeout())
+        var builder = HttpRequest.newBuilder(uri)
+            .method(request.method().name(), HttpRequest.BodyPublishers.noBody())
+            .timeout(request.requestTimeout())
             .header("User-Agent", userAgent)
             .header("X-Requested-With", "XMLHttpRequest")
             .header("Accept", "text/html,application/xhtml+xml,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*;q=0.1");
@@ -128,17 +138,56 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
     }
 
     static void requireAllowed(URI uri, FetchRequest request) {
+        validateRequestTarget(uri, request);
+    }
+
+    static void validateRequestTarget(URI uri, FetchRequest request) {
+        Objects.requireNonNull(uri, "uri");
+        Objects.requireNonNull(request, "request");
         String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
         boolean loopback = host.equals("localhost") || host.equals("127.0.0.1") || host.equals("::1");
-        if (!uri.isAbsolute() || (!"https".equalsIgnoreCase(uri.getScheme()) && !loopback)) {
-            throw new FetchRejectedException("Only absolute HTTPS source URIs are allowed");
+        if (!uri.isAbsolute() || host.isEmpty() || uri.getRawUserInfo() != null) {
+            throw new FetchRejectedException("Source URI must be absolute, credential-free, and have an exact host");
         }
-        if (!loopback && uri.getPort() != -1 && uri.getPort() != 443) {
-            throw new FetchRejectedException("Official HTTPS source URI must use the default port");
+        if (request.readContract().transportPolicy() == TransportPolicy.HTTPS_ONLY) {
+            boolean https = "https".equalsIgnoreCase(uri.getScheme());
+            boolean testHttp = loopback && "http".equalsIgnoreCase(uri.getScheme());
+            if (!https && !testHttp) {
+                throw new FetchRejectedException("Only absolute HTTPS source URIs are allowed");
+            }
+            if (!loopback && uri.getPort() != -1 && uri.getPort() != 443) {
+                throw new FetchRejectedException("Official HTTPS source URI must use the default port");
+            }
+            if (!request.allowedHosts().contains(host)) {
+                throw new FetchRejectedException("Host is outside source allowlist: " + host);
+            }
+            return;
         }
-        if (!request.allowedHosts().contains(host)) {
-            throw new FetchRejectedException("Host is outside source allowlist: " + host);
+        if (!"http".equalsIgnoreCase(uri.getScheme())) {
+            throw new FetchRejectedException("AUDITED_HTTP_READ_ONLY permits plain HTTP targets only");
         }
+        if (!loopback && uri.getPort() != -1 && uri.getPort() != 80) {
+            throw new FetchRejectedException("Official HTTP source URI must use the default port");
+        }
+        if (!request.readContract().exactHosts().contains(host)) {
+            throw new FetchRejectedException("Target is outside the audited exact host contract: " + host);
+        }
+        String rawPath = uri.getRawPath();
+        if (rawPath != null && UNSAFE_RAW_PATH.matcher(rawPath).find()) {
+            throw new FetchRejectedException("Target contains an unsafe encoded path");
+        }
+        if (!pathAllowed(uri, request.readContract().allowedPathPrefixes())) {
+            throw new FetchRejectedException("Target is outside the audited path contract: " + uri.getPath());
+        }
+    }
+
+    static boolean pathAllowed(URI uri, java.util.Set<String> prefixes) {
+        String path = uri.normalize().getPath();
+        if (path == null || path.isEmpty()) path = "/";
+        String checkedPath = path;
+        return prefixes.stream().anyMatch(prefix -> checkedPath.equals(prefix)
+            || prefix.endsWith("/") && checkedPath.startsWith(prefix)
+            || checkedPath.startsWith(prefix + "/"));
     }
 
     static URI resolveRedirectTarget(URI current, String location, FetchRequest request) {

@@ -8,6 +8,7 @@ import com.careeros.application.AcquisitionHttpPorts.DiscoveredLink;
 import com.careeros.application.AcquisitionHttpPorts.FetchRequest;
 import com.careeros.application.AcquisitionHttpPorts.FetchedDocument;
 import com.careeros.application.AcquisitionHttpPorts.ListingResult;
+import com.careeros.application.AcquisitionHttpPorts.TransportRisk;
 import com.careeros.application.AcquisitionHttpPorts.YearDiscoveredLink;
 import com.careeros.application.AcquisitionPorts.*;
 import com.careeros.application.ExtractionPorts.ArtifactStore;
@@ -157,6 +158,17 @@ class AcquisitionServiceTest {
         assertThat(fixture.store.changes).extracting(AcquisitionChange::changeType)
             .containsExactly(ChangeType.ADDED);
         assertThat(second.unchangedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void fetchedTransportRiskReachesTheStoredDocumentWithoutUriInference() {
+        Fixture fixture = new Fixture();
+        fixture.fetcher.detailTransportRisk = TransportRisk.PLAINTEXT_OFFICIAL_HTTP;
+
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(fixture.store.documents.get(DETAIL).transportRisk())
+            .isEqualTo(AcquiredDocument.TransportRisk.PLAINTEXT_OFFICIAL_HTTP);
     }
 
     @Test
@@ -568,6 +580,7 @@ class AcquisitionServiceTest {
         final List<URI> requested = new ArrayList<>();
         byte[] detail = "<html>第一版招聘公告</html>".getBytes(StandardCharsets.UTF_8);
         String detailMediaType = "text/html";
+        TransportRisk detailTransportRisk = TransportRisk.NONE;
         boolean detailNotModified;
         boolean historicalListing;
         int historicalListingStatus = 200;
@@ -593,7 +606,8 @@ class AcquisitionServiceTest {
             if (request.uri().equals(DETAIL) && detailNotModified) return new FetchedDocument(DETAIL, 304, null, new byte[0], null, null);
             if (request.uri().equals(ATTACHMENT)) return new FetchedDocument(ATTACHMENT, 200,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "workbook".getBytes(StandardCharsets.UTF_8), null, null);
-            return new FetchedDocument(finalDetailUri, 200, detailMediaType, detail, null, null);
+            return new FetchedDocument(finalDetailUri, 200, detailMediaType, detail, null, null,
+                detailTransportRisk);
         }
     }
 
