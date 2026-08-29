@@ -106,6 +106,8 @@ class OfficialExcelImportServiceTest {
         assertThat(batch.getValue().jobs()).singleElement().satisfies(job -> {
             assertThat(job.organizationName()).isEqualTo("浙江省立同德医院");
             assertThat(job.title()).isEqualTo("信息中心/工程师");
+            assertThat(job.location()).isEqualTo("浙江");
+            assertThat(job.worksite()).isNull();
             assertThat(job.minimumEducation()).isEqualTo(EducationLevel.MASTER);
             assertThat(job.degreeRequirement()).isEqualTo("硕士研究生/硕士");
         });
@@ -160,6 +162,50 @@ class OfficialExcelImportServiceTest {
         assertThat(importedJobs(multiInstitutionWorkbook()))
             .extracting(JobUpsertService.NormalizedJob::organizationName)
             .containsExactly("浙江省第一医院", "浙江省第二研究院");
+    }
+
+    @Test
+    void keepsPublishingGroupSeparateFromActualEmployerAndAppliesDefaultsPerField() throws Exception {
+        RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);
+        OrganizationJpaRepository organizations = mock(OrganizationJpaRepository.class);
+        JobUpsertService upserts = mock(JobUpsertService.class);
+        OfficialJobAdmissionService admissions = mock(OfficialJobAdmissionService.class);
+        when(events.findFirstBySourceUrl(any())).thenReturn(Optional.empty());
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(organizations.findFirstByName(any())).thenReturn(Optional.empty());
+        when(organizations.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(upserts.stableKey(any())).thenAnswer(invocation ->
+            ((JobUpsertService.NormalizedJob) invocation.getArgument(0)).externalJobCode());
+        when(upserts.upsert(any())).thenAnswer(invocation -> {
+            JobUpsertBatch batch = invocation.getArgument(0);
+            return new JobUpsertResult(batch.jobs().size(), 0, 0, 0,
+                batch.jobs().stream().map(ignored -> UUID.randomUUID()).toList());
+        });
+
+        new OfficialExcelImportService(events, organizations, upserts, admissions).importWorkbook(
+            new ByteArrayInputStream(soeIdentityWorkbook()), new OfficialExcelImportService.ImportCommand(
+                "杭州数据集团2027届招聘", "https://example.test/soe", 2027,
+                LocalDate.of(2026, 8, 27), null, "杭州", EventType.STATE_OWNED_ENTERPRISE,
+                "杭州数据集团", "https://example.test/soe.xlsx", "杭州数据集团直属用人单位",
+                "杭州市", "公告：国企正式劳动合同"));
+
+        ArgumentCaptor<JobUpsertBatch> batch = ArgumentCaptor.forClass(JobUpsertBatch.class);
+        verify(upserts).upsert(batch.capture());
+        assertThat(batch.getValue().jobs()).hasSize(2);
+        assertThat(batch.getValue().jobs().get(0)).satisfies(job -> {
+            assertThat(job.organizationName()).isEqualTo("杭州数据集团");
+            assertThat(job.actualEmployer()).isEqualTo("杭州数科有限公司");
+            assertThat(job.worksite()).isEqualTo("滨江区");
+            assertThat(job.location()).isEqualTo("杭州");
+            assertThat(job.employmentType()).isEqualTo(EmploymentType.SOE_FORMAL);
+            assertThat(job.employmentEvidence()).contains("国企正式劳动合同", "杭州数科有限公司", "滨江区");
+        });
+        assertThat(batch.getValue().jobs().get(1)).satisfies(job -> {
+            assertThat(job.actualEmployer()).isEqualTo("杭州数据集团直属用人单位");
+            assertThat(job.worksite()).isEqualTo("杭州市");
+            assertThat(job.employmentType()).isEqualTo(EmploymentType.UNKNOWN);
+            assertThat(job.employmentEvidence()).contains("公告：国企正式劳动合同");
+        });
     }
 
     @Test
@@ -478,7 +524,8 @@ class OfficialExcelImportServiceTest {
         assertThat(job.professionalTestRequired()).isFalse();
         assertThat(job.contactPhone()).isEqualTo("0571-12345678");
         assertThat(job.duties()).isNull();
-        assertThat(job.location()).as("来源区域不能冒充 Excel 中不存在的工作地点").isNull();
+        assertThat(job.location()).as("规范化地区应保留采集命令中已核实的来源区域").isEqualTo("杭州");
+        assertThat(job.worksite()).as("Excel 未写明的具体工作地点仍应保持未知").isNull();
     }
 
     private static byte[] workbook() throws Exception {
@@ -719,6 +766,31 @@ class OfficialExcelImportServiceTest {
             second.createCell(1).setCellValue("数据工程师");
             second.createCell(2).setCellValue("硕士研究生");
             second.createCell(3).setCellValue("软件工程");
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private static byte[] soeIdentityWorkbook() throws Exception {
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("招聘岗位表");
+            var headers = List.of("招聘单位", "用人单位", "岗位编号", "岗位名称", "用工性质", "工作地点", "专业");
+            var header = sheet.createRow(0);
+            for (int index = 0; index < headers.size(); index++) header.createCell(index).setCellValue(headers.get(index));
+            var explicit = sheet.createRow(1);
+            explicit.createCell(0).setCellValue("杭州数据集团");
+            explicit.createCell(1).setCellValue("杭州数科有限公司");
+            explicit.createCell(2).setCellValue("A1");
+            explicit.createCell(3).setCellValue("Java开发");
+            explicit.createCell(4).setCellValue("国企正式劳动合同");
+            explicit.createCell(5).setCellValue("滨江区");
+            explicit.createCell(6).setCellValue("计算机科学与技术");
+            var ambiguous = sheet.createRow(2);
+            ambiguous.createCell(0).setCellValue("杭州数据集团");
+            ambiguous.createCell(2).setCellValue("A2");
+            ambiguous.createCell(3).setCellValue("数据平台工程师");
+            ambiguous.createCell(4).setCellValue("聘用制");
+            ambiguous.createCell(6).setCellValue("计算机科学与技术");
             workbook.write(output);
             return output.toByteArray();
         }

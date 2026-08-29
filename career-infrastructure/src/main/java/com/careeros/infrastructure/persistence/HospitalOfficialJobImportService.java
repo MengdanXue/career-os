@@ -4,6 +4,7 @@ import com.careeros.application.JobUpsertService;
 import com.careeros.application.JobUpsertService.JobUpsertBatch;
 import com.careeros.application.OfficialJobAdmissionService;
 import com.careeros.domain.DomainEnums.OrganizationType;
+import com.careeros.domain.DomainEnums.EmploymentType;
 import com.careeros.infrastructure.acquisition.HospitalOfficialPageParser.ParsedHospitalAnnouncement;
 import com.careeros.infrastructure.persistence.OfficialJobFieldMapper.ImportContext;
 import com.careeros.infrastructure.persistence.OfficialJobFieldMapper.RawOfficialJob;
@@ -57,13 +58,16 @@ public class HospitalOfficialJobImportService {
         });
         var context = new ImportContext(event.id, organization.id, organization.name, "杭州",
             event.ageReferenceDate, sourceUrl, sourceUrl,
-            event.evidenceIds == null ? List.of() : event.evidenceIds);
+            event.evidenceIds == null ? List.of() : event.evidenceIds,
+            event.defaultEmploymentType == null ? EmploymentType.UNKNOWN : event.defaultEmploymentType,
+            ORGANIZATION, null, event.employmentStatement);
         var normalized = new ArrayList<JobUpsertService.NormalizedJob>();
         for (var row : parsed.jobs()) {
             normalized.add(fields.toNormalizedJob(new RawOfficialJob(
                 stableRowCode(row.department(), row.title()), row.title(), null, row.majors(),
-                row.educationDegree(), employmentText(event.employmentStatement), row.headcount(),
-                row.candidateScope(), row.ageLimit(), null, null, row.department(), row.category()), context));
+                row.educationDegree(), row.employmentText(), row.headcount(),
+                row.candidateScope(), row.ageLimit(), null, null, row.department(), row.category(),
+                row.actualEmployer(), row.worksite()), context));
         }
         var result = upserts.upsert(new JobUpsertBatch(
             event.id, sourceUrl, normalized, parsed.completeSnapshot(), List.of()));
@@ -74,8 +78,6 @@ public class HospitalOfficialJobImportService {
     private static String stableRowCode(String department, String title) {
         return (department == null || department.isBlank() ? "未标明科室" : department.trim()) + "|" + title.trim();
     }
-
-    private static String employmentText(String value) { return value; }
 
     public record ImportResult(
         UUID recruitmentEventId,

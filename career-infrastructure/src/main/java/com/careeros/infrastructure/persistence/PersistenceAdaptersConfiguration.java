@@ -152,7 +152,8 @@ public class PersistenceAdaptersConfiguration {
         e.genderRequirement=value.genderRequirement(); e.candidateScope=value.candidateScope();
         e.otherRequirements=value.otherRequirements(); e.originalRequirementText=value.originalRequirementText();
         e.interviewRatio=value.interviewRatio(); e.professionalTestRequired=value.professionalTestRequired();
-        e.contactPhone=value.contactPhone(); e.sourceUrl=value.sourceUrl();
+        e.contactPhone=value.contactPhone(); e.actualEmployer=value.actualEmployer(); e.worksite=value.worksite();
+        e.employmentEvidence=value.employmentEvidence(); e.sourceUrl=value.sourceUrl();
         e.evidenceIds=new ArrayList<>(value.evidenceIds()); e.active=true;
         return e;
     }
@@ -162,7 +163,8 @@ public class PersistenceAdaptersConfiguration {
             e.maximumAge,e.ageReferenceDate,e.minimumExperienceYears,e.requiredProfessionalTitles,e.duties,
             e.sourceUrl,e.evidenceIds,e.supervisingDepartment,e.jobCategory,e.jobGrade,e.educationRequirementText,
             e.degreeRequirement,e.majorRequirementText,e.ageRequirementText,e.genderRequirement,e.candidateScope,
-            e.otherRequirements,e.originalRequirementText,e.interviewRatio,e.professionalTestRequired,e.contactPhone);
+            e.otherRequirements,e.originalRequirementText,e.interviewRatio,e.professionalTestRequired,e.contactPhone,
+            e.actualEmployer,e.worksite,e.employmentEvidence);
     }
 
     private JpaModels.CandidateProfileEntity toCandidateEntity(CandidateProfile value) { var e=new JpaModels.CandidateProfileEntity(); e.id=value.id(); e.displayName=value.displayName(); e.birthYear=value.birthDate().year(); e.birthMonth=value.birthDate().month(); e.birthDay=value.birthDate().day(); e.gender=value.gender(); e.politicalAffiliation=value.politicalAffiliation(); e.highestEducation=value.highestEducation(); e.majors=new LinkedHashSet<>(value.majors()); e.graduationYear=value.graduationYear(); e.experienceYears=value.experienceYears(); e.professionalTitles=new LinkedHashSet<>(value.professionalTitles()); e.preferredLocations=new ArrayList<>(value.preferredLocations()); e.acceptedEmploymentTypes=new LinkedHashSet<>(value.acceptedEmploymentTypes()); e.profileVersion=value.profileVersion(); e.skills=new LinkedHashSet<>(value.skills()); e.researchKeywords=new LinkedHashSet<>(value.researchKeywords()); e.targetJobFamilies=new LinkedHashSet<>(value.targetJobFamilies()); e.preferredOrganizationTypes=new LinkedHashSet<>(value.preferredOrganizationTypes()); e.educationRecords=new ArrayList<>(value.educationRecords().stream().map(this::toEducationValue).toList()); e.employmentRecords=new ArrayList<>(value.employmentRecords().stream().map(this::toEmploymentValue).toList()); return e; }

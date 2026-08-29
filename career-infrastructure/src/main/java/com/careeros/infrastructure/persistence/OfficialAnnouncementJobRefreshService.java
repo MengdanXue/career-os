@@ -63,6 +63,6 @@ public class OfficialAnnouncementJobRefreshService {
             job.jobCategory,job.jobGrade,job.educationRequirementText,job.degreeRequirement,
             job.majorRequirementText,job.ageRequirementText,job.genderRequirement,job.candidateScope,
             job.otherRequirements,job.originalRequirementText,job.interviewRatio,
-            job.professionalTestRequired,job.contactPhone);
+            job.professionalTestRequired,job.contactPhone,job.actualEmployer,job.worksite,job.employmentEvidence);
     }
 }

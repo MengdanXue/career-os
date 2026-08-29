@@ -327,6 +327,9 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         target.interviewRatio = source.interviewRatio();
         target.professionalTestRequired = source.professionalTestRequired();
         target.contactPhone = source.contactPhone();
+        target.actualEmployer = source.actualEmployer();
+        target.worksite = source.worksite();
+        target.employmentEvidence = source.employmentEvidence();
         target.sourceUrl = source.sourceUrl();
         target.evidenceIds = new ArrayList<>(source.evidenceIds());
     }

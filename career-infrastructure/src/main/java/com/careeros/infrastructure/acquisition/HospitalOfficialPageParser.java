@@ -29,6 +29,11 @@ public final class HospitalOfficialPageParser {
         "headcount", List.of("招聘人数", "需求人数", "人数", "计划数"),
         "age", List.of("年龄要求", "年龄条件", "年龄")
     );
+    private static final Map<String, List<String>> OPTIONAL = Map.of(
+        "actualEmployer", List.of("实际用人单位", "用人单位", "招聘单位", "所属单位"),
+        "worksite", List.of("工作地点", "工作院区", "院区", "院区地点"),
+        "employment", List.of("用工性质", "编制性质", "岗位性质", "聘用形式")
+    );
 
     public ParsedHospitalAnnouncement parse(URI sourceUri, byte[] html) {
         Objects.requireNonNull(sourceUri, "sourceUri");
@@ -72,7 +77,10 @@ public final class HospitalOfficialPageParser {
                     value(cells, header.columns().get("majors")),
                     value(cells, header.columns().get("scope")),
                     value(cells, header.columns().get("headcount")),
-                    value(cells, header.columns().get("age"))));
+                    value(cells, header.columns().get("age")),
+                    value(cells, header.columns().get("actualEmployer")),
+                    value(cells, header.columns().get("worksite")),
+                    value(cells, header.columns().get("employment"))));
             }
             return new TableParse(List.copyOf(result), List.copyOf(issues));
         }
@@ -91,6 +99,12 @@ public final class HospitalOfficialPageParser {
                     if (!columns.containsKey(required.getKey())
                         && required.getValue().stream().anyMatch(label::equals)) {
                         columns.put(required.getKey(), column);
+                    }
+                }
+                for (var optional : OPTIONAL.entrySet()) {
+                    if (!columns.containsKey(optional.getKey())
+                        && optional.getValue().stream().anyMatch(label::equals)) {
+                        columns.put(optional.getKey(), column);
                     }
                 }
             }
@@ -204,8 +218,19 @@ public final class HospitalOfficialPageParser {
         String majors,
         String candidateScope,
         String headcount,
-        String ageLimit
+        String ageLimit,
+        String actualEmployer,
+        String worksite,
+        String employmentText
     ) {
+        public HospitalJobRow(
+            String department, String title, String category, String educationDegree,
+            String majors, String candidateScope, String headcount, String ageLimit
+        ) {
+            this(department, title, category, educationDegree, majors, candidateScope,
+                headcount, ageLimit, null, null, null);
+        }
+
         public HospitalJobRow {
             title = required(title, "title");
             department = optional(department);
@@ -215,6 +240,9 @@ public final class HospitalOfficialPageParser {
             candidateScope = optional(candidateScope);
             headcount = optional(headcount);
             ageLimit = optional(ageLimit);
+            actualEmployer = optional(actualEmployer);
+            worksite = optional(worksite);
+            employmentText = optional(employmentText);
         }
 
         private static String required(String value, String field) {

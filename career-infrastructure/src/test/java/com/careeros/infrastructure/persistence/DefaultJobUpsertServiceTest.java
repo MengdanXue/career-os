@@ -76,6 +76,13 @@ class DefaultJobUpsertServiceTest {
     }
 
     @Test
+    void normalizedJobCarriesTraceableOfficialEmploymentIdentity() {
+        assertThat(List.of(NormalizedJob.class.getRecordComponents()).stream()
+            .map(component -> component.getName()))
+            .endsWith("actualEmployer", "worksite", "employmentEvidence");
+    }
+
+    @Test
     void differentWorkbookSourcesCannotCollideWhenAnnouncementOrganizationAndCodeMatch() {
         NormalizedJob firstWorkbook = job(2);
         NormalizedJob secondWorkbook = new NormalizedJob(
@@ -151,6 +158,24 @@ class DefaultJobUpsertServiceTest {
             .isNotEqualTo(service.contentFingerprint(commaJoinedMajor));
         assertThat(service.contentFingerprint(upperCaseUrlPath))
             .isNotEqualTo(service.contentFingerprint(lowerCaseUrlPath));
+    }
+
+    @Test
+    void employmentIdentityEmployerWorksiteAndEvidenceAffectContentFingerprint() {
+        NormalizedJob base = copyWithIdentity(job(2), "杭州数据集团子公司", "杭州滨江", "用工性质：国企正式劳动合同");
+
+        assertThat(service.contentFingerprint(copyWithIdentity(base, "杭州数据集团另一子公司", base.worksite(), base.employmentEvidence())))
+            .isNotEqualTo(service.contentFingerprint(base));
+        assertThat(service.contentFingerprint(copyWithIdentity(base, base.actualEmployer(), "杭州余杭", base.employmentEvidence())))
+            .isNotEqualTo(service.contentFingerprint(base));
+        assertThat(service.contentFingerprint(copyWithIdentity(base, base.actualEmployer(), base.worksite(), "用工性质：劳务派遣")))
+            .isNotEqualTo(service.contentFingerprint(base));
+
+        service.upsert(batch(List.of(base), true, List.of()));
+        JpaModels.JobPostingEntity storedJob = stored.values().iterator().next();
+        assertThat(storedJob.actualEmployer).isEqualTo("杭州数据集团子公司");
+        assertThat(storedJob.worksite).isEqualTo("杭州滨江");
+        assertThat(storedJob.employmentEvidence).isEqualTo("用工性质：国企正式劳动合同");
     }
 
     @Test
@@ -312,6 +337,24 @@ class DefaultJobUpsertServiceTest {
             job.acceptedGraduationYears(), job.maximumAge(), job.ageReferenceDate(),
             job.minimumExperienceYears(), job.requiredProfessionalTitles(), job.duties(),
             sourceUrl, job.evidenceIds());
+    }
+
+    private static NormalizedJob copyWithIdentity(
+        NormalizedJob job, String actualEmployer, String worksite, String employmentEvidence
+    ) {
+        return new NormalizedJob(
+            job.recruitmentEventId(), job.organizationId(), job.organizationName(),
+            job.externalJobCode(), job.title(), job.jobFamily(), job.employmentType(),
+            job.location(), job.headcount(), job.minimumEducation(), job.exactMajors(),
+            job.acceptedGraduationYears(), job.maximumAge(), job.ageReferenceDate(),
+            job.minimumExperienceYears(), job.requiredProfessionalTitles(), job.duties(),
+            job.sourceUrl(), job.stableSourceUrl(), job.legacyStableSourceUrl(), job.evidenceIds(),
+            job.supervisingDepartment(), job.jobCategory(), job.jobGrade(),
+            job.educationRequirementText(), job.degreeRequirement(), job.majorRequirementText(),
+            job.ageRequirementText(), job.genderRequirement(), job.candidateScope(),
+            job.otherRequirements(), job.originalRequirementText(), job.interviewRatio(),
+            job.professionalTestRequired(), job.contactPhone(), actualEmployer, worksite,
+            employmentEvidence);
     }
 
     private static RecruitmentExtractionProposal proposal() {

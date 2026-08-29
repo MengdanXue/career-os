@@ -44,7 +44,10 @@ public final class StabilityEvaluator {
     public OpportunityTier tier(JobPosting job, Organization organization) {
         boolean evidenced = !job.evidenceIds().isEmpty();
         if (job.employmentType() == EmploymentType.ESTABLISHMENT && evidenced) return OpportunityTier.T1;
-        if ((job.employmentType() == EmploymentType.PUBLIC_INSTITUTION_FORMAL
+        if ((job.employmentType() == EmploymentType.QUOTA_OR_FILING
+                || job.employmentType() == EmploymentType.PUBLIC_INSTITUTION_FORMAL
+                || job.employmentType() == EmploymentType.UNIT_FORMAL
+                || job.employmentType() == EmploymentType.SOE_FORMAL
                 || job.employmentType() == EmploymentType.CONTRACT
                 || job.employmentType() == EmploymentType.PERSONNEL_AGENCY)
             && SEMI_PUBLIC.contains(organization.organizationType()) && evidenced) return OpportunityTier.T2;
@@ -54,7 +57,10 @@ public final class StabilityEvaluator {
     private AssessmentDimension employment(JobPosting job) {
         return switch (job.employmentType()) {
             case ESTABLISHMENT -> explicit(AssessmentDimensionType.EMPLOYMENT_SECURITY, 30, 30, "EMPLOYMENT_ESTABLISHMENT", job);
+            case QUOTA_OR_FILING -> explicit(AssessmentDimensionType.EMPLOYMENT_SECURITY, 27, 30, "EMPLOYMENT_QUOTA_OR_FILING", job);
             case PUBLIC_INSTITUTION_FORMAL -> explicit(AssessmentDimensionType.EMPLOYMENT_SECURITY, 24, 30, "EMPLOYMENT_PUBLIC_INSTITUTION_FORMAL", job);
+            case UNIT_FORMAL -> explicit(AssessmentDimensionType.EMPLOYMENT_SECURITY, 22, 30, "EMPLOYMENT_UNIT_FORMAL", job);
+            case SOE_FORMAL -> explicit(AssessmentDimensionType.EMPLOYMENT_SECURITY, 22, 30, "EMPLOYMENT_SOE_FORMAL", job);
             case PERSONNEL_AGENCY -> explicit(AssessmentDimensionType.EMPLOYMENT_SECURITY, 18, 30, "EMPLOYMENT_AGENCY", job);
             case CONTRACT -> explicit(AssessmentDimensionType.EMPLOYMENT_SECURITY, 15, 30, "EMPLOYMENT_CONTRACT", job);
             case LABOR_DISPATCH -> explicit(AssessmentDimensionType.EMPLOYMENT_SECURITY, 5, 30, "EMPLOYMENT_DISPATCH", job);
@@ -66,7 +72,10 @@ public final class StabilityEvaluator {
     private AssessmentDimension contract(JobPosting job) {
         return switch (job.employmentType()) {
             case ESTABLISHMENT -> explicit(AssessmentDimensionType.CONTRACT_RISK, 10, 10, "CONTRACT_LOW_RISK", job);
+            case QUOTA_OR_FILING -> explicit(AssessmentDimensionType.CONTRACT_RISK, 9, 10, "CONTRACT_QUOTA_OR_FILING", job);
             case PUBLIC_INSTITUTION_FORMAL -> explicit(AssessmentDimensionType.CONTRACT_RISK, 8, 10, "CONTRACT_PUBLIC_INSTITUTION_FORMAL", job);
+            case UNIT_FORMAL -> explicit(AssessmentDimensionType.CONTRACT_RISK, 7, 10, "CONTRACT_UNIT_FORMAL", job);
+            case SOE_FORMAL -> explicit(AssessmentDimensionType.CONTRACT_RISK, 7, 10, "CONTRACT_SOE_FORMAL", job);
             case PERSONNEL_AGENCY -> explicit(AssessmentDimensionType.CONTRACT_RISK, 6, 10, "CONTRACT_AGENCY", job);
             case CONTRACT -> explicit(AssessmentDimensionType.CONTRACT_RISK, 5, 10, "CONTRACT_STANDARD", job);
             case LABOR_DISPATCH -> explicit(AssessmentDimensionType.CONTRACT_RISK, 2, 10, "CONTRACT_DISPATCH", job);

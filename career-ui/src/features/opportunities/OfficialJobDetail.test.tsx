@@ -8,6 +8,7 @@ function match(overrides: Partial<CandidateMatch> = {}): CandidateMatch {
     jobId: crypto.randomUUID(), externalJobCode: null, jobTitle: '技术岗', organizationName: '测试单位',
     location: '杭州', eligibilityStatus: 'ELIGIBLE', fitScore: 60, coveragePercent: 50,
     employmentType: 'UNKNOWN', employmentIdentityConfirmed: false, admissionReasons: [], warnings: [],
+    actualEmployer: null, worksite: null, employmentEvidence: null,
     sourceUrl: 'https://example.gov.cn/notice', jobContentFingerprint: 'a'.repeat(64), headcount: 1,
     jobFamily: 'SOFTWARE', minimumEducation: 'DOCTORATE', exactMajors: [], acceptedGraduationYears: [],
     maximumAge: null, ageReferenceDate: null, minimumExperienceYears: null,
@@ -49,6 +50,8 @@ describe('OfficialJobDetail', () => {
   it('shows the complete official position, application process and evidence without leaving the app', () => {
     render(<OfficialJobDetail match={match({
       employmentType: 'PUBLIC_INSTITUTION_FORMAL', employmentIdentityConfirmed: true,
+      actualEmployer: '杭州市西溪医院', worksite: '西溪院区',
+      employmentEvidence: '公告原文：录用后由杭州市西溪医院直接聘用',
       jobCategory: '专业技术', jobGrade: '十级以下', educationRequirementText: '硕士研究生及以上',
       degreeRequirement: '硕士及以上', majorRequirementText: '计算机科学与技术、软件工程',
       ageRequirementText: '38周岁及以下', genderRequirement: '不限', candidateScope: '不限',
@@ -72,6 +75,9 @@ describe('OfficialJobDetail', () => {
     })} onClose={vi.fn()} />)
 
     expect(screen.getByText('事业单位正式聘用')).toBeInTheDocument()
+    expect(screen.getByText('杭州市西溪医院')).toBeInTheDocument()
+    expect(screen.getByText('西溪院区')).toBeInTheDocument()
+    expect(screen.getByText('公告原文：录用后由杭州市西溪医院直接聘用')).toBeInTheDocument()
     expect(screen.getByText('官网关键事实已核实')).toBeInTheDocument()
     expect(screen.getAllByText('计算机科学与技术、软件工程')).toHaveLength(2)
     expect(screen.getByText(/2026-03-19 09:00/)).toBeInTheDocument()

@@ -53,6 +53,32 @@ class JpaDecisionStoreTest {
     }
 
     @Test
+    void restoresOfficialEmploymentIdentityFieldsFromPersistence() {
+        var jobs = mock(JobPostingJpaRepository.class);
+        var organizations = mock(OrganizationJpaRepository.class);
+        var events = mock(RecruitmentEventJpaRepository.class);
+        var evidence = mock(EvidenceJpaRepository.class);
+        var job = job();
+        job.actualEmployer = "杭州数科有限公司";
+        job.worksite = "滨江区";
+        job.employmentEvidence = "用工性质：国企正式劳动合同";
+        var organization = organization(job);
+        var event = event(job);
+        when(jobs.findAllById(Set.of(job.id))).thenReturn(List.of(job));
+        when(organizations.findAllById(Set.of(organization.id))).thenReturn(List.of(organization));
+        when(events.findAllById(Set.of(event.id))).thenReturn(List.of(event));
+        when(events.findBySourceUrlIn(Set.of(job.sourceUrl))).thenReturn(List.of());
+        when(evidence.findAllById(Set.copyOf(job.evidenceIds))).thenReturn(List.of());
+
+        var context = store(jobs, organizations, events, evidence)
+            .findActiveByJobIds(Set.of(job.id)).getFirst();
+
+        assertThat(context.job().actualEmployer()).isEqualTo("杭州数科有限公司");
+        assertThat(context.job().worksite()).isEqualTo("滨江区");
+        assertThat(context.job().employmentEvidence()).isEqualTo("用工性质：国企正式劳动合同");
+    }
+
+    @Test
     void loadsAttachmentEvidenceOnceForTheWholeActiveJobCollection() {
         var jobs = mock(JobPostingJpaRepository.class);
         var organizations = mock(OrganizationJpaRepository.class);

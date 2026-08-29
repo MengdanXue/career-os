@@ -20,7 +20,8 @@ public record JobPosting(
     String educationRequirementText, String degreeRequirement, String majorRequirementText,
     String ageRequirementText, String genderRequirement, String candidateScope,
     String otherRequirements, String originalRequirementText, String interviewRatio,
-    Boolean professionalTestRequired, String contactPhone
+    Boolean professionalTestRequired, String contactPhone,
+    String actualEmployer, String worksite, String employmentEvidence
 ) {
     public JobPosting {
         Objects.requireNonNull(id);
@@ -48,13 +49,37 @@ public record JobPosting(
         int headcount, EducationLevel minimumEducation, Set<String> exactMajors,
         Set<Integer> acceptedGraduationYears, Integer maximumAge, LocalDate ageReferenceDate,
         Integer minimumExperienceYears, Set<String> requiredProfessionalTitles, String duties,
+        String sourceUrl, List<UUID> evidenceIds,
+        String supervisingDepartment, String jobCategory, String jobGrade,
+        String educationRequirementText, String degreeRequirement, String majorRequirementText,
+        String ageRequirementText, String genderRequirement, String candidateScope,
+        String otherRequirements, String originalRequirementText, String interviewRatio,
+        Boolean professionalTestRequired, String contactPhone
+    ) {
+        this(id, recruitmentEventId, organizationId, externalJobCode, title, jobFamily,
+            employmentType, location, headcount, minimumEducation, exactMajors,
+            acceptedGraduationYears, maximumAge, ageReferenceDate, minimumExperienceYears,
+            requiredProfessionalTitles, duties, sourceUrl, evidenceIds,
+            supervisingDepartment, jobCategory, jobGrade, educationRequirementText,
+            degreeRequirement, majorRequirementText, ageRequirementText, genderRequirement,
+            candidateScope, otherRequirements, originalRequirementText, interviewRatio,
+            professionalTestRequired, contactPhone, null, null, null);
+    }
+
+    public JobPosting(
+        UUID id, UUID recruitmentEventId, UUID organizationId, String externalJobCode,
+        String title, JobFamily jobFamily, EmploymentType employmentType, String location,
+        int headcount, EducationLevel minimumEducation, Set<String> exactMajors,
+        Set<Integer> acceptedGraduationYears, Integer maximumAge, LocalDate ageReferenceDate,
+        Integer minimumExperienceYears, Set<String> requiredProfessionalTitles, String duties,
         String sourceUrl, List<UUID> evidenceIds
     ) {
         this(id, recruitmentEventId, organizationId, externalJobCode, title, jobFamily,
             employmentType, location, headcount, minimumEducation, exactMajors,
             acceptedGraduationYears, maximumAge, ageReferenceDate, minimumExperienceYears,
             requiredProfessionalTitles, duties, sourceUrl, evidenceIds,
-            null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+            null, null, null);
     }
 
     private static void require(String value, String field) {

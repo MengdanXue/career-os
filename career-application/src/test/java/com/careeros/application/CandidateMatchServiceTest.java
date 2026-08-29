@@ -37,6 +37,9 @@ class CandidateMatchServiceTest {
         assertThat(match.eligibilityStatus()).isEqualTo(EligibilityStatus.ELIGIBLE);
         assertThat(match.fitScore()).isPositive();
         assertThat(match.employmentIdentityConfirmed()).isFalse();
+        assertThat(match.actualEmployer()).isEqualTo("杭州市西溪医院");
+        assertThat(match.worksite()).isEqualTo("西溪院区");
+        assertThat(match.employmentEvidence()).isEqualTo("公告原文：医院直接聘用");
         assertThat(match.warnings()).contains("用工身份待官方证据确认");
         assertThat(match.sourceUrl()).startsWith("https://hrss.hangzhou.gov.cn/");
         assertThat(match.externalJobCode()).isEqualTo("101");
@@ -131,7 +134,8 @@ class CandidateMatchServiceTest {
             "https://hrss.hangzhou.gov.cn/art/2026/notice.html", List.of(),
             "杭州市卫生健康委员会", "专业技术", "十级以下", "硕士研究生及以上",
             "硕士及以上", "计算机科学与技术、软件工程", "38周岁及以下", "不限",
-            "不限", "需进行专业知识测试", "岗位原始条件", "1:4", true, "0571-12345678");
+            "不限", "需进行专业知识测试", "岗位原始条件", "1:4", true, "0571-12345678",
+            "杭州市西溪医院", "西溪院区", "公告原文：医院直接聘用");
         var organization = new Organization(organizationId, "杭州市西溪医院", OrganizationType.HOSPITAL,
             null, "浙江", "杭州", null, null, null);
         var event = new RecruitmentEvent(eventId, "2026年公开招聘", 2026, EventType.PUBLIC_INSTITUTION,

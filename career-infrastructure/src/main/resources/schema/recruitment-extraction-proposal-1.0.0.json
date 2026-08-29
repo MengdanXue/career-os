@@ -77,7 +77,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["value", "factStatus", "confidence", "evidenceFragmentIds", "interpretation"],
       "properties": {
-        "value": { "type": ["string", "null"], "enum": ["ESTABLISHMENT", "PERSONNEL_AGENCY", "LABOR_DISPATCH", "CONTRACT", "PROJECT_BASED", "UNKNOWN", null] },
+        "value": { "type": ["string", "null"], "enum": ["ESTABLISHMENT", "QUOTA_OR_FILING", "PUBLIC_INSTITUTION_FORMAL", "UNIT_FORMAL", "SOE_FORMAL", "PERSONNEL_AGENCY", "LABOR_DISPATCH", "CONTRACT", "PROJECT_BASED", "UNKNOWN", null] },
         "factStatus": { "$ref": "#/$defs/factStatus" },
         "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
         "evidenceFragmentIds": { "$ref": "#/$defs/evidenceIds" },

@@ -64,8 +64,8 @@ public final class FitEvaluator {
         boolean hasAny = !locations.isEmpty() || !employmentTypes.isEmpty() || !jobFamilies.isEmpty() || !organizationTypes.isEmpty();
         if (!hasAny) return unknown(AssessmentDimensionType.PREFERENCE_FIT, 15, "PREFERENCE_UNKNOWN");
         int points = 0;
-        if (locations.stream().anyMatch(p -> contains(job.location(), p))) points += 5;
-        if (employmentTypes.contains(job.employmentType())) points += 5;
+        if (locations.stream().anyMatch(p -> locationMatches(job, organization, p))) points += 5;
+        if (employmentPreferenceMatches(employmentTypes, job.employmentType())) points += 5;
         if (jobFamilies.contains(job.jobFamily())) points += 3;
         if (organizationTypes.contains(organization.organizationType())) points += 2;
         return known(AssessmentDimensionType.PREFERENCE_FIT, points, 15, "PREFERENCE_EXPLICIT", "地点、用工、岗位族和单位类型偏好", job.evidenceIds());
@@ -76,6 +76,26 @@ public final class FitEvaluator {
         long matches = requirements.stream().filter(required -> candidateValues.stream().anyMatch(value -> normalize(value).equals(normalize(required)))).count();
         int points = Math.round(maximum * matches / (float) requirements.size());
         return known(type, points, maximum, prefix + "_EXACT", "按规范化后的明确字段匹配", evidenceIds);
+    }
+
+    private static boolean employmentPreferenceMatches(
+        Set<EmploymentType> accepted, EmploymentType employmentType
+    ) {
+        if (accepted.contains(employmentType)) return true;
+        boolean acceptsLegacyFormalUmbrella = accepted.contains(EmploymentType.ESTABLISHMENT)
+            || accepted.contains(EmploymentType.PUBLIC_INSTITUTION_FORMAL);
+        return acceptsLegacyFormalUmbrella && Set.of(
+            EmploymentType.QUOTA_OR_FILING,
+            EmploymentType.UNIT_FORMAL,
+            EmploymentType.SOE_FORMAL
+        ).contains(employmentType);
+    }
+
+    private static boolean locationMatches(JobPosting job, Organization organization, String preference) {
+        return contains(job.location(), preference)
+            || contains(organization.province(), preference)
+            || contains(organization.city(), preference)
+            || contains(organization.district(), preference);
     }
 
     private AssessmentDimension textOverlap(AssessmentDimensionType type, int maximum, Set<String> candidateValues, String text, List<UUID> evidenceIds, String prefix) {

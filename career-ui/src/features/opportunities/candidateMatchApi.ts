@@ -1,7 +1,7 @@
 import type { EligibilityStatus, PageResponse } from '../../api/contracts'
 import { requestJson } from '../../api/http'
 
-export type EmploymentType = 'ESTABLISHMENT' | 'PUBLIC_INSTITUTION_FORMAL' | 'PERSONNEL_AGENCY' | 'LABOR_DISPATCH' | 'CONTRACT' | 'PROJECT_BASED' | 'UNKNOWN'
+export type EmploymentType = 'ESTABLISHMENT' | 'QUOTA_OR_FILING' | 'PUBLIC_INSTITUTION_FORMAL' | 'UNIT_FORMAL' | 'SOE_FORMAL' | 'PERSONNEL_AGENCY' | 'LABOR_DISPATCH' | 'CONTRACT' | 'PROJECT_BASED' | 'UNKNOWN'
 export type JobFamily = 'SOFTWARE' | 'DATA' | 'AI' | 'CYBERSECURITY' | 'INFORMATION_SYSTEMS' | 'DIGITALIZATION' | 'IT_OPERATIONS' | 'RESEARCH' | 'PRODUCT' | 'OTHER'
 export type EducationLevel = 'UNKNOWN' | 'HIGH_SCHOOL' | 'ASSOCIATE' | 'BACHELOR' | 'MASTER' | 'DOCTORATE'
 export type DataQualityStatus = 'RAW' | 'PARSED' | 'NORMALIZED' | 'REVIEW_REQUIRED' | 'VERIFIED' | 'REJECTED' | 'FAILED'
@@ -17,6 +17,9 @@ export type CandidateMatch = {
   coveragePercent: number
   employmentType: EmploymentType
   employmentIdentityConfirmed: boolean
+  actualEmployer: string | null
+  worksite: string | null
+  employmentEvidence: string | null
   admissionReasons: string[]
   warnings: string[]
   sourceUrl: string

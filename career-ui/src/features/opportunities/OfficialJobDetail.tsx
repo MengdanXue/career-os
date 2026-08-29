@@ -3,7 +3,10 @@ import type { CandidateMatch, EducationLevel, EmploymentType, JobFamily } from '
 
 const employmentLabels: Record<EmploymentType, string> = {
   ESTABLISHMENT: '事业编制',
+  QUOTA_OR_FILING: '员额制 / 备案制',
   PUBLIC_INSTITUTION_FORMAL: '事业单位正式聘用',
+  UNIT_FORMAL: '单位直接正式聘用',
+  SOE_FORMAL: '国企正式用工',
   CONTRACT: '合同制',
   PERSONNEL_AGENCY: '人事代理',
   LABOR_DISPATCH: '劳务派遣',
@@ -96,16 +99,20 @@ export function OfficialJobDetail({ match, onClose, detailRef }: {
         <small>{match.employmentStatement
           ?? '系统只按公告原文判断用工身份，不根据单位名称推断。'}</small>
       </section>
+      {match.employmentEvidence && <p className="official-identity-evidence">
+        <strong>用工证据</strong><span>{match.employmentEvidence}</span>
+      </p>}
       {match.employmentType === 'PUBLIC_INSTITUTION_FORMAL' &&
         <p className="official-identity-note">公告明确录用后签订事业单位聘用合同；公告未单列是否占用事业编制。</p>}
       <dl className="official-facts">
+        <div><dt>实际用工单位</dt><dd>{match.actualEmployer ?? '官网未明确'}</dd></div>
         <div><dt>主管部门</dt><dd>{match.supervisingDepartment ?? '官网未明确'}</dd></div>
         <div><dt>岗位代码</dt><dd>{match.externalJobCode ?? '官网未明确'}</dd></div>
         <div><dt>岗位类别</dt><dd>{match.jobCategory ?? '官网未明确'}</dd></div>
         <div><dt>系统技术方向</dt><dd>{familyLabels[match.jobFamily]}</dd></div>
         <div><dt>岗位等级</dt><dd>{match.jobGrade ?? '官网未明确'}</dd></div>
         <div><dt>招聘人数</dt><dd>{headcountMissing ? '官网未明确' : `${match.headcount} 人`}</dd></div>
-        <div><dt>工作地点</dt><dd>{match.location || '官网未明确'}</dd></div>
+        <div><dt>工作地点</dt><dd>{match.worksite ?? (match.location || '官网未明确')}</dd></div>
       </dl>
     </section>
 

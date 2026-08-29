@@ -25,7 +25,8 @@ public final class JobContentFingerprint {
             job.sourceUrl(), job.evidenceIds(), job.supervisingDepartment(), job.jobCategory(), job.jobGrade(),
             job.educationRequirementText(), job.degreeRequirement(), job.majorRequirementText(),
             job.ageRequirementText(), job.genderRequirement(), job.candidateScope(), job.otherRequirements(),
-            job.originalRequirementText(), job.interviewRatio(), job.professionalTestRequired(), job.contactPhone());
+            job.originalRequirementText(), job.interviewRatio(), job.professionalTestRequired(), job.contactPhone(),
+            job.actualEmployer(), job.worksite(), job.employmentEvidence());
     }
 
     public static String of(NormalizedJob job) {
@@ -38,7 +39,8 @@ public final class JobContentFingerprint {
             job.sourceUrl(), job.evidenceIds(), job.supervisingDepartment(), job.jobCategory(), job.jobGrade(),
             job.educationRequirementText(), job.degreeRequirement(), job.majorRequirementText(),
             job.ageRequirementText(), job.genderRequirement(), job.candidateScope(), job.otherRequirements(),
-            job.originalRequirementText(), job.interviewRatio(), job.professionalTestRequired(), job.contactPhone());
+            job.originalRequirementText(), job.interviewRatio(), job.professionalTestRequired(), job.contactPhone(),
+            job.actualEmployer(), job.worksite(), job.employmentEvidence());
     }
 
     private static String fingerprint(
@@ -51,7 +53,8 @@ public final class JobContentFingerprint {
         Object supervisingDepartment, Object jobCategory, Object jobGrade, Object educationRequirementText,
         Object degreeRequirement, Object majorRequirementText, Object ageRequirementText, Object genderRequirement,
         Object candidateScope, Object otherRequirements, Object originalRequirementText, Object interviewRatio,
-        Object professionalTestRequired, Object contactPhone
+        Object professionalTestRequired, Object contactPhone, Object actualEmployer, Object worksite,
+        Object employmentEvidence
     ) {
         MessageDigest digest = sha256();
         put(digest, value(organizationId));
@@ -85,6 +88,9 @@ public final class JobContentFingerprint {
         put(digest, normalizeContent(value(interviewRatio)));
         put(digest, value(professionalTestRequired));
         put(digest, normalizeContent(value(contactPhone)));
+        put(digest, normalizeContent(value(actualEmployer)));
+        put(digest, normalizeContent(value(worksite)));
+        put(digest, normalizeContent(value(employmentEvidence)));
         return HexFormat.of().formatHex(digest.digest());
     }
 

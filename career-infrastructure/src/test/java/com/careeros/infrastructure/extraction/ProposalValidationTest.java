@@ -49,6 +49,29 @@ class ProposalValidationTest {
     }
 
     @Test
+    void schemaAcceptsAllExplicitFormalEmploymentIdentities() throws Exception {
+        for (EmploymentType type : List.of(
+            EmploymentType.QUOTA_OR_FILING, EmploymentType.UNIT_FORMAL, EmploymentType.SOE_FORMAL)) {
+            var valid = ProposalFixtures.validProposal();
+            var original = valid.jobs().getFirst();
+            var identity = new com.careeros.domain.ExtractedFact<>(
+                type, FactStatus.EXPLICIT, 0.98, List.of(ProposalFixtures.FRAGMENT_ID), null);
+            var changedJob = new com.careeros.domain.RecruitmentExtractionProposal.JobProposal(
+                original.title(), original.externalJobCode(), original.headcount(), identity,
+                original.location(), original.minimumEducation(), original.degree(), original.majorText(),
+                original.maximumAge(), original.acceptedGraduationYears(), original.minimumExperienceYears(),
+                original.jobFamily(), original.duties());
+            var changed = new com.careeros.domain.RecruitmentExtractionProposal(
+                valid.schemaVersion(), valid.source(), valid.organization(), valid.recruitmentEvent(),
+                List.of(changedJob), valid.warnings(), valid.confidence(), valid.completeSnapshot());
+
+            assertThatCode(() -> validator.validate(changed))
+                .as(type.name())
+                .doesNotThrowAnyException();
+        }
+    }
+
+    @Test
     void nonExistentFragmentReferenceFailsEvidenceValidation() {
         var proposal = ProposalFixtures.proposalWithEvidence(UUID.randomUUID());
 

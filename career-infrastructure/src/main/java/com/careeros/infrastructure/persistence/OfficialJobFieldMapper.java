@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -24,11 +25,17 @@ public final class OfficialJobFieldMapper {
         Objects.requireNonNull(row, "row");
         Objects.requireNonNull(context, "context");
         String requirements = join(row.educationText(), row.majorText(), row.ageText(), row.candidateScope());
+        EmploymentType employmentType = row.employmentText() == null || row.employmentText().isBlank()
+            ? context.defaultEmploymentType()
+            : employmentType(row.employmentText());
+        String actualEmployer = firstPresent(row.actualEmployer(), context.defaultActualEmployer());
+        String worksite = firstPresent(row.worksite(), context.defaultWorksite());
+        String employmentEvidence = evidence(row, context);
         return new NormalizedJob(
             context.eventId(), context.organizationId(), context.organizationName(),
             optional(row.externalJobCode()), required(row.title(), "title"),
             jobFamily(row.title(), row.duties(), row.majorText(), row.department()),
-            employmentType(row.employmentText()), context.location(),
+            employmentType, context.location(),
             Math.max(1, number(row.headcountText(), 1)), education(row.educationText()),
             splitMajors(row.majorText()), graduationYears(row.candidateScope()),
             ageLimit(row.ageText()), context.ageReferenceDate(),
@@ -37,7 +44,7 @@ public final class OfficialJobFieldMapper {
             context.evidenceIds(), row.department(), row.category(), null,
             optional(row.educationText()), optional(row.educationText()), optional(row.majorText()),
             optional(row.ageText()), null, optional(row.candidateScope()), null,
-            requirements, null, null, null);
+            requirements, null, null, null, actualEmployer, worksite, employmentEvidence);
     }
 
     static JobFamily jobFamily(String title, String duties, String majors, String department) {
@@ -73,9 +80,27 @@ public final class OfficialJobFieldMapper {
         String text = text(value);
         if (text.contains("劳务派遣")) return EmploymentType.LABOR_DISPATCH;
         if (text.contains("人事代理")) return EmploymentType.PERSONNEL_AGENCY;
-        if (text.contains("事业编") || text.contains("编制内")) return EmploymentType.ESTABLISHMENT;
+        if (text.contains("第三方签") || text.contains("与第三方") || text.contains("编外")) {
+            return text.contains("项目") ? EmploymentType.PROJECT_BASED : EmploymentType.CONTRACT;
+        }
+        boolean negatedFormal = text.contains("非正式") || text.contains("不属于") || text.contains("不纳入")
+            || text.contains("非事业编") || text.contains("无事业编") || text.contains("不占事业编")
+            || text.contains("不进事业编") || text.contains("事业编制外");
+        if (!negatedFormal && (text.contains("事业编") || text.contains("编制内"))) {
+            return EmploymentType.ESTABLISHMENT;
+        }
+        if (!negatedFormal && (text.contains("员额") || text.contains("备案制"))) {
+            return EmploymentType.QUOTA_OR_FILING;
+        }
+        if (!negatedFormal && text.contains("国企") && (text.contains("正式") || text.contains("劳动合同"))) {
+            return EmploymentType.SOE_FORMAL;
+        }
+        if (!negatedFormal
+            && (text.contains("单位正式聘用") || text.contains("正式聘用人员") || text.contains("正式员工"))) {
+            return EmploymentType.UNIT_FORMAL;
+        }
         if (text.contains("项目")) return EmploymentType.PROJECT_BASED;
-        if (text.contains("合同")) return EmploymentType.CONTRACT;
+        if (text.contains("合同") || text.contains("编外")) return EmploymentType.CONTRACT;
         return EmploymentType.UNKNOWN;
     }
 
@@ -133,6 +158,33 @@ public final class OfficialJobFieldMapper {
         return result.isEmpty() ? null : String.join("；", result);
     }
 
+    private static String evidence(RawOfficialJob row, ImportContext context) {
+        Map<String, String> fragments = new java.util.LinkedHashMap<>();
+        if (context.defaultEmploymentEvidence() != null && !context.defaultEmploymentEvidence().isBlank()) {
+            addEvidence(fragments, context.defaultEmploymentEvidence());
+        }
+        if (row.employmentText() != null && !row.employmentText().isBlank()) {
+            addEvidence(fragments, "用工性质：" + row.employmentText().trim());
+        }
+        if (row.actualEmployer() != null && !row.actualEmployer().isBlank()) {
+            addEvidence(fragments, "实际用人单位：" + row.actualEmployer().trim());
+        }
+        if (row.worksite() != null && !row.worksite().isBlank()) {
+            addEvidence(fragments, "工作地点：" + row.worksite().trim());
+        }
+        if (fragments.isEmpty()) return null;
+        return String.join("；", fragments.values());
+    }
+
+    private static void addEvidence(Map<String, String> fragments, String value) {
+        String raw = value.trim();
+        fragments.putIfAbsent(raw.replaceAll("[\\s：:；;]+", ""), raw);
+    }
+
+    private static String firstPresent(String value, String fallback) {
+        return value == null || value.isBlank() ? optional(fallback) : value.trim();
+    }
+
     private static String required(String value, String field) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required");
         return value.trim();
@@ -157,8 +209,21 @@ public final class OfficialJobFieldMapper {
         String experienceText,
         String professionalTitleText,
         String department,
-        String category
-    ) {}
+        String category,
+        String actualEmployer,
+        String worksite
+    ) {
+        public RawOfficialJob(
+            String externalJobCode, String title, String duties, String majorText,
+            String educationText, String employmentText, String headcountText,
+            String candidateScope, String ageText, String experienceText,
+            String professionalTitleText, String department, String category
+        ) {
+            this(externalJobCode, title, duties, majorText, educationText, employmentText,
+                headcountText, candidateScope, ageText, experienceText, professionalTitleText,
+                department, category, null, null);
+        }
+    }
 
     public record ImportContext(
         UUID eventId,
@@ -168,8 +233,21 @@ public final class OfficialJobFieldMapper {
         LocalDate ageReferenceDate,
         String sourceUrl,
         String stableSourceUrl,
-        List<UUID> evidenceIds
+        List<UUID> evidenceIds,
+        EmploymentType defaultEmploymentType,
+        String defaultActualEmployer,
+        String defaultWorksite,
+        String defaultEmploymentEvidence
     ) {
+        public ImportContext(
+            UUID eventId, UUID organizationId, String organizationName, String location,
+            LocalDate ageReferenceDate, String sourceUrl, String stableSourceUrl,
+            List<UUID> evidenceIds
+        ) {
+            this(eventId, organizationId, organizationName, location, ageReferenceDate,
+                sourceUrl, stableSourceUrl, evidenceIds, EmploymentType.UNKNOWN, null, null, null);
+        }
+
         public ImportContext {
             Objects.requireNonNull(eventId, "eventId");
             Objects.requireNonNull(organizationId, "organizationId");
@@ -177,6 +255,7 @@ public final class OfficialJobFieldMapper {
             sourceUrl = required(sourceUrl, "sourceUrl");
             stableSourceUrl = required(stableSourceUrl, "stableSourceUrl");
             evidenceIds = evidenceIds == null ? List.of() : List.copyOf(evidenceIds);
+            defaultEmploymentType = defaultEmploymentType == null ? EmploymentType.UNKNOWN : defaultEmploymentType;
         }
     }
 }

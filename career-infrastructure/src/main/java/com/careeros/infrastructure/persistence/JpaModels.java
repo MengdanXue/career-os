@@ -135,6 +135,9 @@ public final class JpaModels {
         @Column(name = "interview_ratio") String interviewRatio;
         @Column(name = "professional_test_required") Boolean professionalTestRequired;
         @Column(name = "contact_phone") String contactPhone;
+        @Column(name = "actual_employer", length = 500) String actualEmployer;
+        @Column(length = 500) String worksite;
+        @Column(name = "employment_identity_evidence", columnDefinition = "text") String employmentEvidence;
         @Column(name = "source_url", nullable = false) String sourceUrl;
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "evidence_ids", columnDefinition = "jsonb", nullable = false) List<UUID> evidenceIds = new ArrayList<>();
         @Column(name = "stable_job_key", unique = true) String stableJobKey;

@@ -78,6 +78,41 @@ class FitEvaluatorTest {
         assertThat(result.assessedAt()).isEqualTo(assessedAt);
     }
 
+    @Test
+    void legacyFormalEmploymentPreferenceCoversNewExplicitFormalIdentities() {
+        var candidate = candidate(Set.of("Java"), Set.of("数据治理"));
+
+        for (EmploymentType type : List.of(
+            EmploymentType.QUOTA_OR_FILING, EmploymentType.UNIT_FORMAL, EmploymentType.SOE_FORMAL)) {
+            var assessment = new FitEvaluator().evaluate(
+                candidate, job(type, "Java 数据治理", List.of(UUID.randomUUID())),
+                organization(OrganizationType.PUBLIC_INSTITUTION), "e".repeat(64),
+                Instant.parse("2026-08-20T12:00:00Z"));
+
+            assertThat(assessment.dimensions())
+                .filteredOn(dimension -> dimension.type() == AssessmentDimensionType.PREFERENCE_FIT)
+                .singleElement()
+                .extracting(AssessmentDimension::achievedPoints)
+                .isEqualTo(15);
+        }
+    }
+
+    @Test
+    void organizationLocationMatchesPreferenceWhenJobWorksiteIsUnknown() {
+        var candidate = candidate(Set.of("Java"), Set.of("数据治理"));
+
+        var assessment = new FitEvaluator().evaluate(
+            candidate, job(EmploymentType.ESTABLISHMENT, "Java 数据治理", List.of(UUID.randomUUID()), null),
+            organization(OrganizationType.PUBLIC_INSTITUTION), "f".repeat(64),
+            Instant.parse("2026-08-20T12:00:00Z"));
+
+        assertThat(assessment.dimensions())
+            .filteredOn(dimension -> dimension.type() == AssessmentDimensionType.PREFERENCE_FIT)
+            .singleElement()
+            .extracting(AssessmentDimension::achievedPoints)
+            .isEqualTo(15);
+    }
+
     private static CandidateProfile candidate(Set<String> skills, Set<String> research) {
         return new CandidateProfile(
             UUID.randomUUID(), "候选人", new PartialDate(1992, 12, null), EducationLevel.MASTER,
@@ -93,9 +128,15 @@ class FitEvaluatorTest {
     }
 
     private static JobPosting job(EmploymentType employmentType, String duties, List<UUID> evidenceIds) {
+        return job(employmentType, duties, evidenceIds, "杭州市");
+    }
+
+    private static JobPosting job(
+        EmploymentType employmentType, String duties, List<UUID> evidenceIds, String location
+    ) {
         return new JobPosting(
             UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "IT-01", "软件工程师", JobFamily.SOFTWARE,
-            employmentType, "杭州市", 1, EducationLevel.MASTER, Set.of("计算机科学与技术"), Set.of(),
+            employmentType, location, 1, EducationLevel.MASTER, Set.of("计算机科学与技术"), Set.of(),
             null, null, 3, Set.of("中级：计算机应用"), duties, "https://example.gov.cn/job", evidenceIds
         );
     }

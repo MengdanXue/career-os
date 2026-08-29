@@ -127,7 +127,8 @@ public class CandidateMatchService {
             context.event().admissionTicketStartsOn(), context.event().admissionTicketEndsOn(),
             context.event().writtenExamOn(), context.event().writtenExamSubjects(), context.event().graduateRule(),
             context.event().overseasDegreeRule(), context.event().experienceEvidenceRule(),
-            context.event().employmentStatement(), context.event().interviewRule(), qualitySummary);
+            context.event().employmentStatement(), context.event().interviewRule(), qualitySummary,
+            context.job().actualEmployer(), context.job().worksite(), context.job().employmentEvidence());
     }
 
     private static QualitySummary qualitySummary(FieldEvidenceCoverage evidence) {
@@ -212,7 +213,8 @@ public class CandidateMatchService {
         LocalDate admissionTicketStartsOn, LocalDate admissionTicketEndsOn, LocalDate writtenExamOn,
         List<String> writtenExamSubjects, String graduateRule, String overseasDegreeRule,
         String experienceEvidenceRule, String employmentStatement, String interviewRule,
-        QualitySummary qualitySummary
+        QualitySummary qualitySummary,
+        String actualEmployer, String worksite, String employmentEvidence
     ) {
         public CandidateMatch {
             admissionReasons = Set.copyOf(admissionReasons);
@@ -235,6 +237,45 @@ public class CandidateMatchService {
             Set<String> exactMajors, Set<Integer> acceptedGraduationYears,
             Integer maximumAge, LocalDate ageReferenceDate, Integer minimumExperienceYears,
             Set<String> requiredProfessionalTitles, String duties, String eventTitle,
+            LocalDate publishedOn, LocalDate applicationStartsOn, LocalDate applicationEndsOn,
+            DataQualityStatus dataQualityStatus,
+            String supervisingDepartment, String jobCategory, String jobGrade,
+            String educationRequirementText, String degreeRequirement, String majorRequirementText,
+            String ageRequirementText, String genderRequirement, String candidateScope,
+            String otherRequirements, String originalRequirementText, String interviewRatio,
+            Boolean professionalTestRequired, String contactPhone, String attachmentSourceUrl,
+            OffsetDateTime applicationStartsAt, OffsetDateTime applicationEndsAt, String registrationUrl,
+            OffsetDateTime qualificationReviewEndsOn, OffsetDateTime paymentEndsOn,
+            LocalDate admissionTicketStartsOn, LocalDate admissionTicketEndsOn, LocalDate writtenExamOn,
+            List<String> writtenExamSubjects, String graduateRule, String overseasDegreeRule,
+            String experienceEvidenceRule, String employmentStatement, String interviewRule,
+            QualitySummary qualitySummary
+        ) {
+            this(jobId, externalJobCode, jobTitle, organizationName, location, eligibilityStatus,
+                fitScore, coveragePercent, employmentType, employmentIdentityConfirmed, admissionReasons,
+                warnings, sourceUrl, jobContentFingerprint, headcount, jobFamily, minimumEducation,
+                exactMajors, acceptedGraduationYears, maximumAge, ageReferenceDate, minimumExperienceYears,
+                requiredProfessionalTitles, duties, eventTitle, publishedOn, applicationStartsOn,
+                applicationEndsOn, dataQualityStatus, supervisingDepartment, jobCategory, jobGrade,
+                educationRequirementText, degreeRequirement, majorRequirementText, ageRequirementText,
+                genderRequirement, candidateScope, otherRequirements, originalRequirementText, interviewRatio,
+                professionalTestRequired, contactPhone, attachmentSourceUrl, applicationStartsAt,
+                applicationEndsAt, registrationUrl, qualificationReviewEndsOn, paymentEndsOn,
+                admissionTicketStartsOn, admissionTicketEndsOn, writtenExamOn, writtenExamSubjects,
+                graduateRule, overseasDegreeRule, experienceEvidenceRule, employmentStatement,
+                interviewRule, qualitySummary, null, null, null);
+        }
+
+        public CandidateMatch(
+            UUID jobId, String externalJobCode, String jobTitle, String organizationName, String location,
+            EligibilityStatus eligibilityStatus, int fitScore, int coveragePercent,
+            EmploymentType employmentType, boolean employmentIdentityConfirmed,
+            Set<JobAdmissionReason> admissionReasons, List<String> warnings,
+            String sourceUrl, String jobContentFingerprint,
+            int headcount, JobFamily jobFamily, EducationLevel minimumEducation,
+            Set<String> exactMajors, Set<Integer> acceptedGraduationYears,
+            Integer maximumAge, LocalDate ageReferenceDate, Integer minimumExperienceYears,
+            Set<String> requiredProfessionalTitles, String duties, String eventTitle,
             LocalDate publishedOn, LocalDate applicationStartsOn, LocalDate applicationEndsOn
         ) {
             this(jobId, externalJobCode, jobTitle, organizationName, location, eligibilityStatus,
@@ -245,7 +286,7 @@ public class CandidateMatchService {
                 applicationEndsOn, DataQualityStatus.NORMALIZED,
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                 sourceUrl, null, null, null, null, null, null, null, null, List.of(), null, null, null, null, null,
-                new QualitySummary(0, List.of(), List.of()));
+                new QualitySummary(0, List.of(), List.of()), null, null, null);
         }
     }
 }

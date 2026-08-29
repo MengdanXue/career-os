@@ -49,8 +49,58 @@ public interface JobUpsertService {
         String originalRequirementText,
         String interviewRatio,
         Boolean professionalTestRequired,
-        String contactPhone
+        String contactPhone,
+        String actualEmployer,
+        String worksite,
+        String employmentEvidence
     ) {
+        public NormalizedJob(
+            UUID recruitmentEventId,
+            UUID organizationId,
+            String organizationName,
+            String externalJobCode,
+            String title,
+            JobFamily jobFamily,
+            EmploymentType employmentType,
+            String location,
+            int headcount,
+            EducationLevel minimumEducation,
+            Set<String> exactMajors,
+            Set<Integer> acceptedGraduationYears,
+            Integer maximumAge,
+            LocalDate ageReferenceDate,
+            Integer minimumExperienceYears,
+            Set<String> requiredProfessionalTitles,
+            String duties,
+            String sourceUrl,
+            String stableSourceUrl,
+            String legacyStableSourceUrl,
+            List<UUID> evidenceIds,
+            String supervisingDepartment,
+            String jobCategory,
+            String jobGrade,
+            String educationRequirementText,
+            String degreeRequirement,
+            String majorRequirementText,
+            String ageRequirementText,
+            String genderRequirement,
+            String candidateScope,
+            String otherRequirements,
+            String originalRequirementText,
+            String interviewRatio,
+            Boolean professionalTestRequired,
+            String contactPhone
+        ) {
+            this(recruitmentEventId, organizationId, organizationName, externalJobCode, title,
+                jobFamily, employmentType, location, headcount, minimumEducation, exactMajors,
+                acceptedGraduationYears, maximumAge, ageReferenceDate, minimumExperienceYears,
+                requiredProfessionalTitles, duties, sourceUrl, stableSourceUrl, legacyStableSourceUrl,
+                evidenceIds, supervisingDepartment, jobCategory, jobGrade, educationRequirementText,
+                degreeRequirement, majorRequirementText, ageRequirementText, genderRequirement,
+                candidateScope, otherRequirements, originalRequirementText, interviewRatio,
+                professionalTestRequired, contactPhone, null, null, null);
+        }
+
         public NormalizedJob(
             UUID recruitmentEventId,
             UUID organizationId,
@@ -79,7 +129,8 @@ public interface JobUpsertService {
                 jobFamily, employmentType, location, headcount, minimumEducation, exactMajors,
                 acceptedGraduationYears, maximumAge, ageReferenceDate, minimumExperienceYears,
                 requiredProfessionalTitles, duties, sourceUrl, stableSourceUrl, legacyStableSourceUrl,
-                evidenceIds, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                evidenceIds, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null);
         }
 
         public NormalizedJob(
@@ -108,7 +159,8 @@ public interface JobUpsertService {
                 jobFamily, employmentType, location, headcount, minimumEducation, exactMajors,
                 acceptedGraduationYears, maximumAge, ageReferenceDate, minimumExperienceYears,
                 requiredProfessionalTitles, duties, sourceUrl, sourceUrl, null, evidenceIds,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null);
         }
 
         public NormalizedJob(
@@ -138,7 +190,8 @@ public interface JobUpsertService {
                 jobFamily, employmentType, location, headcount, minimumEducation, exactMajors,
                 acceptedGraduationYears, maximumAge, ageReferenceDate, minimumExperienceYears,
                 requiredProfessionalTitles, duties, sourceUrl, stableSourceUrl, null, evidenceIds,
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null);
         }
 
         public NormalizedJob {

@@ -79,12 +79,15 @@ public class OfficialExcelImportService {
                         if(isRepeatedHeaderRow(row,header,formatter))continue;
                         String title=value(row,header.columns(),formatter,"岗位名称","招聘岗位","招聘岗位名称","岗位","科室/岗位","部门/岗位","部门岗位","科室岗位","选聘岗位");
                         if(blank(title)) continue;
+                        String actualEmployer=value(row,header.columns(),formatter,
+                            "实际用人单位","用人单位","劳动合同签订单位","合同签订单位","用工单位","所属企业","所属单位");
                         String organizationName=value(row,header.columns(),formatter,
-                            "招聘单位","单位名称","用人单位","招聘主体");
+                            "招聘单位","单位名称","招聘主体");
                         if(blank(organizationName)&&blank(workbookDefaultOrganization))organizationName=value(
                             row,header.columns(),formatter,"用人学院（部门）","用人学院部门");
                         if(blank(organizationName)) organizationName=previousOrganization; else previousOrganization=organizationName;
                         if(blank(organizationName)) organizationName=workbookDefaultOrganization;
+                        if(blank(organizationName)) organizationName=actualEmployer;
                         if(blank(organizationName)) throw new IllegalArgumentException("招聘单位为空");
                         var organization=findOrCreateOrganization(organizationName,command.defaultLocation(),command.eventType());
                         String code=value(row,header.columns(),formatter,"岗位代码","岗位编号","职位代码","岗位序号","序号");
@@ -115,9 +118,15 @@ public class OfficialExcelImportService {
                             "是否设置专业（业务、技能、心理素质）测试","是否设置专业测试","专业测试"));
                         String contactPhone=value(row,header.columns(),formatter,"招聘单位咨询电话","咨询电话","联系电话");
                         String originalRequirementText=joinValues(educationText,degreeRequirement,majorText,ageText,conditions);
-                        String location=value(row,header.columns(),formatter,"工作地点","地区","所在地");
+                        String worksite=value(row,header.columns(),formatter,"工作地点","工作院区","院区","地区","所在地");
+                        actualEmployer=firstText(actualEmployer,command.defaultActualEmployer());
+                        worksite=firstText(worksite,command.defaultWorksite());
+                        String location=firstText(command.defaultLocation(),worksite);
                         EmploymentType parsedEmployment=OfficialJobFieldMapper.employmentType(employmentText);
-                        if(parsedEmployment==EmploymentType.UNKNOWN&&event.defaultEmploymentType!=null)parsedEmployment=event.defaultEmploymentType;
+                        if(blank(employmentText)&&event.defaultEmploymentType!=null)parsedEmployment=event.defaultEmploymentType;
+                        String employmentEvidence=employmentEvidence(
+                            employmentText,actualEmployer,worksite,
+                            firstText(command.defaultEmploymentEvidence(),event.employmentStatement));
                         var evidenceIds=new LinkedHashSet<UUID>();if(event.evidenceIds!=null)evidenceIds.addAll(event.evidenceIds);if(workbookEvidenceId!=null)evidenceIds.add(workbookEvidenceId);
                         var normalized=new NormalizedJob(
                             event.id,organization.id,organizationName,emptyToNull(code),title,OfficialJobFieldMapper.jobFamily(title,duties,majorText,supervisingDepartment),
@@ -127,7 +136,7 @@ public class OfficialExcelImportService {
                             command.sourceUrl(),command.workbookSourceUrl(),command.sourceUrl(),List.copyOf(evidenceIds),
                             supervisingDepartment,jobCategory,jobGrade,educationText,degreeRequirement,majorText,ageText,
                             genderRequirement,candidateScope,conditions,originalRequirementText,interviewRatio,
-                            professionalTestRequired,contactPhone);
+                            professionalTestRequired,contactPhone,actualEmployer,worksite,employmentEvidence);
                         String stableKey=upserts.stableKey(normalized);
                         if(!seen.add(stableKey)) throw new IllegalArgumentException("同一文件出现重复稳定岗位键");
                         normalizedJobs.add(normalized);
@@ -261,18 +270,29 @@ public class OfficialExcelImportService {
     private static OrganizationType organizationType(String name,EventType eventType){if(name.contains("医院"))return OrganizationType.HOSPITAL;if(name.contains("大学")||name.contains("学院")||name.contains("学校"))return OrganizationType.UNIVERSITY;if(eventType==EventType.STATE_OWNED_ENTERPRISE)return OrganizationType.STATE_OWNED_ENTERPRISE;if(eventType==EventType.UNIVERSITY)return OrganizationType.UNIVERSITY;if(eventType==EventType.HOSPITAL)return OrganizationType.HOSPITAL;return eventType==EventType.PUBLIC_INSTITUTION?OrganizationType.PUBLIC_INSTITUTION:OrganizationType.OTHER;}
     private static boolean blank(String value){return value==null||value.isBlank();} private static String emptyToNull(String value){return blank(value)?null:value;}
     private static String join(String first,String second){if(blank(first))return second;if(blank(second))return first;return first+"；"+second;}
+    private static String firstText(String value,String fallback){return blank(value)?emptyToNull(fallback):value.trim();}
+    private static String employmentEvidence(String employmentText,String actualEmployer,String worksite,String fallback){
+        var values=new LinkedHashMap<String,String>();
+        addEvidence(values,fallback);
+        addEvidence(values,blank(employmentText)?null:"用工性质："+employmentText.trim());
+        addEvidence(values,blank(actualEmployer)?null:"实际用人单位："+actualEmployer.trim());
+        addEvidence(values,blank(worksite)?null:"工作地点："+worksite.trim());
+        return values.isEmpty()?null:String.join("；",values.values());
+    }
+    private static void addEvidence(Map<String,String> values,String value){if(blank(value))return;String raw=value.trim();values.putIfAbsent(raw.replaceAll("[\\s：:；;]+",""),raw);}
     private static String joinValues(String...values){var result=new ArrayList<String>();for(String value:values)if(!blank(value))result.add(value);return result.isEmpty()?null:String.join("；",result);}
-    private static Map<String,String> fields(NormalizedJob job,String headcountText,String educationText,String majorText,String ageText,String employmentText){var fields=new LinkedHashMap<String,String>();put(fields,"externalJobCode",job.externalJobCode());put(fields,"title",job.title());put(fields,"organizationName",job.organizationName());put(fields,"headcount",headcountText);put(fields,"employmentType",employmentText);put(fields,"supervisingDepartment",job.supervisingDepartment());put(fields,"jobCategory",job.jobCategory());put(fields,"jobGrade",job.jobGrade());put(fields,"educationRequirementText",educationText);put(fields,"degreeRequirement",job.degreeRequirement());put(fields,"majorRequirementText",majorText);put(fields,"ageRequirementText",ageText);put(fields,"genderRequirement",job.genderRequirement());put(fields,"candidateScope",job.candidateScope());put(fields,"otherRequirements",job.otherRequirements());put(fields,"interviewRatio",job.interviewRatio());put(fields,"professionalTestRequired",job.professionalTestRequired()==null?null:job.professionalTestRequired().toString());put(fields,"contactPhone",job.contactPhone());return Collections.unmodifiableMap(fields);}
-    private static Map<String,String> sourceColumns(Header header){var result=new LinkedHashMap<String,String>();column(result,header,"externalJobCode","岗位代码","岗位编号","职位代码","岗位序号","序号");column(result,header,"title","岗位名称","招聘岗位","招聘岗位名称","岗位","科室/岗位","部门/岗位","部门岗位","科室岗位","选聘岗位");column(result,header,"organizationName","招聘单位","单位名称","用人单位","招聘主体","用人学院（部门）","用人学院部门");column(result,header,"headcount","招聘人数","人数","计划人数","计划数");column(result,header,"employmentType","用工性质","编制性质","岗位性质","聘用形式");column(result,header,"supervisingDepartment","主管单位（部门）","主管单位","主管部门");column(result,header,"jobCategory","岗位类别","岗位类型");column(result,header,"jobGrade","岗位等级","岗位级别");column(result,header,"educationRequirementText","学历","学历要求","最低学历","学历/学位");column(result,header,"degreeRequirement","学位","学位要求","学历/学位");column(result,header,"majorRequirementText","专业","专业要求","所学专业","学科/专业要求","专业/学科方向","学科专业要求");column(result,header,"ageRequirementText","年龄","年龄要求");column(result,header,"genderRequirement","性别要求","性别");column(result,header,"candidateScope","招聘对象","人员范围","对象范围");column(result,header,"otherRequirements","其他条件","其他资格条件或要求","资格条件","其他要求","备注");column(result,header,"interviewRatio","经笔试入围比例","入围面试比例","面试比例");column(result,header,"professionalTestRequired","是否设置专业（业务、技能、心理素质）测试","是否设置专业测试","专业测试");column(result,header,"contactPhone","招聘单位咨询电话","咨询电话","联系电话");return Collections.unmodifiableMap(result);}
+    private static Map<String,String> fields(NormalizedJob job,String headcountText,String educationText,String majorText,String ageText,String employmentText){var fields=new LinkedHashMap<String,String>();put(fields,"externalJobCode",job.externalJobCode());put(fields,"title",job.title());put(fields,"organizationName",job.organizationName());put(fields,"headcount",headcountText);put(fields,"employmentType",employmentText);put(fields,"actualEmployer",job.actualEmployer());put(fields,"worksite",job.worksite());put(fields,"employmentEvidence",job.employmentEvidence());put(fields,"supervisingDepartment",job.supervisingDepartment());put(fields,"jobCategory",job.jobCategory());put(fields,"jobGrade",job.jobGrade());put(fields,"educationRequirementText",educationText);put(fields,"degreeRequirement",job.degreeRequirement());put(fields,"majorRequirementText",majorText);put(fields,"ageRequirementText",ageText);put(fields,"genderRequirement",job.genderRequirement());put(fields,"candidateScope",job.candidateScope());put(fields,"otherRequirements",job.otherRequirements());put(fields,"interviewRatio",job.interviewRatio());put(fields,"professionalTestRequired",job.professionalTestRequired()==null?null:job.professionalTestRequired().toString());put(fields,"contactPhone",job.contactPhone());return Collections.unmodifiableMap(fields);}
+    private static Map<String,String> sourceColumns(Header header){var result=new LinkedHashMap<String,String>();column(result,header,"externalJobCode","岗位代码","岗位编号","职位代码","岗位序号","序号");column(result,header,"title","岗位名称","招聘岗位","招聘岗位名称","岗位","科室/岗位","部门/岗位","部门岗位","科室岗位","选聘岗位");column(result,header,"organizationName","招聘单位","单位名称","招聘主体","用人学院（部门）","用人学院部门");column(result,header,"headcount","招聘人数","人数","计划人数","计划数");column(result,header,"employmentType","用工性质","编制性质","岗位性质","聘用形式");column(result,header,"actualEmployer","实际用人单位","用人单位","劳动合同签订单位","合同签订单位","用工单位","所属企业","所属单位");column(result,header,"worksite","工作地点","工作院区","院区","地区","所在地");column(result,header,"employmentEvidence","用工性质","编制性质","岗位性质","聘用形式");column(result,header,"supervisingDepartment","主管单位（部门）","主管单位","主管部门");column(result,header,"jobCategory","岗位类别","岗位类型");column(result,header,"jobGrade","岗位等级","岗位级别");column(result,header,"educationRequirementText","学历","学历要求","最低学历","学历/学位");column(result,header,"degreeRequirement","学位","学位要求","学历/学位");column(result,header,"majorRequirementText","专业","专业要求","所学专业","学科/专业要求","专业/学科方向","学科专业要求");column(result,header,"ageRequirementText","年龄","年龄要求");column(result,header,"genderRequirement","性别要求","性别");column(result,header,"candidateScope","招聘对象","人员范围","对象范围");column(result,header,"otherRequirements","其他条件","其他资格条件或要求","资格条件","其他要求","备注");column(result,header,"interviewRatio","经笔试入围比例","入围面试比例","面试比例");column(result,header,"professionalTestRequired","是否设置专业（业务、技能、心理素质）测试","是否设置专业测试","专业测试");column(result,header,"contactPhone","招聘单位咨询电话","咨询电话","联系电话");return Collections.unmodifiableMap(result);}
     private static Map<String,String> evidenceFields(Map<String,String> fields,Map<String,String> sourceColumns){var result=new LinkedHashMap<String,String>();fields.forEach((field,value)->{if(sourceColumns.containsKey(field))result.put(field,value);});return Collections.unmodifiableMap(result);}
     private static void column(Map<String,String> target,Header header,String field,String...aliases){for(String alias:aliases){String label=header.labels().get(normalizeHeader(alias));if(label!=null&&!label.isBlank()){target.put(field,label);return;}}}
     private static void put(Map<String,String> target,String key,String value){if(!blank(value))target.put(key,value);}
 
     private record Header(int rowIndex,Map<String,Integer> columns,Map<String,String> labels){}
     private record RowEvidence(String sheet,int row,Map<String,String> fields,Map<String,String> sourceColumns){}
-    public record ImportCommand(String announcementTitle,String sourceUrl,int recruitmentYear,LocalDate publishedOn,LocalDate ageReferenceDate,String defaultLocation,EventType eventType,String defaultOrganizationName,String workbookSourceUrl){
-        public ImportCommand(String announcementTitle,String sourceUrl,int recruitmentYear,LocalDate publishedOn,LocalDate ageReferenceDate,String defaultLocation,EventType eventType){this(announcementTitle,sourceUrl,recruitmentYear,publishedOn,ageReferenceDate,defaultLocation,eventType,null,sourceUrl);}
-        public ImportCommand(String announcementTitle,String sourceUrl,int recruitmentYear,LocalDate publishedOn,LocalDate ageReferenceDate,String defaultLocation,EventType eventType,String defaultOrganizationName){this(announcementTitle,sourceUrl,recruitmentYear,publishedOn,ageReferenceDate,defaultLocation,eventType,defaultOrganizationName,sourceUrl);}
+    public record ImportCommand(String announcementTitle,String sourceUrl,int recruitmentYear,LocalDate publishedOn,LocalDate ageReferenceDate,String defaultLocation,EventType eventType,String defaultOrganizationName,String workbookSourceUrl,String defaultActualEmployer,String defaultWorksite,String defaultEmploymentEvidence){
+        public ImportCommand(String announcementTitle,String sourceUrl,int recruitmentYear,LocalDate publishedOn,LocalDate ageReferenceDate,String defaultLocation,EventType eventType){this(announcementTitle,sourceUrl,recruitmentYear,publishedOn,ageReferenceDate,defaultLocation,eventType,null,sourceUrl,null,null,null);}
+        public ImportCommand(String announcementTitle,String sourceUrl,int recruitmentYear,LocalDate publishedOn,LocalDate ageReferenceDate,String defaultLocation,EventType eventType,String defaultOrganizationName){this(announcementTitle,sourceUrl,recruitmentYear,publishedOn,ageReferenceDate,defaultLocation,eventType,defaultOrganizationName,sourceUrl,null,null,null);}
+        public ImportCommand(String announcementTitle,String sourceUrl,int recruitmentYear,LocalDate publishedOn,LocalDate ageReferenceDate,String defaultLocation,EventType eventType,String defaultOrganizationName,String workbookSourceUrl){this(announcementTitle,sourceUrl,recruitmentYear,publishedOn,ageReferenceDate,defaultLocation,eventType,defaultOrganizationName,workbookSourceUrl,null,null,null);}
         public ImportCommand{if(blank(announcementTitle)||blank(sourceUrl)||blank(workbookSourceUrl))throw new IllegalArgumentException("announcementTitle, sourceUrl and workbookSourceUrl are required");if(eventType==null)eventType=EventType.PUBLIC_INSTITUTION;}
     }
     public record RowError(String sheet,int row,String message){}

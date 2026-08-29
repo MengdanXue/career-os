@@ -40,6 +40,7 @@ class HospitalOfficialJobImportServiceTest {
         event.recruitmentYear = 2024; event.eventType = EventType.HOSPITAL;
         event.sourceUrl = "https://zp.hz-hospital.com/index/index/announcement_desc/id/212.html";
         event.defaultEmploymentType = EmploymentType.PUBLIC_INSTITUTION_FORMAL;
+        event.employmentStatement = "公告：签订事业单位聘用合同";
         event.evidenceIds = List.of(UUID.randomUUID());
         var organization = new JpaModels.OrganizationEntity();
         organization.id = UUID.randomUUID(); organization.name = "杭州市第一人民医院";
@@ -52,7 +53,8 @@ class HospitalOfficialJobImportServiceTest {
         var parsed = new ParsedHospitalAnnouncement(event.title, LocalDate.of(2024, 3, 8),
             "http://zhaopin.hz-hospital.com:8080/", List.of(new HospitalJobRow(
                 "X-信息中心", "信息工作人员", "专业技术", "硕士研究生/硕士",
-                "计算机科学与技术", "应届毕业生", "1", "38周岁及以下")));
+                "计算机科学与技术", "应届毕业生", "1", "38周岁及以下",
+                "杭州市第一人民医院", "城北院区", "员额制")));
 
         var result = service.importAnnouncement(event.sourceUrl, parsed);
 
@@ -65,6 +67,11 @@ class HospitalOfficialJobImportServiceTest {
         assertThat(batch.getValue().jobs()).singleElement().satisfies(job -> {
             assertThat(job.externalJobCode()).isEqualTo("X-信息中心|信息工作人员");
             assertThat(job.stableSourceUrl()).isEqualTo(event.sourceUrl);
+            assertThat(job.location()).isEqualTo("杭州");
+            assertThat(job.actualEmployer()).isEqualTo("杭州市第一人民医院");
+            assertThat(job.worksite()).isEqualTo("城北院区");
+            assertThat(job.employmentType()).isEqualTo(EmploymentType.QUOTA_OR_FILING);
+            assertThat(job.employmentEvidence()).contains("员额制", "杭州市第一人民医院", "城北院区");
         });
         verify(admissions).classify(any(), any());
     }
