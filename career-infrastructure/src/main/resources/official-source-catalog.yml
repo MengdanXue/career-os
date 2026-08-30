@@ -182,18 +182,63 @@ sources:
     name: 临安区政府招聘
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.linan.gov.cn/
-    listingUrl: https://www.linan.gov.cn/col/col1229261156/index.html
-    strategy: STATIC_HTML
+    strategy: JCMS_LISTING
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
-    articleUrlRegex: '^https://www\.linan\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+    enabled: true
+    listingEntries:
+      - code: personnel-information
+        entryUri: https://www.linan.gov.cn/col/col1229261156/index.html
+        role: PRIMARY
+        mode: JCMS_PARAM_JSON
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: true
+        listingApiUri: 'https://www.linan.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2242&tplSetId=VuAIYKXLw7THdhTjKO2yP&pageType=column&tagId=%E4%BF%A1%E6%81%AF%E5%88%97%E8%A1%A8&editType=null&pageId=1229261156'
+        jcmsSearch: {xxgkId: F001, xxgkType: '', className: 人事信息}
+        historicalPageSize: 15
+        historicalMaxPages: 12
+        incrementalListingMaxPages: 2
+        allowedHosts: [www.linan.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        articleUrlRegex: '^https://www\.linan\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        listingItemSelector: 'ul.ajax-ul > li.cf.border-line'
+        itemLinkSelector: 'a.fl[href]'
+        itemTitleSelector: 'a.fl[href]'
+        itemPublishedDateSelector: 'span.fr'
+        linkSelector: 'a.fl[href]'
+        reportedTotalRegex: 'count=\\"(\d+)\\"'
+        reportedCurrentPageRegex: 'pageNo=\\"(\d+)\\"'
+        titleIncludeRegex: '招聘|招考|选聘|引进|人才|报名|笔试|考试|资格|复审|成绩|面试|体检|考察|公示|录用|聘用|递补|取消|核减'
+        titleExcludeRegex: '招聘会|培训|讲座|编外|派遣'
   - code: HZ_JIANDE_GOV
     name: 建德市政府招聘
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.jiande.gov.cn/
-    strategy: UNSUPPORTED
+    strategy: JCMS_LISTING
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
+    enabled: true
+    listingEntries:
+      - code: recruitment-records
+        entryUri: 'https://www.jiande.gov.cn/col/col1229535302/index.html?number=JD16-JD1602'
+        role: PRIMARY
+        mode: JCMS_PARAM_JSON
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024]
+        completenessRequired: true
+        listingApiUri: 'https://www.jiande.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2210&tplSetId=ELWAAQQXOD87oUzmcMS2i&pageType=column&editType=null&pageId=1229535302&tagId=%E7%BB%84%E9%85%8D%E5%88%86%E7%B1%BBlist'
+        jcmsSearch: {xxgkId: JD16-JD1602, xxgkType: '', className: 招聘招录}
+        historicalPageSize: 15
+        historicalMaxPages: 15
+        incrementalListingMaxPages: 2
+        allowedHosts: [www.jiande.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        articleUrlRegex: '^https://www\.jiande\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        listingItemSelector: 'ul.ajax-ul > li.cf.border-line'
+        itemLinkSelector: 'a.fl[href]'
+        itemTitleSelector: 'a.fl[href]'
+        itemPublishedDateSelector: 'span.fr'
+        linkSelector: 'a.fl[href]'
+        reportedTotalRegex: 'count=\\"(\d+)\\"'
+        reportedCurrentPageRegex: 'pageNo=\\"(\d+)\\"'
+        titleIncludeRegex: '招聘|招考|选聘|引进|人才|报名|笔试|考试|资格|复审|成绩|面试|体检|考察|公示|录用|聘用|递补|取消|核减'
+        titleExcludeRegex: '招聘会|培训|讲座|编外|派遣'
   - code: HZ_TONGLU_GOV
     name: 桐庐县政府招聘
     routeCode: PUBLIC_TECH

@@ -11,6 +11,7 @@ import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -512,6 +513,63 @@ class ConfigurableSourceListingReaderTest {
             .read(source, new ListingQuery(Set.of(2026), true)))
             .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
             .hasMessageContaining("reported total");
+    }
+
+    @Test
+    void multiEntryJcmsSerializesStructuredSearchAsANestedJsonStringAcrossPages() throws Exception {
+        Map<String, Object> entry = baseEntry(
+            "jcms", "JCMS_PARAM_JSON", "https://official.example/column/index.html");
+        entry.put("listingApiUri", "https://official.example/api/list?channel=jobs");
+        entry.put("historicalPageSize", 1);
+        entry.put("historicalMaxPages", 2);
+        entry.put("jcmsSearch", new LinkedHashMap<>(Map.of(
+            "xxgkId", "F001",
+            "xxgkType", "",
+            "className", "人事\"信息\\archive")));
+        var requests = new java.util.ArrayList<URI>();
+        DocumentFetcher fetcher = request -> {
+            requests.add(request.uri());
+            int page = requests.size();
+            return new FetchedDocument(request.uri(), 200, "application/json",
+                jcmsPage(2, "/art/2026/8/2" + page + "/art_" + page + ".html",
+                    "2026年招聘公告" + page), null, null);
+        };
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.links()).hasSize(2);
+        assertThat(requests).hasSize(2);
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (int index = 0; index < requests.size(); index++) {
+            String encoded = java.util.Arrays.stream(requests.get(index).getRawQuery().split("&"))
+                .filter(value -> value.startsWith("paramJson="))
+                .findFirst().orElseThrow().substring("paramJson=".length());
+            var outer = mapper.readTree(URLDecoder.decode(encoded, StandardCharsets.UTF_8));
+            assertThat(outer.path("pageNo").asInt()).isEqualTo(index + 1);
+            assertThat(outer.path("pageSize").asInt()).isEqualTo(1);
+            assertThat(outer.path("search").isTextual()).isTrue();
+            var search = mapper.readTree(outer.path("search").asText());
+            assertThat(search.path("xxgkId").asText()).isEqualTo("F001");
+            assertThat(search.path("xxgkType").asText()).isEmpty();
+            assertThat(search.path("className").asText()).isEqualTo("人事\"信息\\archive");
+        }
+    }
+
+    @Test
+    void multiEntryJcmsRejectsANonObjectStructuredSearch() {
+        Map<String, Object> entry = baseEntry(
+            "jcms", "JCMS_PARAM_JSON", "https://official.example/column/index.html");
+        entry.put("listingApiUri", "https://official.example/api/list");
+        entry.put("historicalPageSize", 15);
+        entry.put("historicalMaxPages", 2);
+        entry.put("jcmsSearch", "xxgkId=F001");
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(
+            new MapFetcher(Map.of()), new StaticHtmlSourceDiscoverer()).read(
+                singleEntrySource(entry), new ListingQuery(Set.of(2026), true)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("jcmsSearch", "object");
     }
 
     @Test

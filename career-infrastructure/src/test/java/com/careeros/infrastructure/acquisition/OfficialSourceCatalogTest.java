@@ -144,6 +144,44 @@ class OfficialSourceCatalogTest {
     }
 
     @Test
+    void catalogPublishesLinanAndJiandeAsStructuredJcmsSearchSources() {
+        var catalog = OfficialSourceCatalog.load();
+        var linan = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_LINAN_GOV"))
+            .findFirst().orElseThrow();
+        var jiande = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_JIANDE_GOV"))
+            .findFirst().orElseThrow();
+
+        assertThat(linan.enabled()).isTrue();
+        assertThat(linan.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(linan.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "JCMS_PARAM_JSON")
+                .containsEntry("historicalPageSize", 15)
+                .containsEntry("historicalMaxPages", 12)
+                .containsEntry("completenessRequired", true);
+            assertThat(entry.get("jcmsSearch")).isEqualTo(Map.of(
+                "xxgkId", "F001", "xxgkType", "", "className", "人事信息"));
+        });
+
+        assertThat(jiande.enabled()).isTrue();
+        assertThat(jiande.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(jiande.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "JCMS_PARAM_JSON")
+                .containsEntry("historicalPageSize", 15)
+                .containsEntry("historicalMaxPages", 15)
+                .containsEntry("knownArchiveGapYears", List.of(2024))
+                .containsEntry("completenessRequired", true);
+            assertThat(entry.get("entryUri").toString())
+                .contains("col1229535302", "number=JD16-JD1602");
+            assertThat(entry.get("jcmsSearch")).isEqualTo(Map.of(
+                "xxgkId", "JD16-JD1602", "xxgkType", "", "className", "招聘招录"));
+        });
+    }
+
+    @Test
     void catalogPublishesFirstHospitalAsAnExactAuthorityMultiEntrySource() {
         var hospital = OfficialSourceCatalog.load().sources().stream()
             .filter(source -> source.code().equals("HZ_FIRST_HOSPITAL"))

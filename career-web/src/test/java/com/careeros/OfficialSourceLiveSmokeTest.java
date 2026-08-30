@@ -185,6 +185,42 @@ class OfficialSourceLiveSmokeTest {
     }
 
     @Test
+    void linanStructuredJcmsSearchClosesThe141RowPersonnelColumn() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_LINAN_GOV"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var entry = result.evidenceByEntry().get("personnel-information")
+            .evidenceByYear().get(2026);
+
+        assertThat(entry.pageCount()).isEqualTo(10);
+        assertThat(entry.rawCount()).isEqualTo(141);
+        assertThat(entry.stopReason()).isEqualTo("REPORTED_TOTAL_REACHED");
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+        assertThat(result.links()).isNotEmpty();
+    }
+
+    @Test
+    void jiandeStructuredJcmsSearchCloses189RowsWithoutHidingThe2024Gap() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_JIANDE_GOV"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var entry = result.evidenceByEntry().get("recruitment-records")
+            .evidenceByYear().get(2026);
+
+        assertThat(entry.pageCount()).isEqualTo(13);
+        assertThat(entry.rawCount()).isEqualTo(189);
+        assertThat(entry.stopReason()).isEqualTo("REPORTED_TOTAL_REACHED");
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isFalse();
+        assertThat(result.evidenceByYear().get(2024).stopReason())
+            .isEqualTo("KNOWN_OFFICIAL_ARCHIVE_GAP");
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+        assertThat(result.links()).isNotEmpty();
+    }
+
+    @Test
     void xixiLiveListingPreservesLinksDatesAndIncrementalYearClassification() {
         var source = multiEntrySource(multiEntryDefinition("HZ_XIXI_HOSPITAL"));
         var entry = ListingEntryContract.from(source).stream()

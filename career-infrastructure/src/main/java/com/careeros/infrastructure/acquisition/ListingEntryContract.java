@@ -106,6 +106,7 @@ public record ListingEntryContract(
         Role role = enumValue(
             Role.class, value(merged, "role", "PRIMARY"), "entry role for " + code);
         Mode mode = mode(merged, code);
+        validateJcmsSearch(merged, mode);
         Set<Integer> years = years(merged);
         Set<Integer> knownArchiveGapYears = configuredYears(
             merged.get("knownArchiveGapYears"), "known archive gap year");
@@ -165,6 +166,13 @@ public record ListingEntryContract(
         if ("STATIC_PAGE_SUFFIX".equals(mode)) mode = Mode.STATIC_SUFFIX_TEMPLATE.name();
         if ("FIXED_HTTPS_EVIDENCE".equals(mode)) mode = Mode.FIXED_EVIDENCE.name();
         return enumValue(Mode.class, mode, "entry mode for " + entryCode);
+    }
+
+    private static void validateJcmsSearch(Map<String, Object> values, Mode mode) {
+        if (mode != Mode.JCMS_PARAM_JSON || !values.containsKey("jcmsSearch")) return;
+        if (!(values.get("jcmsSearch") instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("jcmsSearch must be an object");
+        }
     }
 
     private static URI uri(Map<String, Object> values) {

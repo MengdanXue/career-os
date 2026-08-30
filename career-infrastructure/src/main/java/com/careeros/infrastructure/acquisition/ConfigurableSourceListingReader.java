@@ -721,7 +721,7 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         URI base = configured == null ? source.entryUri() : URI.create(configured.toString());
         requireOfficialHttps(source, base);
         String param = URLEncoder.encode(
-            "{\"pageNo\":" + page + ",\"pageSize\":" + pageSize + "}", StandardCharsets.UTF_8);
+            jcmsParamJson(source.configuration(), page, pageSize), StandardCharsets.UTF_8);
         return URI.create(base + (base.getRawQuery() == null ? "?" : "&") + "paramJson=" + param);
     }
 
@@ -730,8 +730,32 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         URI base = configured == null ? entry.entryUri() : URI.create(configured.toString());
         requireOfficial(entry, base);
         String param = URLEncoder.encode(
-            "{\"pageNo\":" + page + ",\"pageSize\":" + pageSize + "}", StandardCharsets.UTF_8);
+            jcmsParamJson(entry.configuration(), page, pageSize), StandardCharsets.UTF_8);
         return URI.create(base + (base.getRawQuery() == null ? "?" : "&") + "paramJson=" + param);
+    }
+
+    private static String jcmsParamJson(
+        Map<String, Object> configuration, int page, int pageSize
+    ) {
+        Map<String, Object> outer = new LinkedHashMap<>();
+        outer.put("pageNo", page);
+        outer.put("pageSize", pageSize);
+        if (configuration.containsKey("jcmsSearch")) {
+            Object configured = configuration.get("jcmsSearch");
+            if (!(configured instanceof Map<?, ?> search)) {
+                throw new IllegalArgumentException("jcmsSearch must be an object");
+            }
+            try {
+                outer.put("search", JSON.writeValueAsString(search));
+            } catch (Exception invalid) {
+                throw new IllegalArgumentException("jcmsSearch must be JSON serializable", invalid);
+            }
+        }
+        try {
+            return JSON.writeValueAsString(outer);
+        } catch (Exception invalid) {
+            throw new IllegalArgumentException("JCMS pagination parameters are invalid", invalid);
+        }
     }
 
     private static URI templatePageUri(ListingEntryContract entry, int page) {
