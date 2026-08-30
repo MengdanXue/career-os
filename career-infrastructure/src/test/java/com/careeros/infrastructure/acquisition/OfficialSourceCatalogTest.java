@@ -98,6 +98,68 @@ class OfficialSourceCatalogTest {
     }
 
     @Test
+    void catalogPublishesChildrensHospitalCurrentLifecycleAndDistrictFixedEvidence() {
+        var catalog = OfficialSourceCatalog.load();
+
+        var children = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_CHILDRENS_HOSPITAL"))
+            .findFirst().orElseThrow();
+        assertThat(children.enabled()).isTrue();
+        assertThat(children.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.STATIC_HTML);
+        assertThat(children.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("entryUri", "https://rs.hzch.org/apply/getMore.action?pageNumber=1")
+                .containsEntry("role", "CAMPAIGN_STATE")
+                .containsEntry("mode", "CAMPAIGN_STATE")
+                .containsEntry("knownArchiveGapYears", List.of(2024, 2025))
+                .containsEntry("completenessRequired", false);
+            assertThat(entry.get("articleUrlRegex").toString()).contains("getNotice\\.action");
+        });
+
+        var chunan = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_CHUNAN_GOV")).findFirst().orElseThrow();
+        assertThat(chunan.enabled()).isTrue();
+        assertThat(chunan.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("role", "HISTORICAL")
+                .containsEntry("mode", "FIXED_EVIDENCE")
+                .containsEntry("knownArchiveGapYears", List.of(2024, 2025, 2026))
+                .containsEntry("completenessRequired", false);
+            assertThat(entry.get("historicalEvidenceByYear")).isInstanceOf(Map.class);
+            assertThat(entry.get("allowedHosts").toString()).contains("qdh.gov.cn", "zjjcmspublic");
+        });
+
+        var tonglu = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_TONGLU_GOV")).findFirst().orElseThrow();
+        assertThat(tonglu.enabled()).isFalse();
+        assertThat(tonglu.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.UNSUPPORTED);
+        assertThat(tonglu.listingEntries()).isEmpty();
+    }
+
+    @Test
+    void catalogPublishesHangzhouInstituteOfMedicineEngineeringRecruitment() {
+        var source = OfficialSourceCatalog.load().sources().stream()
+            .filter(candidate -> candidate.code().equals("CAS_HANGZHOU_MEDICINE"))
+            .findFirst().orElseThrow();
+
+        assertThat(source.enabled()).isTrue();
+        assertThat(source.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.STATIC_HTML);
+        assertThat(source.configuration())
+            .containsEntry("scriptAttachmentVariable", "appLinkStr");
+        assertThat(source.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("entryUri", "https://him.cas.cn/rczp/zpgg/")
+                .containsEntry("role", "PRIMARY")
+                .containsEntry("mode", "LINKED_PAGE")
+                .containsEntry("knownArchiveGapYears", List.of(2024))
+                .containsEntry("completenessRequired", true)
+                .containsEntry("historicalMaxPages", 1);
+            assertThat(entry.get("titleExcludeRegex").toString())
+                .contains("科研助理招聘启事", "博士后招聘公告", "劳务派遣");
+        });
+    }
+
+    @Test
     void catalogPublishesFuyangGeneralAndHealthJcmsContractsAsPartialCoverageInputs() {
         var fuyang = OfficialSourceCatalog.load().sources().stream()
             .filter(source -> source.code().equals("HZ_FUYANG_GOV"))

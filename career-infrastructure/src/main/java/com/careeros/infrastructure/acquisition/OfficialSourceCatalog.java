@@ -32,7 +32,8 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
         String historicalPaginationMode,
         String adapterType,
         List<Map<String, Object>> listingEntries,
-        String imageEvidenceSelector
+        String imageEvidenceSelector,
+        String scriptAttachmentVariable
     ) {
         public SourceDefinition {
             code = required(code, "code");
@@ -57,6 +58,7 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
             historicalPaginationMode = optional(historicalPaginationMode);
             adapterType = optional(adapterType);
             imageEvidenceSelector = optional(imageEvidenceSelector);
+            scriptAttachmentVariable = optional(scriptAttachmentVariable);
             if (enabled && !multiEntry && (historicalPaginationMode == null || adapterType == null)) {
                 throw new IllegalArgumentException(code + " enabled source requires pagination and adapter contracts");
             }
@@ -71,7 +73,7 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
         ) {
             this(code, name, routeCode, officialRootUrl, listingUrl, strategy, historicalYears,
                 enabled, articleUrlRegex, linkSelector, titleIncludeRegex, titleExcludeRegex,
-                historicalPaginationMode, adapterType, List.of());
+                historicalPaginationMode, adapterType, List.of(), null, null);
         }
 
         public SourceDefinition(
@@ -84,7 +86,7 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
         ) {
             this(code, name, routeCode, officialRootUrl, listingUrl, strategy, historicalYears,
                 enabled, articleUrlRegex, linkSelector, titleIncludeRegex, titleExcludeRegex,
-                historicalPaginationMode, adapterType, listingEntries, null);
+                historicalPaginationMode, adapterType, listingEntries, null, null);
         }
 
         public Map<String, Object> configuration() {
@@ -94,6 +96,9 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
             values.put("historicalYears", historicalYears);
             if (!listingEntries.isEmpty()) values.put("listingEntries", listingEntries);
             if (imageEvidenceSelector != null) values.put("imageEvidenceSelector", imageEvidenceSelector);
+            if (scriptAttachmentVariable != null) {
+                values.put("scriptAttachmentVariable", scriptAttachmentVariable);
+            }
             return Map.copyOf(values);
         }
 

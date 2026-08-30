@@ -8,6 +8,7 @@ import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
 import com.careeros.infrastructure.acquisition.ConfigurableSourceListingReader;
+import com.careeros.infrastructure.acquisition.HtmlAttachmentDiscoverer;
 import com.careeros.infrastructure.acquisition.JavaHttpDocumentFetcher;
 import com.careeros.infrastructure.acquisition.ListingEntryContract;
 import com.careeros.infrastructure.acquisition.MediaTypeDetector;
@@ -321,6 +322,40 @@ class OfficialSourceLiveSmokeTest {
             .contains("实验技术人员"));
         assertThat(result.evidenceByYear().values())
             .allSatisfy(evidence -> assertThat(evidence.traversalComplete()).isFalse());
+    }
+
+    @Test
+    void hangzhouMedicineInstituteExposesEngineeringArchiveAndOfficialWorkbook() {
+        var source = multiEntrySource(multiEntryDefinition("CAS_HANGZHOU_MEDICINE"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var evidence = result.evidenceByEntry().get("engineering-and-research-support")
+            .evidenceByYear().get(2026);
+
+        assertThat(evidence.pageCount()).isEqualTo(1);
+        // The page repeats 60 visible records for desktop/mobile, but only 23 have
+        // same-site official detail URLs inside the configured evidence boundary.
+        assertThat(evidence.rawCount()).isEqualTo(23);
+        assertThat(result.evidenceByYear().get(2024).stopReason())
+            .isEqualTo("KNOWN_OFFICIAL_ARCHIVE_GAP");
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+        assertThat(result.links()).anySatisfy(link -> assertThat(link.link().title())
+            .contains("工程技术人员"));
+
+        var entry = ListingEntryContract.from(source).getFirst();
+        URI notice = URI.create("https://him.cas.cn/rczp/zpgg/202604/t20260407_8182578.html");
+        var fetched = fetcher.fetch(new FetchRequest(
+            notice, entry.readContract().exactHosts(), null, null,
+            Duration.ofSeconds(20), 26_214_400, source.id(), Duration.ZERO,
+            com.careeros.application.AcquisitionHttpPorts.FetchMethod.GET,
+            entry.readContract()));
+        var attachments = new HtmlAttachmentDiscoverer().discover(source,
+            new com.careeros.application.AcquisitionHttpPorts.DiscoveredLink(
+                notice, "2026年度招聘计划", entry.readContract()), fetched.content());
+
+        assertThat(attachments).anySatisfy(link -> assertThat(link.uri().toString())
+            .endsWith("/P020260409691586818094.xlsx"));
     }
 
     @Test

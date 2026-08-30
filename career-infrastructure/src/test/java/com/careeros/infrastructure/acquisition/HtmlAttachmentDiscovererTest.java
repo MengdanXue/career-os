@@ -125,6 +125,33 @@ class HtmlAttachmentDiscovererTest {
         assertThat(links).isEmpty();
     }
 
+    @Test
+    void discoversPipeSeparatedOfficialAttachmentsFromOneConfiguredScriptVariable() {
+        var contract = new HttpReadContract(TransportPolicy.HTTPS_ONLY,
+            java.util.Set.of("him.cas.cn"), java.util.Set.of("/rczp/zpgg/"));
+        var parent = new DiscoveredLink(
+            URI.create("https://him.cas.cn/rczp/zpgg/202604/t20260409_123.html"),
+            "工程技术岗位招聘", contract);
+        byte[] html = """
+            <script>
+              var unrelated = './do-not-collect.pdf';
+              var appLinkStr='./P020260409691586818094.xlsx|https://evil.example/jobs.pdf|../../outside.pdf';
+            </script>
+            """.getBytes(StandardCharsets.UTF_8);
+        RecruitmentSource configured = source(Map.of(
+            "attachmentSelector", "a[href]",
+            "scriptAttachmentVariable", "appLinkStr",
+            "allowedHosts", List.of("him.cas.cn")));
+
+        var links = new HtmlAttachmentDiscoverer().discover(configured, parent, html);
+
+        assertThat(links).singleElement().satisfies(link -> {
+            assertThat(link.uri()).isEqualTo(URI.create(
+                "https://him.cas.cn/rczp/zpgg/202604/P020260409691586818094.xlsx"));
+            assertThat(link.readContract()).isEqualTo(contract);
+        });
+    }
+
     private static RecruitmentSource source() {
         return source(Map.of(
             "attachmentSelector", "a[href]",

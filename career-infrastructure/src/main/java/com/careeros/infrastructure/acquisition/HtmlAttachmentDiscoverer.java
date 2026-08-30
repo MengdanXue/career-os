@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
 
 public final class HtmlAttachmentDiscoverer implements AttachmentDiscoverer {
@@ -55,9 +56,49 @@ public final class HtmlAttachmentDiscoverer implements AttachmentDiscoverer {
                 distinct.putIfAbsent(uri, new DiscoveredLink(uri, title, page.readContract()));
             }
         }
+        discoverConfiguredScriptAttachments(source, page, document, hosts, distinct);
         var result = new ArrayList<>(distinct.values());
         result.sort(java.util.Comparator.comparing(link -> link.uri().toString()));
         return List.copyOf(result);
+    }
+
+    private static void discoverConfiguredScriptAttachments(
+        RecruitmentSource source,
+        DiscoveredLink page,
+        org.jsoup.nodes.Document document,
+        Set<String> hosts,
+        LinkedHashMap<URI, DiscoveredLink> distinct
+    ) {
+        Object configured = source.configuration().get("scriptAttachmentVariable");
+        if (configured == null || configured.toString().isBlank()) return;
+        String variable = configured.toString().trim();
+        if (!variable.matches("[A-Za-z_$][A-Za-z0-9_$]{0,63}")) {
+            throw new IllegalArgumentException("scriptAttachmentVariable is invalid");
+        }
+        Pattern assignment = Pattern.compile(
+            "(?s)(?:\\b(?:var|let|const)\\s+)?\\b" + Pattern.quote(variable)
+                + "\\s*=\\s*(['\"])(.{0,65536}?)\\1");
+        int accepted = 0;
+        for (var script : document.select("script")) {
+            var matcher = assignment.matcher(script.data());
+            while (matcher.find() && accepted < 50) {
+                for (String candidate : matcher.group(2).split("\\|", -1)) {
+                    if (accepted >= 50) break;
+                    String value = candidate.trim();
+                    if (!value.matches("(?i)^\\./[A-Za-z0-9][A-Za-z0-9._-]{0,254}\\.(?:pdf|xls|xlsx)(?:[?#].*)?$")) {
+                        continue;
+                    }
+                    URI uri;
+                    try { uri = CanonicalUri.normalize(page.uri().resolve(value)); }
+                    catch (IllegalArgumentException ignored) { continue; }
+                    if (!authorized(page.readContract(), hosts, uri)
+                        || !supportedCandidate(uri)) continue;
+                    distinct.putIfAbsent(uri,
+                        new DiscoveredLink(uri, filename(uri), page.readContract()));
+                    accepted++;
+                }
+            }
+        }
     }
 
     private static boolean authorized(HttpReadContract contract, Set<String> legacyHosts, URI uri) {

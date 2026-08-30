@@ -397,9 +397,25 @@ sources:
     name: 淳安县政府招聘
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.qdh.gov.cn/
-    strategy: UNSUPPORTED
+    strategy: STATIC_HTML
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
+    enabled: true
+    allowedHosts: [www.qdh.gov.cn, zjjcmspublic.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+    attachmentSelector: 'a[href]'
+    listingEntries:
+      - code: verified-official-evidence
+        entryUri: https://www.qdh.gov.cn/art/2024/4/3/art_1289606_59033591.html
+        role: HISTORICAL
+        mode: FIXED_EVIDENCE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025, 2026]
+        completenessRequired: false
+        allowedHosts: [www.qdh.gov.cn, zjjcmspublic.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        historicalEvidenceByYear:
+          '2024': [https://www.qdh.gov.cn/art/2024/4/3/art_1289606_59033591.html]
+          '2025': []
+          '2026': []
+          '2027': []
   - code: HDU_RECRUITMENT
     name: 杭州电子科技大学招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
@@ -549,10 +565,28 @@ sources:
   - code: HZ_CHILDRENS_HOSPITAL
     name: 杭州市儿童医院招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
-    officialRootUrl: https://www.hzch.org.cn/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    officialRootUrl: https://rs.hzch.org/
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    allowedHosts: [rs.hzch.org]
+    allowedPathPrefixes: [/apply/, /file_zp/attached/]
+    attachmentSelector: 'a[href]'
+    imageEvidenceSelector: "img[src*='file_zp/attached/'], img[src*='downloadAccessory.action']"
+    listingEntries:
+      - code: current-recruitment-lifecycle
+        entryUri: https://rs.hzch.org/apply/getMore.action?pageNumber=1
+        role: CAMPAIGN_STATE
+        mode: CAMPAIGN_STATE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025]
+        completenessRequired: false
+        allowedHosts: [rs.hzch.org]
+        allowedPathPrefixes: [/apply/, /file_zp/attached/]
+        linkSelector: "a[href*='getNotice.action?keycode=']"
+        articleUrlRegex: '^https://rs\.hzch\.org/apply/getNotice\.action\?keycode=[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+        titleIncludeRegex: '招聘|招考|引进|简历|截止|笔试|实践技能|面试|资格|复审|体检|考察|公示|录用|聘用|递补|成绩|考试|通知'
+        titleExcludeRegex: '招聘会|技术支持|岗位培训|编外|劳务派遣'
   - code: HZ_XIXI_HOSPITAL
     name: 杭州市西溪医院招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
@@ -653,6 +687,38 @@ sources:
     strategy: UNSUPPORTED
     historicalYears: [2024, 2025, 2026]
     enabled: false
+  - code: CAS_HANGZHOU_MEDICINE
+    name: 中国科学院杭州医学研究所招聘
+    routeCode: RESEARCH_SUPPORT
+    officialRootUrl: https://him.cas.cn/
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    allowedHosts: [him.cas.cn, www.him.cas.cn]
+    allowedPathPrefixes: [/rczp/zpgg/]
+    attachmentSelector: 'a[href]'
+    scriptAttachmentVariable: appLinkStr
+    listingEntries:
+      - code: engineering-and-research-support
+        entryUri: https://him.cas.cn/rczp/zpgg/
+        role: PRIMARY
+        mode: LINKED_PAGE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024]
+        completenessRequired: true
+        historicalMaxPages: 1
+        incrementalListingMaxPages: 1
+        nextPageSelector: 'a.__career_os_no_next__[href]'
+        allowedHosts: [him.cas.cn, www.him.cas.cn]
+        allowedPathPrefixes: [/rczp/zpgg/]
+        listingItemSelector: '.zhaopin-list-div'
+        itemLinkSelector: '.zhaopin-list-left > a[href]'
+        itemTitleSelector: 'h1'
+        itemPublishedDateSelector: 'h1 span'
+        linkSelector: '.zhaopin-list-left > a[href]'
+        articleUrlRegex: '^https://(?:www\.)?him\.cas\.cn/rczp/zpgg/[0-9]{6}/t[0-9]{8}_[0-9]+\.html$'
+        titleIncludeRegex: '招聘|工程技术|工程师|科研支撑|拟聘用|考试|考核|资格|面试|体检|考察|公示|递补'
+        titleExcludeRegex: '劳务派遣|编外劳务派遣|科研助理招聘启事|博士后招聘公告'
   - code: WESTLAKE_RESEARCH
     name: 西湖大学科研技术岗位
     routeCode: RESEARCH_SUPPORT
