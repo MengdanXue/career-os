@@ -93,7 +93,9 @@ class OfficialSourceLiveSmokeTest {
         sources.forEach(definition -> {
             RecruitmentSource source = multiEntrySource(definition);
             var result = reader.read(source, new ListingQuery(Set.of(), false));
-            assertThat(result.links()).as(definition.code()).isNotEmpty();
+            if (!definition.code().equals("HZ_BINJIANG_GOV")) {
+                assertThat(result.links()).as(definition.code()).isNotEmpty();
+            }
             assertThat(result.evidenceByEntry()).as(definition.code())
                 .hasSize(definition.listingEntries().size());
         });
@@ -274,6 +276,87 @@ class OfficialSourceLiveSmokeTest {
         assertThat(result.evidenceByYear().get(2025).traversalComplete()).isTrue();
         assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
         assertThat(result.links()).isNotEmpty();
+    }
+
+    @Test
+    void zjutClosesRecruitmentAndPublicityColumnsInsideTheAuditedHttpBoundary() {
+        var source = multiEntrySource(multiEntryDefinition("ZJUT_RECRUITMENT"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var announcements = result.evidenceByEntry().get("recruitment-announcements")
+            .evidenceByYear().get(2026);
+        var publicity = result.evidenceByEntry().get("appointment-publicity")
+            .evidenceByYear().get(2026);
+
+        assertThat(announcements.pageCount()).isEqualTo(2);
+        assertThat(announcements.rawCount()).isEqualTo(27);
+        assertThat(publicity.pageCount()).isEqualTo(4);
+        assertThat(publicity.rawCount()).isEqualTo(54);
+        assertThat(result.evidenceByYear().values()).allSatisfy(evidence -> {
+            assertThat(evidence.traversalComplete()).isFalse();
+            assertThat(evidence.stopReason()).isEqualTo("NO_APPLICABLE_REQUIRED_ENTRY");
+        });
+        assertThat(result.links()).isNotEmpty().allSatisfy(link -> assertThat(link.link().uri())
+            .hasScheme("http").hasHost("www.rczp.zjut.edu.cn"));
+    }
+
+    @Test
+    void hznuCurrentPageAddsSchoolLifecycleEvidenceWithoutClaimingHistoricalCompletion() {
+        var source = multiEntrySource(multiEntryDefinition("HZNU_RECRUITMENT"));
+        var entry = ListingEntryContract.from(source).getFirst();
+        var fetched = fetcher.fetch(new FetchRequest(
+            entry.entryUri(), entry.readContract().exactHosts(), null, null,
+            Duration.ofSeconds(20), 26_214_400, source.id(), Duration.ZERO,
+            com.careeros.application.AcquisitionHttpPorts.FetchMethod.GET,
+            entry.readContract()));
+        var raw = discoverer.discoverAll(source, entry, fetched.finalUri(), fetched.content());
+        var filtered = discoverer.discover(source, entry, fetched.finalUri(), fetched.content());
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+
+        assertThat(raw).anySatisfy(link -> assertThat(link.uri().toString()).contains("3202799"));
+        assertThat(filtered).anySatisfy(link -> assertThat(link.uri().toString()).contains("3202799"));
+        assertThat(result.links()).isNotEmpty();
+        assertThat(result.links()).anySatisfy(link -> assertThat(link.link().title())
+            .contains("实验技术人员"));
+        assertThat(result.evidenceByYear().values())
+            .allSatisfy(evidence -> assertThat(evidence.traversalComplete()).isFalse());
+    }
+
+    @Test
+    void binjiangTraversesTheGeneralNoticeArchiveButPreservesTheRecruitmentArchiveGap() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_BINJIANG_GOV"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var evidence = result.evidenceByEntry().get("general-notices-recruitment-lifecycle")
+            .evidenceByYear().get(2026);
+
+        assertThat(evidence.pageCount()).isEqualTo(19);
+        assertThat(evidence.rawCount()).isEqualTo(931);
+        assertThat(evidence.stopReason()).isEqualTo("REPORTED_TOTAL_REACHED");
+        assertThat(result.evidenceByYear().get(2024).stopReason())
+            .isEqualTo("KNOWN_OFFICIAL_ARCHIVE_GAP");
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isFalse();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isFalse();
+    }
+
+    @Test
+    void linpingTraversesHealthLifecycleButPreservesTheDistrictCoverageGap() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_LINPING_GOV"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var evidence = result.evidenceByEntry().get("health-personnel-recruitment")
+            .evidenceByYear().get(2026);
+
+        assertThat(evidence.pageCount()).isEqualTo(5);
+        assertThat(evidence.rawCount()).isEqualTo(70);
+        assertThat(evidence.stopReason()).isEqualTo("REPORTED_TOTAL_REACHED");
+        assertThat(result.links()).isNotEmpty().allSatisfy(link -> assertThat(link.link().title())
+            .doesNotContain("编外", "劳务派遣", "合同制"));
+        assertThat(result.evidenceByYear().get(2024).stopReason())
+            .isEqualTo("KNOWN_OFFICIAL_ARCHIVE_GAP");
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isFalse();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isFalse();
     }
 
     @Test

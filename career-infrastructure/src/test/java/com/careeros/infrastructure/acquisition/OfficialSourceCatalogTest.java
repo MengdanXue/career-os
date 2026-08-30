@@ -248,6 +248,63 @@ class OfficialSourceCatalogTest {
     }
 
     @Test
+    void catalogPublishesBinjiangAndLinpingAsTruthfulPartialSectorCoverage() {
+        var catalog = OfficialSourceCatalog.load();
+        var binjiang = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_BINJIANG_GOV")).findFirst().orElseThrow();
+        var linping = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_LINPING_GOV")).findFirst().orElseThrow();
+
+        assertThat(binjiang.enabled()).isTrue();
+        assertThat(binjiang.listingEntries()).singleElement().satisfies(entry -> assertThat(entry)
+            .containsEntry("mode", "STATIC_SUFFIX_TEMPLATE")
+            .containsEntry("historicalPageSize", 50)
+            .containsEntry("historicalMaxPages", 25)
+            .containsEntry("knownArchiveGapYears", List.of(2024, 2025, 2026))
+            .containsEntry("reconcileReportedTotalByListingItems", true));
+
+        assertThat(linping.enabled()).isTrue();
+        assertThat(linping.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "JCMS_PARAM_JSON")
+                .containsEntry("historicalPageSize", 15)
+                .containsEntry("knownArchiveGapYears", List.of(2024, 2025, 2026));
+            assertThat(entry.get("jcmsSearch")).isEqualTo(Map.of(
+                "xxgkId", "W001", "xxgkType", "", "className", "人事信息"));
+        });
+    }
+
+    @Test
+    void catalogPublishesZjutHistoryAndHznuCurrentLifecycleWithoutOverstatingCoverage() {
+        var catalog = OfficialSourceCatalog.load();
+        var zjut = catalog.sources().stream()
+            .filter(source -> source.code().equals("ZJUT_RECRUITMENT")).findFirst().orElseThrow();
+        var hznu = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZNU_RECRUITMENT")).findFirst().orElseThrow();
+
+        assertThat(zjut.enabled()).isTrue();
+        assertThat(zjut.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.STATIC_HTML);
+        assertThat(zjut.listingEntries()).hasSize(2).allSatisfy(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "STATIC_SUFFIX_TEMPLATE")
+                .containsEntry("transportPolicy", "AUDITED_HTTP_READ_ONLY")
+                .containsEntry("completenessRequired", false)
+                .containsEntry("reconcileReportedTotalByListingItems", true);
+            assertThat(entry.get("exactAuthorities")).isEqualTo(List.of("www.rczp.zjut.edu.cn:80"));
+        });
+        assertThat(zjut.listingEntries()).extracting(entry -> entry.get("code"))
+            .containsExactly("recruitment-announcements", "appointment-publicity");
+
+        assertThat(hznu.enabled()).isTrue();
+        assertThat(hznu.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.STATIC_HTML);
+        assertThat(hznu.listingEntries()).singleElement().satisfies(entry -> assertThat(entry)
+            .containsEntry("mode", "LINKED_PAGE")
+            .containsEntry("role", "CAMPAIGN_STATE")
+            .containsEntry("completenessRequired", false)
+            .containsEntry("knownArchiveGapYears", List.of(2024, 2025, 2026)));
+    }
+
+    @Test
     void catalogPublishesFirstHospitalAsAnExactAuthorityMultiEntrySource() {
         var hospital = OfficialSourceCatalog.load().sources().stream()
             .filter(source -> source.code().equals("HZ_FIRST_HOSPITAL"))

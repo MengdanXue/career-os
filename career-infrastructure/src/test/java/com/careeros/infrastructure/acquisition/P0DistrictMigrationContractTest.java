@@ -36,6 +36,31 @@ class P0DistrictMigrationContractTest {
         assertPartialAndIdempotent(migration.sql(), "HZ_XIAOSHAN_GOV");
     }
 
+    @Test
+    void v58RegistersBinjiangGeneralNoticesWithoutCallingThemCompleteRecruitmentHistory() throws Exception {
+        var migration = migration("/db/migration/V58__onboard_binjiang_partial_official_source.sql");
+        var entry = migration.configuration().path("listingEntries").get(0);
+
+        assertThat(entry.path("mode").asText()).isEqualTo("STATIC_SUFFIX_TEMPLATE");
+        assertThat(entry.path("historicalPageSize").asInt()).isEqualTo(50);
+        assertThat(entry.path("knownArchiveGapYears")).hasSize(3);
+        assertThat(entry.path("titleExcludeRegex").asText())
+            .contains("编外", "合同制", "劳务派遣", "社工", "聘用制教师");
+        assertPartialAndIdempotent(migration.sql(), "HZ_BINJIANG_GOV");
+    }
+
+    @Test
+    void v59RegistersLinpingHealthLifecycleWithoutCallingItDistrictComplete() throws Exception {
+        var migration = migration("/db/migration/V59__onboard_linping_health_lifecycle.sql");
+        var entry = migration.configuration().path("listingEntries").get(0);
+
+        assertThat(entry.path("mode").asText()).isEqualTo("JCMS_PARAM_JSON");
+        assertThat(entry.path("jcmsSearch").path("className").asText()).isEqualTo("人事信息");
+        assertThat(entry.path("knownArchiveGapYears")).hasSize(3);
+        assertThat(entry.path("titleExcludeRegex").asText()).contains("编外", "劳务派遣", "合同制");
+        assertPartialAndIdempotent(migration.sql(), "HZ_LINPING_GOV");
+    }
+
     private static Migration migration(String resource) throws Exception {
         try (var input = P0DistrictMigrationContractTest.class.getResourceAsStream(resource)) {
             assertThat(input).isNotNull();

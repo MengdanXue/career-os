@@ -77,9 +77,34 @@ sources:
     name: 杭州高新区（滨江）政府招聘
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.hhtz.gov.cn/
-    strategy: UNSUPPORTED
+    strategy: JCMS_LISTING
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
+    enabled: true
+    allowedHosts: [www.hhtz.gov.cn]
+    attachmentSelector: 'a[href]'
+    listingEntries:
+      - code: general-notices-recruitment-lifecycle
+        entryUri: https://www.hhtz.gov.cn/col/col1487002/index.html
+        role: SECTOR
+        mode: STATIC_SUFFIX_TEMPLATE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025, 2026]
+        completenessRequired: true
+        pageUriTemplate: 'https://www.hhtz.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2945&tplSetId=quSyqDUrFfjv1nGRQhEEH&pageType=column&tagId=%E9%98%B3%E5%85%89%E6%94%BF%E5%8A%A1_%E5%88%86%E9%A1%B5%E5%88%97%E8%A1%A8&editType=null&pageId=1487002&paramJson=%7B%22pageNo%22%3A{page}%2C%22pageSize%22%3A50%7D'
+        historicalPageSize: 50
+        historicalMaxPages: 25
+        incrementalListingMaxPages: 2
+        reconcileReportedTotalByListingItems: true
+        listingItemSelector: '#阳光政务_分页列表 .page-content > li'
+        itemLinkSelector: 'a.news[href]'
+        itemTitleSelector: 'a.news[href]'
+        itemPublishedDateSelector: 'span.time'
+        linkSelector: 'a.news[href]'
+        reportedTotalRegex: 'count[^0-9]+(\d+)'
+        reportedCurrentPageRegex: 'pageNo[^0-9]+(\d+)'
+        articleUrlRegex: '^https://www\.hhtz\.gov\.cn/(?:col/col1487002/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        titleIncludeRegex: '公开招聘|直接考核招聘|选聘|笔试|资格复审|面试|体检|考察|递补|拟聘用|公示|核减|取消'
+        titleExcludeRegex: '编外|合同制|劳务派遣|人才派遣|社工|聘用制教师|招聘会|培训|讲座'
   - code: HZ_YUHANG_GOV
     name: 余杭区政府招聘
     routeCode: PUBLIC_TECH
@@ -159,11 +184,38 @@ sources:
     name: 临平区政府招聘
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.linping.gov.cn/
-    listingUrl: https://www.linping.gov.cn/col/col1229597298/index.html
-    strategy: STATIC_HTML
+    strategy: JCMS_LISTING
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
-    articleUrlRegex: '^https://www\.linping\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
+    enabled: true
+    allowedHosts: [www.linping.gov.cn]
+    attachmentSelector: 'a[href]'
+    listingEntries:
+      - code: health-personnel-recruitment
+        entryUri: https://www.linping.gov.cn/col/col1229597298/index.html
+        role: SECTOR
+        mode: JCMS_PARAM_JSON
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025, 2026]
+        completenessRequired: true
+        listingApiUri: 'https://www.linping.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=3765&tplSetId=RMLRv5FdPENr7kZUlVnuV&pageType=column&tagId=%E4%BF%A1%E6%81%AF%E5%88%97%E8%A1%A8&editType=null&pageId=1229597298'
+        historicalPageSize: 15
+        historicalMaxPages: 8
+        incrementalListingMaxPages: 2
+        jcmsSearch:
+          xxgkId: W001
+          xxgkType: ''
+          className: 人事信息
+        reconcileReportedTotalByListingItems: true
+        listingItemSelector: '#信息列表 .page-content ul.ajax-ul > li.cf.border-line'
+        itemLinkSelector: 'a.fl[href]'
+        itemTitleSelector: 'a.fl[href]'
+        itemPublishedDateSelector: 'span.fr'
+        linkSelector: 'a.fl[href]'
+        reportedTotalRegex: 'count[^0-9]+(\d+)'
+        reportedCurrentPageRegex: 'pageNo[^0-9]+(\d+)'
+        articleUrlRegex: '^https://www\.linping\.gov\.cn/(?:col/col1229597298/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        titleIncludeRegex: '公开招聘|招聘事业编制|公开选聘|高层次|紧缺|应届|笔试|资格复审|面试|成绩|体检|考察|递补|拟聘用|公示|核减|取消'
+        titleExcludeRegex: '编外|劳务派遣|人才派遣|合同制|招聘会|培训|讲座'
   - code: HZ_SHANGCHENG_GOV
     name: 上城区政府招聘
     routeCode: PUBLIC_TECH
@@ -363,9 +415,62 @@ sources:
     name: 浙江工业大学招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
     officialRootUrl: https://www.zjut.edu.cn/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    allowedHosts: [www.rczp.zjut.edu.cn]
+    attachmentSelector: 'a[href]'
+    listingEntries:
+      - code: recruitment-announcements
+        entryUri: http://www.rczp.zjut.edu.cn/5346/list.htm
+        role: PRIMARY
+        mode: STATIC_SUFFIX_TEMPLATE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: false
+        transportPolicy: AUDITED_HTTP_READ_ONLY
+        allowedHosts: [www.rczp.zjut.edu.cn]
+        exactAuthorities: ['www.rczp.zjut.edu.cn:80']
+        allowedPathPrefixes: [/5346/, /2024/, /2025/, /2026/, /2027/, /_upload/]
+        pageUriTemplate: http://www.rczp.zjut.edu.cn/5346/list{page}.htm
+        historicalMaxPages: 3
+        incrementalListingMaxPages: 2
+        reconcileReportedTotalByListingItems: true
+        listingItemSelector: 'ul.wp_article_list > li.list_item'
+        itemLinkSelector: '.Article_Title a[href]'
+        itemTitleSelector: '.Article_Title a[href]'
+        itemPublishedDateSelector: '.Article_PublishDate'
+        linkSelector: '.Article_Title a[href]'
+        reportedTotalRegex: '<em class="all_count">(\d+)</em>'
+        reportedTotalPagesRegex: '<em class="all_pages">(\d+)</em>'
+        reportedCurrentPageRegex: '<em class="curr_page">(\d+)</em>'
+        articleUrlRegex: '^http://www\.rczp\.zjut\.edu\.cn/[0-9]{4}/[0-9]{4}/c5346a[0-9]+/page\.htm$'
+        titleIncludeRegex: '招聘|招考|引进|人才|报名|岗位|资格|复审|笔试|成绩|面试|体检|考核|考察|名单|通知|核减|取消'
+        titleExcludeRegex: '招聘会邀请|宣讲会|人才派遣|劳务派遣'
+      - code: appointment-publicity
+        entryUri: http://www.rczp.zjut.edu.cn/5347/list.htm
+        role: LIFECYCLE
+        mode: STATIC_SUFFIX_TEMPLATE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: false
+        transportPolicy: AUDITED_HTTP_READ_ONLY
+        allowedHosts: [www.rczp.zjut.edu.cn]
+        exactAuthorities: ['www.rczp.zjut.edu.cn:80']
+        allowedPathPrefixes: [/5347/, /2024/, /2025/, /2026/, /2027/, /_upload/]
+        pageUriTemplate: http://www.rczp.zjut.edu.cn/5347/list{page}.htm
+        historicalMaxPages: 5
+        incrementalListingMaxPages: 2
+        reconcileReportedTotalByListingItems: true
+        listingItemSelector: 'ul.wp_article_list > li.list_item'
+        itemLinkSelector: '.Article_Title a[href]'
+        itemTitleSelector: '.Article_Title a[href]'
+        itemPublishedDateSelector: '.Article_PublishDate'
+        linkSelector: '.Article_Title a[href]'
+        reportedTotalRegex: '<em class="all_count">(\d+)</em>'
+        reportedTotalPagesRegex: '<em class="all_pages">(\d+)</em>'
+        reportedCurrentPageRegex: '<em class="curr_page">(\d+)</em>'
+        articleUrlRegex: '^http://www\.rczp\.zjut\.edu\.cn/[0-9]{4}/[0-9]{4}/c5347a[0-9]+/page\.htm$'
+        titleIncludeRegex: '拟聘|聘用|公示|非教学科研岗|实验技术|工程技术|信息化'
+        titleExcludeRegex: '人才派遣|劳务派遣'
   - code: ZJGSU_RECRUITMENT
     name: 浙江工商大学招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
@@ -381,9 +486,30 @@ sources:
     name: 杭州师范大学招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
     officialRootUrl: https://rsc.hznu.edu.cn/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    allowedHosts: [rsc.hznu.edu.cn, hrss.hangzhou.gov.cn]
+    attachmentSelector: 'a[href]'
+    listingEntries:
+      - code: current-recruitment-and-lifecycle
+        entryUri: https://rsc.hznu.edu.cn/rczpw/
+        role: CAMPAIGN_STATE
+        mode: LINKED_PAGE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025, 2026]
+        completenessRequired: false
+        allowedHosts: [rsc.hznu.edu.cn, hrss.hangzhou.gov.cn]
+        historicalMaxPages: 1
+        incrementalListingMaxPages: 1
+        nextPageSelector: 'a.__career_os_no_next__[href]'
+        listingItemSelector: '.jxdt .bd .jxdt_cen:first-child li'
+        itemLinkSelector: 'a[href]'
+        itemTitleSelector: 'a[href]'
+        linkSelector: '.jxdt .bd .jxdt_cen:first-child a[href]'
+        articleUrlRegex: '^https://(?:rsc\.hznu\.edu\.cn/c/[0-9]{4}-[0-9]{2}-[0-9]{2}/[0-9]+\.shtml|hrss\.hangzhou\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html)$'
+        titleIncludeRegex: '公开招聘|实验技术|工程技术|信息化|辅导员|资格|复审|笔试|成绩|面试|体检|考察|公示|聘用|递补|核减|取消'
+        titleExcludeRegex: '优秀青年科学基金|海外青年人才|劳务派遣|人才派遣'
   - code: HZ_FIRST_HOSPITAL
     name: 杭州市第一人民医院招聘
     routeCode: UNIVERSITY_HOSPITAL_IT

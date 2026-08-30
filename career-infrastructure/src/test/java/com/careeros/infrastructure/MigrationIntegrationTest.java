@@ -480,7 +480,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(55);
+        assertThat(result.migrationsExecuted).isEqualTo(59);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -544,7 +544,9 @@ class MigrationIntegrationTest {
               var jiandeSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_JIANDE_GOV' and source.enabled and source.entry_uri like '%col1229535302%number=JD16-JD1602%' and source.configuration -> 'listingEntries' -> 0 -> 'jcmsSearch' @> '{\"xxgkId\":\"JD16-JD1602\",\"className\":\"招聘招录\"}'::jsonb and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2024]'::jsonb and target.connection_status='PARTIAL'");
               var healthSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_HEALTH_COMMISSION' and source.enabled and jsonb_array_length(source.configuration -> 'listingEntries')=2 and source.configuration -> 'listingEntries' -> 0 ->> 'entryUri' like '%col1229318903%' and source.configuration -> 'listingEntries' -> 1 ->> 'entryUri' like '%col1229318910%' and target.scope_level='CITY' and target.priority_tier='P0' and target.connection_status='PARTIAL'");
               var yuhangSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_YUHANG_GOV' and source.enabled and source.entry_uri like '%col1229191870%' and source.configuration -> 'listingEntries' -> 0 -> 'jcmsSearch' @> '{\"xxgkId\":\"W001-C001\",\"className\":\"人员考录\"}'::jsonb and (source.configuration -> 'listingEntries' -> 0 ->> 'reconcileReportedTotalByListingItems')::boolean and target.connection_status='PARTIAL'");
-              var xiaoshanSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_XIAOSHAN_GOV' and source.enabled and source.configuration -> 'listingEntries' -> 0 ->> 'mode'='STATIC_SUFFIX_TEMPLATE' and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2024]'::jsonb and target.connection_status='PARTIAL'")) {
+              var xiaoshanSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_XIAOSHAN_GOV' and source.enabled and source.configuration -> 'listingEntries' -> 0 ->> 'mode'='STATIC_SUFFIX_TEMPLATE' and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2024]'::jsonb and target.connection_status='PARTIAL'");
+              var universitySources = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code in ('ZJUT_RECRUITMENT','HZNU_RECRUITMENT') and source.enabled and jsonb_array_length(source.configuration -> 'listingEntries') >= 1 and target.connection_status='PARTIAL'");
+              var finalP0DistrictSources = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code in ('HZ_BINJIANG_GOV','HZ_LINPING_GOV') and source.enabled and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2024,2025,2026]'::jsonb and target.connection_status='PARTIAL'")) {
             try (var rows = tables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(14); }
             try (var rows = candidates.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = pendingIndex.executeQuery()) {
@@ -620,6 +622,8 @@ class MigrationIntegrationTest {
             try (var rows = healthSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = yuhangSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = xiaoshanSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+            try (var rows = universitySources.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
+            try (var rows = finalP0DistrictSources.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
         }
 
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -638,7 +642,7 @@ class MigrationIntegrationTest {
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("EXPECTED");
                 assertThat(rows.next()).isFalse();
             }
-            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(42); }
+            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(54); }
             try (var rows = educationFactConstraint.executeQuery()) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString(1)).contains("EDUCATION_RECORDS", "GENDER", "POLITICAL_AFFILIATION", "EMPLOYMENT_HISTORY");
