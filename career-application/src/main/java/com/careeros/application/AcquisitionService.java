@@ -283,7 +283,7 @@ public final class AcquisitionService {
     }
 
     private static Optional<Integer> linkYear(DiscoveredLink link) {
-        LocalDate date = publishedDate(link.uri());
+        LocalDate date = link.publishedOn() == null ? publishedDate(link.uri()) : link.publishedOn();
         if (date != null) return Optional.of(date.getYear());
         var pathYear = URL_ARTICLE_YEAR.matcher(link.uri().getPath());
         if (pathYear.find()) return Optional.of(Integer.parseInt(pathYear.group(1)));
@@ -488,7 +488,8 @@ public final class AcquisitionService {
                 processing = processor.process(processCommand(
                     source, link, parent, document, content, announcementTitle));
                 if (processing.successful()) {
-                    if (processing.status() == AcquiredDocumentProcessor.ProcessingStatus.PROCESSED_WITH_ERRORS) {
+                    if (processing.status() == AcquiredDocumentProcessor.ProcessingStatus.PROCESSED_WITH_ERRORS
+                        || processing.status() == AcquiredDocumentProcessor.ProcessingStatus.OCR_REQUIRED) {
                         document = document.processed(document.contentFingerprint(), processor.version() + ":partial");
                         counts.failed++;
                         observer.processingFailure(source.code(), document.mediaType());
@@ -557,18 +558,24 @@ public final class AcquisitionService {
     private List<DiscoveredLink> discoverAttachments(
         RecruitmentSource source, DiscoveredLink detail, DocumentOutcome outcome
     ) {
+        List<DiscoveredLink> discovered;
         if (outcome.response != null && outcome.response.content().length > 0
             && isHtml(outcome.response.mediaType())) {
-            return attachments.discover(source, detail, outcome.response.content());
+            discovered = attachments.discover(source, detail, outcome.response.content());
+        } else if (isHtml(outcome.document.mediaType())) {
+            discovered = attachments.discover(source, detail, readStored(outcome.document));
+        } else {
+            discovered = store.findDocuments(source.id()).stream()
+                .filter(document -> outcome.document.id().equals(document.parentDocumentId()))
+                .map(document -> new DiscoveredLink(
+                    document.canonicalUri(), detail.title(), detail.readContract(), detail.publishedOn()))
+                .toList();
         }
-        if (isHtml(outcome.document.mediaType())) {
-            return attachments.discover(source, detail, readStored(outcome.document));
-        }
-        return store.findDocuments(source.id()).stream()
-            .filter(document -> outcome.document.id().equals(document.parentDocumentId()))
-            .map(document -> new DiscoveredLink(
-                document.canonicalUri(), detail.title(), detail.readContract()))
-            .toList();
+        if (detail.publishedOn() == null) return discovered;
+        return discovered.stream().map(attachment -> attachment.publishedOn() == null
+            ? new DiscoveredLink(attachment.uri(), attachment.title(),
+                attachment.readContract(), detail.publishedOn())
+            : attachment).toList();
     }
 
     private static boolean isHtml(String mediaType) {
@@ -613,7 +620,8 @@ public final class AcquisitionService {
         AcquiredDocument document, byte[] content, String announcementTitle
     ) {
         URI announcementUri = parent == null ? document.canonicalUri() : parent.canonicalUri();
-        LocalDate published = publishedDate(announcementUri);
+        LocalDate published = link.publishedOn() == null
+            ? publishedDate(announcementUri) : link.publishedOn();
         int year = published == null ? titleYear(link.title()).orElse(
             clock.instant().atZone(ZoneId.of(source.timeZone())).getYear()) : published.getYear();
         return new ProcessDocumentCommand(content, document.mediaType(), document.canonicalUri(), announcementUri,

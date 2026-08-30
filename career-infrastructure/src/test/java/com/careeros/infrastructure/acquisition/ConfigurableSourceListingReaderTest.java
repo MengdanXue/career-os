@@ -345,6 +345,68 @@ class ConfigurableSourceListingReaderTest {
     }
 
     @Test
+    void numberedHtmlStopsAtReportedTotalWithoutRequestingARepeatedSecondPage() {
+        Map<String, Object> entry = baseEntry("data", "QUERY_PAGE", "https://official.example/notices");
+        entry.put("historicalMaxPages", 5);
+        entry.put("pageParameter", "page");
+        entry.put("reportedTotalRegex", "recordNum=(\\d+)");
+        URI first = URI.create("https://official.example/notices?page=1");
+        byte[] html = ("<div>recordNum=1</div>" +
+            "<a href='/art/2026/8/20/art_1.html'>2026年招聘公告</a>")
+            .getBytes(StandardCharsets.UTF_8);
+        var fetcher = new MapFetcher(Map.of(first, html));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(fetcher.requests()).containsExactly(first);
+        assertThat(result.evidenceByEntry().get("data").evidenceByYear().get(2026).stopReason())
+            .isEqualTo("REPORTED_TOTAL_REACHED");
+    }
+
+    @Test
+    void numberedHtmlRejectsTerminalReportedTotalMismatch() {
+        Map<String, Object> entry = baseEntry("data", "QUERY_PAGE", "https://official.example/notices");
+        entry.put("historicalMaxPages", 5);
+        entry.put("pageParameter", "page");
+        entry.put("reportedTotalRegex", "recordNum=(\\d+)");
+        entry.put("reportedTotalPagesRegex", "pages=(\\d+)");
+        URI first = URI.create("https://official.example/notices?page=1");
+        byte[] html = ("<div>recordNum=2 pages=1</div>" +
+            "<a href='/art/2026/8/20/art_1.html'>2026年招聘公告</a>")
+            .getBytes(StandardCharsets.UTF_8);
+        var fetcher = new MapFetcher(Map.of(first, html));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("reported total");
+    }
+
+    @Test
+    void numberedHtmlStopsAtReportedLastPageAndReconcilesUniqueCount() {
+        Map<String, Object> entry = baseEntry("xixi", "QUERY_PAGE", "https://official.example/notices");
+        entry.put("historicalMaxPages", 9);
+        entry.put("pageParameter", "page");
+        entry.put("reportedTotalRegex", "total=(\\d+)");
+        entry.put("reportedTotalPagesRegex", "pages=(\\d+)");
+        entry.put("reportedCurrentPageRegex", "current=(\\d+)");
+        URI first = URI.create("https://official.example/notices?page=1");
+        URI second = URI.create("https://official.example/notices?page=2");
+        var fetcher = new MapFetcher(Map.of(
+            first, ("total=2 pages=2 current=1<a href='/art/2026/8/20/art_1.html'>2026年招聘公告</a>").getBytes(StandardCharsets.UTF_8),
+            second, ("total=2 pages=2 current=2<a href='/art/2026/8/21/art_2.html'>2026年招聘公告（二）</a>").getBytes(StandardCharsets.UTF_8)));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(fetcher.requests()).containsExactly(first, second);
+        assertThat(result.links()).hasSize(2);
+        assertThat(result.evidenceByEntry().get("xixi").evidenceByYear().get(2026).stopReason())
+            .isEqualTo("REPORTED_LAST_PAGE_REACHED");
+    }
+
+    @Test
     void multiEntryJcmsRejectsAReportedTotalThatDoesNotMatchUniqueEntries() {
         Map<String, Object> entry = baseEntry(
             "jcms", "JCMS_PARAM_JSON", "https://official.example/column/index.html");

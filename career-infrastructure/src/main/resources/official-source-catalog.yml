@@ -201,16 +201,95 @@ sources:
     name: 杭州市西溪医院招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
     officialRootUrl: https://www.xixih.net/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    imageEvidenceSelector: ".content img[src*='/ueditor/php/upload/image/']"
+    listingEntries:
+      - code: announcements
+        entryUri: https://zp.hzxixih.cn/index/index/announcement.html?page=1
+        role: PRIMARY
+        mode: QUERY_PAGE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: true
+        pageParameter: page
+        historicalMaxPages: 14
+        incrementalListingMaxPages: 2
+        emptyPageConfirmationPages: 0
+        allowedHosts: [zp.hzxixih.cn]
+        articleUrlRegex: '^https://zp\.hzxixih\.cn/index/index/announcement_desc/id/[0-9]+\.html$'
+        listingItemSelector: '.ul-imgtxt1 > li'
+        itemLinkSelector: 'h3 a[href]'
+        itemTitleSelector: 'h3 a[href]'
+        itemPublishedDateSelector: '.date.date2'
+        titleIncludeRegex: '招聘|招考|选聘|引进|人才'
+        titleExcludeRegex: '招聘会|培训|讲座'
+      - code: exam-lifecycle
+        entryUri: https://zp.hzxixih.cn/index/index/news.html?page=1
+        role: LIFECYCLE
+        mode: QUERY_PAGE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: false
+        pageParameter: page
+        historicalMaxPages: 15
+        incrementalListingMaxPages: 2
+        emptyPageConfirmationPages: 0
+        allowedHosts: [zp.hzxixih.cn]
+        articleUrlRegex: '^https://zp\.hzxixih\.cn/index/index/announcement_desc/id/[0-9]+\.html$'
+        listingItemSelector: '.ul-imgtxt1 > li'
+        itemLinkSelector: 'h3 a[href]'
+        itemTitleSelector: 'h3 a[href]'
+        itemPublishedDateSelector: '.date.date2'
+        titleIncludeRegex: '笔试|考试安排|专业知识测试|实践技能测试|面试|资格复审|资格审查|成绩|体检|考察|公示|录用|拟录用|聘用|递补'
+        titleExcludeRegex: '招聘会|培训|讲座'
   - code: HZ_TCM_HOSPITAL
     name: 杭州市中医院招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
     officialRootUrl: https://www.hztcm.net/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    listingEntries:
+      - code: recruitment
+        entryUri: https://hztcm.unitedsoft.cn/News130a1.htm
+        role: PRIMARY
+        mode: STATIC_SUFFIX_TEMPLATE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: true
+        pageUriTemplate: https://hztcm.unitedsoft.cn/News130a{page}.htm
+        historicalMaxPages: 20
+        incrementalListingMaxPages: 2
+        allowedHosts: [hztcm.unitedsoft.cn]
+        articleUrlRegex: '^https://hztcm\.unitedsoft\.cn/View[0-9]+a130\.htm$'
+        listingItemSelector: 'table.listtab tr[class^=listtab]'
+        itemLinkSelector: 'a[href]'
+        itemTitleSelector: 'a[href]'
+        itemPublishedDateSelector: 'td:last-child'
+        reportedTotalRegex: '共\s*<font[^>]*>\s*<b>(\d+)</b>'
+        reportedTotalPagesRegex: '当前页:\s*<font[^>]*>\s*<b>\d+/(\d+)</b>'
+        reportedCurrentPageRegex: '当前页:\s*<font[^>]*>\s*<b>(\d+)/\d+</b>'
+        titleIncludeRegex: '招聘|招考|选聘|引进|人才'
+        titleExcludeRegex: '招聘会|培训|讲座'
+      - code: exam-lifecycle
+        entryUri: https://hztcm.unitedsoft.cn/News135a1.htm
+        role: LIFECYCLE
+        mode: STATIC_SUFFIX_TEMPLATE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: false
+        pageUriTemplate: https://hztcm.unitedsoft.cn/News135a{page}.htm
+        historicalMaxPages: 20
+        incrementalListingMaxPages: 2
+        allowedHosts: [hztcm.unitedsoft.cn]
+        articleUrlRegex: '^https://hztcm\.unitedsoft\.cn/View[0-9]+a135\.htm$'
+        listingItemSelector: 'table.listtab tr[class^=listtab]'
+        itemLinkSelector: 'a[href]'
+        itemTitleSelector: 'a[href]'
+        itemPublishedDateSelector: 'td:last-child'
+        reportedTotalRegex: '共\s*<font[^>]*>\s*<b>(\d+)</b>'
+        reportedTotalPagesRegex: '当前页:\s*<font[^>]*>\s*<b>\d+/(\d+)</b>'
+        reportedCurrentPageRegex: '当前页:\s*<font[^>]*>\s*<b>(\d+)/\d+</b>'
+        titleIncludeRegex: '笔试|考试安排|专业知识测试|实践技能测试|面试|资格复审|资格审查|成绩|体检|考察|公示|录用|拟录用|聘用|递补'
+        titleExcludeRegex: '招聘会|培训|讲座'
   - code: UCAS_HANGZHOU
     name: 国科大杭州高等研究院招聘
     routeCode: RESEARCH_SUPPORT
@@ -229,9 +308,32 @@ sources:
     name: 杭州数据集团招聘
     routeCode: GOVERNMENT_SOE_DIGITAL
     officialRootUrl: https://hr.hzfi.cn/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    listingEntries:
+      - code: social-recruitment
+        entryUri: https://hr.hzfi.cn/jsp/recruit/recruit_news_list.jsp?colId=5235
+        role: PRIMARY
+        mode: QUERY_PAGE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: true
+        pageParameter: page
+        historicalMaxPages: 20
+        incrementalListingMaxPages: 2
+        allowedHosts: [hr.hzfi.cn]
+        articleUrlRegex: '^https://hr\.hzfi\.cn/jsp/info/news_info\.jsp\?infoId=H@[A-Za-z0-9]+$'
+        listingItemSelector: '.list .intro'
+        itemLinkSelector: '.header[data-id]'
+        itemTitleSelector: '.header[data-id]'
+        itemPublishedDateSelector: '.pubDate'
+        itemUriAttribute: data-id
+        itemUriTemplate: '/jsp/info/news_info.jsp?infoId={value}'
+        reportedTotalRegex: 'var\s+recordNum\s*=\s*(\d+)'
+        reportedTotalPagesRegex: 'var\s+totalPage\s*=\s*(\d+)'
+        reportedCurrentPageRegex: 'var\s+curPage\s*=\s*(\d+)'
+        titleIncludeRegex: '招聘|招考|选聘|引进|人才|笔试|考试安排|面试|资格复审|资格审查|成绩|体检|考察|公示|录用|拟录用|聘用|递补'
+        titleExcludeRegex: '招聘会|校园宣讲|培训|讲座'
   - code: HZ_CAPITAL_GROUP
     name: 杭州市国有资本投资运营有限公司招聘
     routeCode: GOVERNMENT_SOE_DIGITAL

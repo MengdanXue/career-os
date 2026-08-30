@@ -62,14 +62,58 @@ class HtmlAttachmentDiscovererTest {
             "https://zjjcmspublic.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn/files/guide.pdf");
     }
 
+    @Test
+    void discoversOnlyConfiguredInlineJobTableImagesWithoutChangingAttachmentDiscovery() {
+        byte[] html = """
+            <html><body>
+              <img class="site-logo" src="/images/logo.png" alt="站点标志">
+              <div class="content">
+                <img class="job-table" src="/ueditor/php/upload/image/jobs.jpeg" alt="招聘岗位表">
+                <a href="/files/requirements.pdf">报考要求</a>
+              </div>
+            </body></html>
+            """.getBytes(StandardCharsets.UTF_8);
+        RecruitmentSource configured = source(Map.of(
+            "attachmentSelector", "a[href]",
+            "imageEvidenceSelector", ".content img.job-table",
+            "allowedHosts", List.of(
+                "zjjcmspublic.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn")));
+
+        var links = new HtmlAttachmentDiscoverer().discover(configured,
+            URI.create("https://rlsbt.zj.gov.cn/art/2026/3/17/notice.html"), html);
+
+        assertThat(links).extracting(link -> link.uri().toString()).containsExactly(
+            "https://rlsbt.zj.gov.cn/files/requirements.pdf",
+            "https://rlsbt.zj.gov.cn/ueditor/php/upload/image/jobs.jpeg");
+        assertThat(links).extracting(DiscoveredLink::title)
+            .containsExactly("报考要求", "招聘岗位表");
+    }
+
+    @Test
+    void ignoresInlineImagesWhenTheSourceHasNoImageEvidenceSelector() {
+        byte[] html = """
+            <div class="content"><img src="/images/jobs.png" alt="岗位表"></div>
+            """.getBytes(StandardCharsets.UTF_8);
+
+        var links = new HtmlAttachmentDiscoverer().discover(source(),
+            URI.create("https://rlsbt.zj.gov.cn/art/2026/3/17/notice.html"), html);
+
+        assertThat(links).isEmpty();
+    }
+
     private static RecruitmentSource source() {
+        return source(Map.of(
+            "attachmentSelector", "a[href]",
+            "allowedHosts", List.of(
+                "zjjcmspublic.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn")));
+    }
+
+    private static RecruitmentSource source(Map<String, Object> configuration) {
         Instant now = Instant.parse("2026-08-15T00:00:00Z");
         return new RecruitmentSource(UUID.randomUUID(), "ZJ", "浙江人社",
             URI.create("https://rlsbt.zj.gov.cn/"), URI.create("https://rlsbt.zj.gov.cn/list"),
             SourceType.OFFICIAL_GOVERNMENT, "浙江", CrawlMode.STATIC_HTML, true,
-            "0 10 8 * * *", "Asia/Shanghai", Duration.ofSeconds(1), Map.of(
-                "attachmentSelector", "a[href]",
-                "allowedHosts", List.of("zjjcmspublic.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn")),
+            "0 10 8 * * *", "Asia/Shanghai", Duration.ofSeconds(1), configuration,
             null, null, now, 0, now, now);
     }
 }

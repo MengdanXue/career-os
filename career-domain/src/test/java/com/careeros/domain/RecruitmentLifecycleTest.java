@@ -37,6 +37,20 @@ class RecruitmentLifecycleTest {
     }
 
     @Test
+    void distinguishesWrittenExamArrangementsFromScoreResults() {
+        assertThat(RecruitmentLifecycle.classify("2025年事业单位公开招聘笔试安排通知"))
+            .containsExactly(WRITTEN_EXAM);
+        assertThat(RecruitmentLifecycle.classify("2025年事业单位公开招聘专业知识测试通知"))
+            .containsExactly(WRITTEN_EXAM);
+        assertThat(RecruitmentLifecycle.classify("2025年事业单位公开招聘考试安排"))
+            .containsExactly(WRITTEN_EXAM);
+        assertThat(RecruitmentLifecycle.classify("2025年事业单位公开招聘实践技能测试公告"))
+            .containsExactly(WRITTEN_EXAM);
+        assertThat(RecruitmentLifecycle.classify("2025年事业单位公开招聘笔试成绩公告"))
+            .containsExactly(SCORE_RESULT);
+    }
+
+    @Test
     void derivesTheSameCampaignStemForInitialAndLifecycleNotices() {
         assertThat(RecruitmentLifecycle.campaignStem(
             "杭州市西湖区2025年度部分事业单位公开招聘工作人员公告"))

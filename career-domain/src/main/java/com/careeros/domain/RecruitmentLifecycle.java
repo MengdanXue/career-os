@@ -50,6 +50,7 @@ public final class RecruitmentLifecycle {
 
     public enum Stage {
         QUALIFICATION_REVIEW("资格复审|资格审查|资格确认"),
+        WRITTEN_EXAM("笔试(?!成绩|结果|分数)|专业知识测试|考试安排|实践技能测试"),
         SCORE_RESULT("笔试成绩|总成绩|综合成绩|考试成绩|成绩公告|成绩查询|入围面试|入围体检"),
         INTERVIEW("面试"),
         PHYSICAL_EXAM("体检"),

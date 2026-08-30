@@ -22,6 +22,53 @@ class MigrationIntegrationTest {
         .withPassword("career_os");
 
     @Test
+    void migrationsRegisterFirstHttpsBatchAsPartialUntilBackfillVerification() throws Exception {
+        Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var sources = connection.prepareStatement("""
+                 select count(*)
+                 from recruitment_source
+                 where enabled
+                   and code in ('HZ_TCM_HOSPITAL','HZ_XIXI_HOSPITAL','HZ_DATA_GROUP')
+                   and jsonb_array_length(configuration -> 'listingEntries') > 0
+                 """);
+             var targets = connection.prepareStatement("""
+                 select count(*)
+                 from target_source_catalog
+                 where code in ('HZ_TCM_HOSPITAL','HZ_XIXI_HOSPITAL','HZ_DATA_GROUP')
+                   and connection_status='PARTIAL'
+                   and recruitment_source_id is not null
+                 """);
+             var checkpoints = connection.prepareStatement("""
+                 select count(*) as total,
+                        count(*) filter (where checkpoint='REGISTERED' and status='VERIFIED') as registered,
+                        count(*) filter (where checkpoint<>'REGISTERED' and status='PENDING') as pending
+                 from source_onboarding_checkpoint checkpoint
+                 join recruitment_source source on source.id=checkpoint.source_id
+                 where source.code in ('HZ_TCM_HOSPITAL','HZ_XIXI_HOSPITAL','HZ_DATA_GROUP')
+                 """)) {
+            try (var rows = sources.executeQuery()) {
+                rows.next();
+                assertThat(rows.getInt(1)).isEqualTo(3);
+            }
+            try (var rows = targets.executeQuery()) {
+                rows.next();
+                assertThat(rows.getInt(1)).isEqualTo(3);
+            }
+            try (var rows = checkpoints.executeQuery()) {
+                rows.next();
+                assertThat(rows.getInt("total")).isEqualTo(15);
+                assertThat(rows.getInt("registered")).isEqualTo(3);
+                assertThat(rows.getInt("pending")).isEqualTo(12);
+            }
+        }
+    }
+
+    @Test
     void upgradeRepairsOnlyTheKnownEmptyCandidateFactConfirmations() throws Exception {
         String schema = "repair_empty_candidate_facts";
         Flyway.configure()
@@ -98,7 +145,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(44);
+        assertThat(result.migrationsExecuted).isEqualTo(46);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");

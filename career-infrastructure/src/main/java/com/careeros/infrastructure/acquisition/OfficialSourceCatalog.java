@@ -30,7 +30,9 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
         String titleIncludeRegex,
         String titleExcludeRegex,
         String historicalPaginationMode,
-        String adapterType
+        String adapterType,
+        List<Map<String, Object>> listingEntries,
+        String imageEvidenceSelector
     ) {
         public SourceDefinition {
             code = required(code, "code");
@@ -40,10 +42,13 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
             listingUrl = optionalHttpsUrl(listingUrl, "listingUrl");
             Objects.requireNonNull(strategy, "strategy");
             historicalYears = historicalYears == null ? List.of() : List.copyOf(historicalYears);
-            if (enabled && (listingUrl == null || strategy == DiscoveryStrategy.UNSUPPORTED)) {
+            listingEntries = immutableEntries(listingEntries);
+            boolean multiEntry = !listingEntries.isEmpty();
+            if (enabled && ((listingUrl == null && !multiEntry)
+                || strategy == DiscoveryStrategy.UNSUPPORTED)) {
                 throw new IllegalArgumentException(code + " enabled source requires a supported listing URL");
             }
-            if (enabled && (articleUrlRegex == null || articleUrlRegex.isBlank())) {
+            if (enabled && !multiEntry && (articleUrlRegex == null || articleUrlRegex.isBlank())) {
                 throw new IllegalArgumentException(code + " enabled source requires articleUrlRegex");
             }
             linkSelector = optional(linkSelector) == null ? "a[href]" : linkSelector.trim();
@@ -51,9 +56,35 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
             titleExcludeRegex = optional(titleExcludeRegex) == null ? "拟聘|公示|成绩|体检|递补" : titleExcludeRegex.trim();
             historicalPaginationMode = optional(historicalPaginationMode);
             adapterType = optional(adapterType);
-            if (enabled && (historicalPaginationMode == null || adapterType == null)) {
+            imageEvidenceSelector = optional(imageEvidenceSelector);
+            if (enabled && !multiEntry && (historicalPaginationMode == null || adapterType == null)) {
                 throw new IllegalArgumentException(code + " enabled source requires pagination and adapter contracts");
             }
+        }
+
+        public SourceDefinition(
+            String code, String name, String routeCode, String officialRootUrl,
+            String listingUrl, DiscoveryStrategy strategy, List<Integer> historicalYears,
+            boolean enabled, String articleUrlRegex, String linkSelector,
+            String titleIncludeRegex, String titleExcludeRegex,
+            String historicalPaginationMode, String adapterType
+        ) {
+            this(code, name, routeCode, officialRootUrl, listingUrl, strategy, historicalYears,
+                enabled, articleUrlRegex, linkSelector, titleIncludeRegex, titleExcludeRegex,
+                historicalPaginationMode, adapterType, List.of());
+        }
+
+        public SourceDefinition(
+            String code, String name, String routeCode, String officialRootUrl,
+            String listingUrl, DiscoveryStrategy strategy, List<Integer> historicalYears,
+            boolean enabled, String articleUrlRegex, String linkSelector,
+            String titleIncludeRegex, String titleExcludeRegex,
+            String historicalPaginationMode, String adapterType,
+            List<Map<String, Object>> listingEntries
+        ) {
+            this(code, name, routeCode, officialRootUrl, listingUrl, strategy, historicalYears,
+                enabled, articleUrlRegex, linkSelector, titleIncludeRegex, titleExcludeRegex,
+                historicalPaginationMode, adapterType, listingEntries, null);
         }
 
         public Map<String, Object> configuration() {
@@ -61,7 +92,34 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
             if (historicalPaginationMode != null) values.put("historicalPaginationMode", historicalPaginationMode);
             if (adapterType != null) values.put("adapterType", adapterType);
             values.put("historicalYears", historicalYears);
+            if (!listingEntries.isEmpty()) values.put("listingEntries", listingEntries);
+            if (imageEvidenceSelector != null) values.put("imageEvidenceSelector", imageEvidenceSelector);
             return Map.copyOf(values);
+        }
+
+        private static List<Map<String, Object>> immutableEntries(
+            List<Map<String, Object>> entries
+        ) {
+            if (entries == null || entries.isEmpty()) return List.of();
+            return entries.stream().map(SourceDefinition::immutableMap).toList();
+        }
+
+        private static Map<String, Object> immutableMap(Map<String, Object> values) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            values.forEach((key, value) -> result.put(key, immutableValue(value)));
+            return Map.copyOf(result);
+        }
+
+        private static Object immutableValue(Object value) {
+            if (value instanceof Map<?, ?> map) {
+                Map<String, Object> values = new LinkedHashMap<>();
+                map.forEach((key, item) -> values.put(String.valueOf(key), item));
+                return immutableMap(values);
+            }
+            if (value instanceof List<?> list) {
+                return list.stream().map(SourceDefinition::immutableValue).toList();
+            }
+            return value;
         }
     }
 

@@ -157,6 +157,28 @@ class OfficialLifecycleDocumentServiceIntegrationTest {
             "select count(*) from recruitment_lifecycle_document", Integer.class)).isZero();
     }
 
+    @Test
+    void writtenExamArrangementIsStoredAndConfirmsTheCampaignWrittenExam(
+        @Autowired OfficialLifecycleDocumentService service,
+        @Autowired RecruitmentEventJpaRepository events,
+        @Autowired JdbcTemplate jdbc
+    ) {
+        var event = event(events, CAMPAIGN + "公告", "https://www.hzxh.gov.cn/original/written");
+        UUID evidenceId = evidence(jdbc, "https://www.hzxh.gov.cn/lifecycle/written");
+
+        var result = service.recordIfLifecycle(
+            CAMPAIGN + "笔试安排通知", "https://www.hzxh.gov.cn/lifecycle/written",
+            2025, LocalDate.of(2025, 5, 20), evidenceId).orElseThrow();
+
+        assertThat(result.status()).isEqualTo(MATCHED);
+        assertThat(jdbc.queryForObject(
+            "select stage from recruitment_lifecycle_document where source_url=?",
+            String.class, "https://www.hzxh.gov.cn/lifecycle/written")).isEqualTo("WRITTEN_EXAM");
+        assertThat(jdbc.queryForObject(
+            "select written_exam_state from recruitment_event where id=?",
+            String.class, event.id)).isEqualTo("CONFIRMED");
+    }
+
     private static JpaModels.RecruitmentEventEntity event(
         RecruitmentEventJpaRepository events, String title, String sourceUrl
     ) {

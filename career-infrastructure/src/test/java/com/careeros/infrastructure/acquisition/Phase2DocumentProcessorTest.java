@@ -191,7 +191,7 @@ class Phase2DocumentProcessorTest {
 
     @Test
     void processorVersionChangesWhenWorkbookInterpretationChanges() {
-        assertThat(processor.version()).isEqualTo("official-fact-fusion-v13");
+        assertThat(processor.version()).isEqualTo("official-fact-fusion-v14");
     }
 
     @Test
@@ -224,6 +224,24 @@ class Phase2DocumentProcessorTest {
         assertThat(result.status()).isEqualTo(ProcessingStatus.UNSUPPORTED);
         assertThat(result.inserted()).isZero();
         assertThat(result.errorCode()).isEqualTo("UNSUPPORTED_MEDIA_TYPE");
+    }
+
+    @Test
+    void configuredJobTableImageIsPreservedAsOcrRequiredWithoutGuessingRows() throws Exception {
+        byte[] image = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+
+        var result = processor.process(command("image/png", image,
+            URI.create("https://official.example/images/2026-job-table.png")));
+
+        assertThat(result.status()).isEqualTo(ProcessingStatus.OCR_REQUIRED);
+        assertThat(result.successful()).isTrue();
+        assertThat(result.inserted()).isZero();
+        assertThat(result.updated()).isZero();
+        assertThat(result.errorCode()).isEqualTo("OCR_REQUIRED");
+        verify(extractions, never()).submit(any());
+        verify(workbooks, never()).importWorkbook(any(), any());
+        verify(announcementFacts, never()).upsert(any(), any(),
+            org.mockito.ArgumentMatchers.anyInt(), any(), any(), any());
     }
 
     @Test

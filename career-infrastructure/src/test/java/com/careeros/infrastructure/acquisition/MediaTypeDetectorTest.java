@@ -34,6 +34,20 @@ class MediaTypeDetectorTest {
             .isEqualTo("text/html");
     }
 
+    @Test void detectsPngByMagicBytesWhenTheOfficialEndpointHasNoFileExtension() {
+        byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x01};
+
+        assertThat(detector.detect(URI.create("https://host/image?id=42"),
+            "application/octet-stream", png)).isEqualTo("image/png");
+    }
+
+    @Test void detectsJpegByMagicBytesInsteadOfTrustingAnOctetStreamHeader() {
+        byte[] jpeg = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0x00};
+
+        assertThat(detector.detect(URI.create("https://host/download"),
+            "application/octet-stream", jpeg)).isEqualTo("image/jpeg");
+    }
+
     private static byte[] xlsxBytes() throws Exception {
         var bytes = new ByteArrayOutputStream();
         try (var zip = new ZipOutputStream(bytes)) {

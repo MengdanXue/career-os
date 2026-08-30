@@ -38,6 +38,7 @@ class AcquisitionServiceTest {
     private static final URI LIST_API = URI.create("https://official.example/api/list?page=1");
     private static final URI DETAIL = URI.create("https://official.example/art/2026/notice.html");
     private static final URI ATTACHMENT = URI.create("https://official.example/document/download?fileName=jobs.xlsx&fileUrl=token%2Fvalue%3D");
+    private static final URI IMAGE = URI.create("https://official.example/images/2026-job-table.png");
 
     @Test
     void identicalSecondRunDoesNotCreateAnotherChangeOrProcessingCall() {
@@ -146,6 +147,27 @@ class AcquisitionServiceTest {
         assertThat(fixture.store.changes).hasSize(1);
         assertThat(fixture.processor.calls).isEqualTo(2);
         assertThat(fixture.store.documents.values().iterator().next().lastProcessedFingerprint()).isNotNull();
+    }
+
+    @Test
+    void historicalJobTableImageIsStoredButKeepsCoveragePartialUntilOcrCompletes() {
+        Fixture fixture = historicalFixture();
+        fixture.attachments.links = List.of(new DiscoveredLink(IMAGE, "岗位表图片"));
+        fixture.processor.ocrImages = true;
+        fixture.store.targetJobs.put(2026, 1L);
+
+        SourceCrawlRun run = fixture.service.backfill(SOURCE_ID, Set.of(2026));
+
+        assertThat(run.status()).isEqualTo(RunStatus.PARTIALLY_SUCCEEDED);
+        assertThat(fixture.store.documents.get(IMAGE).mediaType()).isEqualTo("image/png");
+        assertThat(fixture.artifacts.values).isNotEmpty();
+        assertThat(fixture.store.coverages.get(2026).status())
+            .isEqualTo(SourceYearCoverage.CoverageStatus.PARTIAL);
+        assertThat(fixture.store.changes).filteredOn(change -> change.documentId()
+                .equals(fixture.store.documents.get(IMAGE).id()))
+            .singleElement().satisfies(change -> assertThat(change.jobDeltaSummary())
+                .containsEntry("processingStatus", "OCR_REQUIRED")
+                .containsEntry("errorCode", "OCR_REQUIRED"));
     }
 
     @Test
@@ -322,6 +344,23 @@ class AcquisitionServiceTest {
             .filter(command -> command.documentUri().equals(ATTACHMENT))
             .findFirst().orElseThrow();
         assertThat(attachment.announcementTitle()).isEqualTo("2026年公开招聘公告");
+    }
+
+    @Test
+    void structuredListingDateDrivesAnnouncementAndAttachmentProcessing() {
+        Fixture fixture = new Fixture();
+        LocalDate publishedOn = LocalDate.of(2025, 11, 6);
+        fixture.discoverer.pages.put("<html>", List.of(
+            new DiscoveredLink(DETAIL, "2026年公开招聘公告", publishedOn)));
+        fixture.attachments.links = List.of(new DiscoveredLink(ATTACHMENT, "招聘计划表.xlsx"));
+
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(fixture.processor.commands).hasSize(2)
+            .allSatisfy(command -> {
+                assertThat(command.publishedOn()).isEqualTo(publishedOn);
+                assertThat(command.recruitmentYear()).isEqualTo(2025);
+            });
     }
 
     @Test
@@ -718,6 +757,8 @@ class AcquisitionServiceTest {
             if (request.uri().equals(DETAIL) && detailNotModified) return new FetchedDocument(DETAIL, 304, null, new byte[0], null, null);
             if (request.uri().equals(ATTACHMENT)) return new FetchedDocument(ATTACHMENT, 200,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "workbook".getBytes(StandardCharsets.UTF_8), null, null);
+            if (request.uri().equals(IMAGE)) return new FetchedDocument(IMAGE, 200,
+                "image/png", new byte[] {(byte) 0x89, 'P', 'N', 'G'}, null, null);
             return new FetchedDocument(finalDetailUri, 200, detailMediaType, detail, null, null,
                 detailTransportRisk);
         }
@@ -811,6 +852,7 @@ class AcquisitionServiceTest {
         int calls;
         boolean failNext;
         boolean rowErrors;
+        boolean ocrImages;
         String version = "official-facts-v1";
         final List<ProcessDocumentCommand> commands = new ArrayList<>();
         @Override public String version() { return version; }
@@ -823,6 +865,9 @@ class AcquisitionServiceTest {
                 List.of(new AcquiredDocumentProcessor.ProcessingIssue(
                     ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED,
                     "岗位计划", 3, "MISSING_ORGANIZATION", "招聘单位为空")));
+            if (ocrImages && command.mediaType().startsWith("image/")) {
+                return ProcessingResult.ocrRequired();
+            }
             return ProcessingResult.extracted(UUID.nameUUIDFromBytes(command.content()));
         }
     }

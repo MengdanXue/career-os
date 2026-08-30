@@ -1,12 +1,37 @@
 package com.careeros.infrastructure.acquisition;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class OfficialSourceCatalogTest {
+    @Test
+    void enabledMultiEntryDefinitionProjectsDeeplyImmutableListingContracts() {
+        var definition = new OfficialSourceCatalog.SourceDefinition(
+            "HZ_TCM_HOSPITAL", "杭州市中医院招聘", "UNIVERSITY_HOSPITAL_IT",
+            "https://www.hztcm.net/", null,
+            OfficialSourceCatalog.DiscoveryStrategy.STATIC_HTML,
+            List.of(2024, 2025, 2026), true, null, null, null, null, null, null,
+            List.of(Map.of(
+                "code", "recruitment",
+                "entryUri", "https://hztcm.unitedsoft.cn/News130a1.htm",
+                "role", "PRIMARY",
+                "mode", "STATIC_SUFFIX_TEMPLATE",
+                "recruitmentYears", List.of(2024, 2025, 2026),
+                "articleUrlRegex", "^https://hztcm\\.unitedsoft\\.cn/View\\d+a130\\.htm$")));
+
+        assertThat(definition.configuration()).containsKey("listingEntries");
+        assertThat(definition.listingEntries()).hasSize(1);
+        assertThat(definition.listingUrl()).isNull();
+        assertThatThrownBy(() -> definition.listingEntries().getFirst().put("mode", "FIXED_EVIDENCE"))
+            .isInstanceOf(UnsupportedOperationException.class);
+    }
+
     @Test
     void catalogRepresentsAllHangzhouDistrictScopesThroughThe2027WatchWindow() {
         var catalog = OfficialSourceCatalog.load();
@@ -46,6 +71,33 @@ class OfficialSourceCatalogTest {
     }
 
     @Test
+    void catalogPublishesVerifiedMultiEntryContractsForFirstHttpsBatch() {
+        var catalog = OfficialSourceCatalog.load();
+
+        var tcm = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_TCM_HOSPITAL")).findFirst().orElseThrow();
+        var xixi = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_XIXI_HOSPITAL")).findFirst().orElseThrow();
+        var data = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_DATA_GROUP")).findFirst().orElseThrow();
+
+        assertThat(tcm.enabled()).isTrue();
+        assertThat(tcm.listingEntries()).extracting(entry -> entry.get("code"))
+            .containsExactly("recruitment", "exam-lifecycle");
+        assertThat(xixi.enabled()).isTrue();
+        assertThat(xixi.listingEntries()).extracting(entry -> entry.get("code"))
+            .containsExactly("announcements", "exam-lifecycle");
+        assertThat(xixi.configuration())
+            .containsEntry("imageEvidenceSelector", ".content img[src*='/ueditor/php/upload/image/']");
+        assertThat(data.enabled()).isTrue();
+        assertThat(data.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry).containsEntry("itemUriAttribute", "data-id");
+            assertThat(entry).containsEntry("reportedTotalRegex", "var\\s+recordNum\\s*=\\s*(\\d+)");
+        });
+        assertThat(data.listingUrl()).isNull();
+    }
+
+    @Test
     void catalogContainsTwentyUniqueOfficialTargetsAcrossAllRoutes() {
         var catalog = OfficialSourceCatalog.load();
 
@@ -58,7 +110,8 @@ class OfficialSourceCatalogTest {
             URI.create(source.officialRootUrl()).getScheme().equals("https"));
         assertThat(catalog.sources()).allMatch(source -> source.historicalYears().containsAll(java.util.List.of(2024, 2025, 2026)));
         assertThat(catalog.sources()).filteredOn(OfficialSourceCatalog.SourceDefinition::enabled)
-            .allMatch(source -> source.listingUrl() != null && !source.listingUrl().isBlank());
+            .allMatch(source -> source.listingUrl() != null && !source.listingUrl().isBlank()
+                || !source.listingEntries().isEmpty());
         assertThat(catalog.sources()).filteredOn(OfficialSourceCatalog.SourceDefinition::enabled)
             .extracting(OfficialSourceCatalog.SourceDefinition::code)
             .contains("HDU_RECRUITMENT", "ZJGSU_RECRUITMENT");

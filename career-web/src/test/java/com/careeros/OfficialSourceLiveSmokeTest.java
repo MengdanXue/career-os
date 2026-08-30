@@ -3,9 +3,11 @@ package com.careeros;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.careeros.application.AcquisitionHttpPorts.FetchRequest;
+import com.careeros.application.AcquisitionHttpPorts.ListingQuery;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
+import com.careeros.infrastructure.acquisition.ConfigurableSourceListingReader;
 import com.careeros.infrastructure.acquisition.JavaHttpDocumentFetcher;
 import com.careeros.infrastructure.acquisition.MediaTypeDetector;
 import com.careeros.infrastructure.acquisition.OfficialSourceCatalog;
@@ -66,6 +68,7 @@ class OfficialSourceLiveSmokeTest {
         var sources = OfficialSourceCatalog.load().sources().stream()
             .filter(OfficialSourceCatalog.SourceDefinition::enabled)
             .filter(source -> source.strategy() == OfficialSourceCatalog.DiscoveryStrategy.STATIC_HTML)
+            .filter(source -> source.listingEntries().isEmpty())
             .toList();
         assertThat(sources).isNotEmpty();
         sources.forEach(source -> {
@@ -74,6 +77,43 @@ class OfficialSourceLiveSmokeTest {
                 null, null, Duration.ofSeconds(20), 26_214_400));
             assertThat(fetched.status()).as(source.code()).isEqualTo(200);
             assertThat(discoverer.discover(source, fetched.content())).as(source.code()).isNotEmpty();
+        });
+    }
+
+    @Test
+    void multiEntryCatalogSourcesStillExposeOfficialIncrementalLinks() {
+        var sources = OfficialSourceCatalog.load().sources().stream()
+            .filter(OfficialSourceCatalog.SourceDefinition::enabled)
+            .filter(source -> !source.listingEntries().isEmpty())
+            .toList();
+        assertThat(sources).extracting(OfficialSourceCatalog.SourceDefinition::code)
+            .contains("HZ_TCM_HOSPITAL", "HZ_XIXI_HOSPITAL", "HZ_DATA_GROUP");
+        var reader = new ConfigurableSourceListingReader(fetcher, discoverer);
+        sources.forEach(definition -> {
+            RecruitmentSource source = multiEntrySource(definition);
+            var result = reader.read(source, new ListingQuery(Set.of(), false));
+            assertThat(result.links()).as(definition.code()).isNotEmpty();
+            assertThat(result.evidenceByEntry()).as(definition.code())
+                .hasSize(definition.listingEntries().size());
+        });
+    }
+
+    @Test
+    void multiEntryCatalogSourcesCanReachTheirConfiguredHistoricalTerminalPage() {
+        var sources = OfficialSourceCatalog.load().sources().stream()
+            .filter(source -> Set.of(
+                "HZ_TCM_HOSPITAL", "HZ_XIXI_HOSPITAL", "HZ_DATA_GROUP").contains(source.code()))
+            .toList();
+        var reader = new ConfigurableSourceListingReader(fetcher, discoverer);
+        sources.forEach(definition -> {
+            var result = reader.read(multiEntrySource(definition),
+                new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+            assertThat(result.links()).as(definition.code()).isNotEmpty();
+            assertThat(result.evidenceByEntry()).as(definition.code())
+                .hasSize(definition.listingEntries().size());
+            assertThat(result.evidenceByEntry().values())
+                .allSatisfy(entry -> assertThat(entry.evidenceByYear().values())
+                    .allSatisfy(evidence -> assertThat(evidence.traversalComplete()).isTrue()));
         });
     }
 
@@ -104,5 +144,18 @@ class OfficialSourceLiveSmokeTest {
                 "titleIncludeRegex", "招聘|招考|选聘|引进",
                 "titleExcludeRegex", "拟聘|公示|成绩|体检|递补",
                 "maxListPages", 1), null, null, now, 0, now, now);
+    }
+
+    private static RecruitmentSource multiEntrySource(
+        OfficialSourceCatalog.SourceDefinition definition
+    ) {
+        Instant now = Instant.parse("2026-08-15T00:00:00Z");
+        URI entry = URI.create(definition.listingEntries().getFirst().get("entryUri").toString());
+        return new RecruitmentSource(
+            UUID.nameUUIDFromBytes(definition.code().getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+            definition.code(), definition.name(), URI.create(definition.officialRootUrl()), entry,
+            SourceType.OFFICIAL_ORGANIZATION, "浙江杭州", CrawlMode.STATIC_HTML, true,
+            "0 0 8 * * *", "Asia/Shanghai", Duration.ZERO, definition.configuration(),
+            null, null, now, 0, now, now);
     }
 }

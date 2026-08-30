@@ -125,9 +125,19 @@ public final class AcquisitionHttpPorts {
         }
     }
 
-    public record DiscoveredLink(URI uri, String title, HttpReadContract readContract) {
+    public record DiscoveredLink(
+        URI uri, String title, HttpReadContract readContract, LocalDate publishedOn
+    ) {
         public DiscoveredLink(URI uri, String title) {
-            this(uri, title, null);
+            this(uri, title, null, null);
+        }
+
+        public DiscoveredLink(URI uri, String title, HttpReadContract readContract) {
+            this(uri, title, readContract, null);
+        }
+
+        public DiscoveredLink(URI uri, String title, LocalDate publishedOn) {
+            this(uri, title, null, publishedOn);
         }
 
         public DiscoveredLink {

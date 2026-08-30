@@ -129,6 +129,9 @@ public class OfficialLifecycleDocumentService {
             case QUALIFICATION_REVIEW -> jdbc.update(
                 "update recruitment_event set qualification_review_state='CONFIRMED', updated_at=now() where id=?",
                 eventId);
+            case WRITTEN_EXAM -> jdbc.update(
+                "update recruitment_event set written_exam_state='CONFIRMED', updated_at=now() where id=?",
+                eventId);
             case SCORE_RESULT -> jdbc.update(
                 "update recruitment_event set written_exam_state='CONFIRMED', updated_at=now() where id=?",
                 eventId);

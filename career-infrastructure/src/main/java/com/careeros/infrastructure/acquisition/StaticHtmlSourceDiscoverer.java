@@ -7,6 +7,7 @@ import com.careeros.domain.RecruitmentLifecycle;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,20 +45,33 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
         RecruitmentSource source, ListingEntryContract entry, URI pageUri, byte[] html
     ) {
         Pattern article = Pattern.compile(required(entry.configuration(), "articleUrlRegex"));
-        String selector = required(entry.configuration(), "linkSelector");
         var distinct = new LinkedHashMap<URI, DiscoveredLink>();
         var document = Jsoup.parse(htmlPayload(html), pageUri.toString());
-        for (var element : document.select(selector)) {
-            String href = element.attr("href").trim();
+        String itemSelector = optional(entry.configuration(), "listingItemSelector");
+        var items = itemSelector == null
+            ? document.select(required(entry.configuration(), "linkSelector"))
+            : document.select(itemSelector);
+        for (var item : items) {
+            var element = selected(item, optional(entry.configuration(), "itemLinkSelector"));
+            if (element == null) continue;
+            String attribute = optional(entry.configuration(), "itemUriAttribute");
+            if (attribute == null) attribute = "href";
+            String href = element.attr(attribute).trim();
             if (href.isEmpty()) continue;
+            String template = optional(entry.configuration(), "itemUriTemplate");
+            if (template != null) href = template.replace("{value}", href);
             URI resolved;
             try {
                 resolved = CanonicalUri.normalize(pageUri.resolve(href));
             } catch (IllegalArgumentException exception) {
                 continue;
             }
-            String title = element.attr("title").strip();
-            if (title.isEmpty()) title = element.text().strip();
+            var titleElement = selected(item, optional(entry.configuration(), "itemTitleSelector"));
+            if (titleElement == null) titleElement = element;
+            String title = titleElement.attr("title").strip();
+            if (title.isEmpty()) title = titleElement.text().strip();
+            LocalDate publishedOn = publishedOn(item,
+                optional(entry.configuration(), "itemPublishedDateSelector"));
             boolean allowedScheme = "https".equalsIgnoreCase(resolved.getScheme())
                 || entry.readContract().transportPolicy()
                     == com.careeros.application.AcquisitionHttpPorts.TransportPolicy.AUDITED_HTTP_READ_ONLY
@@ -66,7 +80,7 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
                 || entry.readContract().exactHosts().stream()
                     .noneMatch(host -> host.equalsIgnoreCase(resolved.getHost()))
                 || !article.matcher(resolved.toString()).matches()) continue;
-            distinct.putIfAbsent(resolved, new DiscoveredLink(resolved, title));
+            distinct.putIfAbsent(resolved, new DiscoveredLink(resolved, title, publishedOn));
         }
         var result = new ArrayList<>(distinct.values());
         result.sort(discoveryOrder());
@@ -148,6 +162,29 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
             throw new IllegalArgumentException("Source configuration requires " + key);
         }
         return text;
+    }
+
+    private static String optional(Map<String, Object> config, String key) {
+        Object value = config.get(key);
+        return value instanceof String text && !text.isBlank() ? text : null;
+    }
+
+    private static org.jsoup.nodes.Element selected(org.jsoup.nodes.Element item, String selector) {
+        return selector == null ? item : item.selectFirst(selector);
+    }
+
+    private static LocalDate publishedOn(org.jsoup.nodes.Element item, String selector) {
+        if (selector == null) return null;
+        var element = item.selectFirst(selector);
+        if (element == null) return null;
+        var matcher = Pattern.compile("(20\\d{2})[-/.年](\\d{1,2})[-/.月](\\d{1,2})").matcher(element.text());
+        if (!matcher.find()) return null;
+        try {
+            return LocalDate.of(Integer.parseInt(matcher.group(1)),
+                Integer.parseInt(matcher.group(2)), Integer.parseInt(matcher.group(3)));
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private static String htmlPayload(byte[] content) {

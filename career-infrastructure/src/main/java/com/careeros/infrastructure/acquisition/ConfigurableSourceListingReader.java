@@ -88,7 +88,7 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             result.links().forEach(link -> links.putIfAbsent(canonical(link.link().uri()),
                 new YearDiscoveredLink(
                     new DiscoveredLink(canonical(link.link().uri()), link.link().title(),
-                        entry.readContract()),
+                        entry.readContract(), link.link().publishedOn()),
                     link.recruitmentYear())));
             byEntry.put(entry.code(), new ListingEntryEvidence(
                 entry.code(), entry.completenessRequired(), result.evidenceByYear()));
@@ -128,11 +128,22 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         int maxPages = pageLimit(entry.configuration(), query);
         int confirmations = nonnegative(entry.configuration(), "emptyPageConfirmationPages", 0);
         LinkedHashMap<URI, YearDiscoveredLink> accepted = new LinkedHashMap<>();
+        LinkedHashMap<URI, DiscoveredLink> rawDistinct = new LinkedHashMap<>();
         Set<String> nonemptyFingerprints = new HashSet<>();
         int rawCount = 0;
         int emptyRun = 0;
+        Integer reportedTotal = null;
+        Integer reportedTotalPages = null;
         for (int page = 1; page <= maxPages; page++) {
             FetchedDocument fetched = fetch(source, entry, pageUri.apply(page));
+            reportedTotal = consistentReported(entry, fetched.content(), "reportedTotalRegex",
+                reportedTotal, "total");
+            reportedTotalPages = consistentReported(entry, fetched.content(), "reportedTotalPagesRegex",
+                reportedTotalPages, "total pages");
+            Integer currentPage = reported(entry, fetched.content(), "reportedCurrentPageRegex");
+            if (currentPage != null && currentPage != page) {
+                throw new FetchFailedException("Listing entry " + entry.code() + " reported an unexpected current page");
+            }
             List<DiscoveredLink> raw = canonicalDistinct(
                 discoverAll(source, entry, fetched.finalUri(), fetched.content()));
             if (raw.isEmpty()) {
@@ -149,9 +160,22 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             if (!nonemptyFingerprints.add(sha256(fetched.content()))) {
                 throw new FetchFailedException("Listing entry " + entry.code() + " repeated a non-terminal page");
             }
-            rawCount += raw.size();
+            raw.forEach(link -> rawDistinct.putIfAbsent(link.uri(), link));
+            rawCount = rawDistinct.size();
             addApplicableLinks(query, accepted, canonicalDistinct(
                 discover(source, entry, fetched.finalUri(), fetched.content())));
+            boolean terminal = reportedTotal != null && rawCount >= reportedTotal
+                || reportedTotalPages != null && page >= reportedTotalPages;
+            if (terminal) {
+                if (reportedTotal != null && rawCount != reportedTotal) {
+                    throw new FetchFailedException("Listing entry " + entry.code()
+                        + " unique entry count did not match reported total");
+                }
+                String reason = reportedTotalPages != null && page >= reportedTotalPages
+                    ? "REPORTED_LAST_PAGE_REACHED" : "REPORTED_TOTAL_REACHED";
+                return completed(query, List.copyOf(accepted.values()), page, rawCount,
+                    reason, "entry=" + entry.code() + "; official dynamic listing counters reconciled");
+            }
         }
         if (!query.historical()) return new ListingResult(List.copyOf(accepted.values()), Map.of());
         throw new FetchFailedException("Listing entry " + entry.code() + " exceeded configured page limit");
@@ -849,7 +873,8 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         LinkedHashMap<URI, DiscoveredLink> distinct = new LinkedHashMap<>();
         for (DiscoveredLink value : values) {
             URI canonical = canonical(value.uri());
-            distinct.putIfAbsent(canonical, new DiscoveredLink(canonical, value.title().trim()));
+            distinct.putIfAbsent(canonical, new DiscoveredLink(canonical, value.title().trim(),
+                value.readContract(), value.publishedOn()));
         }
         return List.copyOf(distinct.values());
     }
@@ -868,6 +893,7 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
     }
 
     private static Optional<LocalDate> publishedDate(DiscoveredLink link) {
+        if (link.publishedOn() != null) return Optional.of(link.publishedOn());
         Matcher matcher = URL_DATE.matcher(link.uri().getPath());
         if (!matcher.find()) return Optional.empty();
         try {
@@ -875,6 +901,34 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                 Integer.parseInt(matcher.group(2)), Integer.parseInt(matcher.group(3))));
         } catch (RuntimeException ignored) {
             return Optional.empty();
+        }
+    }
+
+    private static Integer consistentReported(
+        ListingEntryContract entry, byte[] content, String key, Integer previous, String description
+    ) {
+        Integer value = reported(entry, content, key);
+        if (value == null) return previous;
+        if (previous != null && !previous.equals(value)) {
+            throw new FetchFailedException("Listing entry " + entry.code() + " reported "
+                + description + " changed during traversal");
+        }
+        return value;
+    }
+
+    private static Integer reported(ListingEntryContract entry, byte[] content, String key) {
+        Object configured = entry.configuration().get(key);
+        if (!(configured instanceof String regex) || regex.isBlank()) return null;
+        Matcher matcher = Pattern.compile(regex).matcher(new String(content, StandardCharsets.UTF_8));
+        if (!matcher.find() || matcher.groupCount() < 1) {
+            throw new FetchFailedException("Listing entry " + entry.code() + " did not expose " + key);
+        }
+        try {
+            int value = Integer.parseInt(matcher.group(1));
+            if (value < 0) throw new NumberFormatException();
+            return value;
+        } catch (NumberFormatException invalid) {
+            throw new FetchFailedException("Listing entry " + entry.code() + " exposed invalid " + key, invalid);
         }
     }
 

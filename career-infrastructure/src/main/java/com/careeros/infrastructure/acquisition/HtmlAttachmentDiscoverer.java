@@ -41,6 +41,20 @@ public final class HtmlAttachmentDiscoverer implements AttachmentDiscoverer {
             if (title.isEmpty()) title = filename(uri);
             distinct.putIfAbsent(uri, new DiscoveredLink(uri, title, page.readContract()));
         }
+        Object imageSelector = source.configuration().get("imageEvidenceSelector");
+        if (imageSelector != null && !imageSelector.toString().isBlank()) {
+            for (var image : document.select(imageSelector.toString())) {
+                String src = image.attr("src").trim();
+                if (src.isEmpty()) continue;
+                URI uri;
+                try { uri = CanonicalUri.normalize(page.uri().resolve(src)); }
+                catch (IllegalArgumentException ignored) { continue; }
+                if (!authorized(page.readContract(), hosts, uri)) continue;
+                String title = image.attr("alt").strip();
+                if (title.isEmpty()) title = filename(uri);
+                distinct.putIfAbsent(uri, new DiscoveredLink(uri, title, page.readContract()));
+            }
+        }
         var result = new ArrayList<>(distinct.values());
         result.sort(java.util.Comparator.comparing(link -> link.uri().toString()));
         return List.copyOf(result);

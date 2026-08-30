@@ -13,18 +13,26 @@ public final class MediaTypeDetector {
     public static final String PDF = "application/pdf";
     public static final String XLS = "application/vnd.ms-excel";
     public static final String XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    public static final String PNG = "image/png";
+    public static final String JPEG = "image/jpeg";
 
     public String detect(URI uri, String header, byte[] content) {
         if (startsWith(content, "%PDF-".getBytes(StandardCharsets.US_ASCII))) return PDF;
         if (startsWith(content, new byte[] {(byte)0xD0,(byte)0xCF,0x11,(byte)0xE0,(byte)0xA1,(byte)0xB1,0x1A,(byte)0xE1})) return XLS;
+        if (startsWith(content, new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A})) return PNG;
+        if (startsWith(content, new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF})) return JPEG;
         if (looksLikeHtml(content)) return HTML;
         if (isXlsx(content)) return XLSX;
         String normalizedHeader = header == null ? "" : header.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
-        if (Set.of(HTML, "application/xhtml+xml", PDF, XLS, XLSX).contains(normalizedHeader)) return normalizedHeader;
+        if (Set.of(HTML, "application/xhtml+xml", PDF, XLS, XLSX, PNG, JPEG).contains(normalizedHeader)) {
+            return normalizedHeader;
+        }
         String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(Locale.ROOT);
         if (path.endsWith(".pdf")) return PDF;
         if (path.endsWith(".xls")) return XLS;
         if (path.endsWith(".xlsx")) return XLSX;
+        if (path.endsWith(".png")) return PNG;
+        if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return JPEG;
         return normalizedHeader.isBlank() ? "application/octet-stream" : normalizedHeader;
     }
 

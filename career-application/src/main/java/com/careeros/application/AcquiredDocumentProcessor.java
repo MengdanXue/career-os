@@ -97,6 +97,10 @@ public interface AcquiredDocumentProcessor {
             return new ProcessingResult(ProcessingStatus.UNSUPPORTED, null, null, 0, 0, 0, 0,
                 "UNSUPPORTED_MEDIA_TYPE", java.util.List.of());
         }
+        public static ProcessingResult ocrRequired() {
+            return new ProcessingResult(ProcessingStatus.OCR_REQUIRED, null, null, 0, 0, 0, 0,
+                "OCR_REQUIRED", java.util.List.of());
+        }
         public static ProcessingResult ignored(String reasonCode) {
             requireText(reasonCode, "reasonCode");
             return new ProcessingResult(ProcessingStatus.IGNORED, null, null, 0, 0, 0, 0, reasonCode, java.util.List.of());
@@ -107,6 +111,7 @@ public interface AcquiredDocumentProcessor {
         public boolean successful() {
             return status == ProcessingStatus.PROCESSED
                 || status == ProcessingStatus.PROCESSED_WITH_ERRORS
+                || status == ProcessingStatus.OCR_REQUIRED
                 || status == ProcessingStatus.IGNORED;
         }
         public Map<String, Object> summary() {
@@ -143,7 +148,9 @@ public interface AcquiredDocumentProcessor {
         }
     }
 
-    enum ProcessingStatus { PROCESSED, PROCESSED_WITH_ERRORS, IGNORED, UNSUPPORTED, FAILED }
+    enum ProcessingStatus {
+        PROCESSED, PROCESSED_WITH_ERRORS, OCR_REQUIRED, IGNORED, UNSUPPORTED, FAILED
+    }
 
     private static void requireText(String value, String field) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required");

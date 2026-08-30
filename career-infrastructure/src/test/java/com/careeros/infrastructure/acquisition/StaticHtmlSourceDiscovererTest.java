@@ -9,11 +9,47 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class StaticHtmlSourceDiscovererTest {
+    @Test
+    void structuredItemsExtractTemplateUrisTitlesAndPublishedDates() {
+        Map<String, Object> configured = new LinkedHashMap<>(multiEntrySource().configuration());
+        Map<String, Object> entry = new LinkedHashMap<>((Map<String, Object>)
+            ((List<?>) configured.get("listingEntries")).getFirst());
+        entry.put("entryUri", "https://official.example/news");
+        entry.put("articleUrlRegex", "^https://official\\.example/detail\\?id=[A-Z0-9@]+$");
+        entry.put("listingItemSelector", "div.notice");
+        entry.put("itemLinkSelector", ".header");
+        entry.put("itemTitleSelector", ".title");
+        entry.put("itemPublishedDateSelector", ".date");
+        entry.put("itemUriAttribute", "data-id");
+        entry.put("itemUriTemplate", "/detail?id={value}");
+        RecruitmentSource source = new RecruitmentSource(multiEntrySource().id(), "STRUCTURED", "结构化列表",
+            URI.create("https://official.example/"), URI.create("https://official.example/news"),
+            SourceType.OFFICIAL_GOVERNMENT, "杭州", CrawlMode.STATIC_HTML, true,
+            "0 10 8 * * *", "Asia/Shanghai", Duration.ofSeconds(1),
+            Map.of("listingEntries", List.of(entry)), null, null, Instant.parse("2026-08-15T00:00:00Z"),
+            0, Instant.parse("2026-08-15T00:00:00Z"), Instant.parse("2026-08-15T00:00:00Z"));
+        ListingEntryContract contract = ListingEntryContract.from(source).getFirst();
+        byte[] html = """
+            <div class='notice'><div class='header' data-id='H@42'><span class='title'>2026年招聘公告</span></div><time class='date'>2026-08-24</time></div>
+            """.getBytes(StandardCharsets.UTF_8);
+
+        var links = new StaticHtmlSourceDiscoverer().discoverAll(source, contract, contract.entryUri(), html);
+
+        assertThat(links).singleElement().satisfies(link -> {
+            assertThat(link.uri()).hasToString("https://official.example/detail?id=H@42");
+            assertThat(link.title()).isEqualTo("2026年招聘公告");
+            assertThat(link.publishedOn()).isEqualTo(LocalDate.of(2026, 8, 24));
+        });
+    }
+
     @Test
     void entrySpecificDiscoveryUsesTheActiveEntryFiltersAndHosts() {
         RecruitmentSource source = multiEntrySource();
