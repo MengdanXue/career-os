@@ -22,6 +22,117 @@ class MigrationIntegrationTest {
         .withPassword("career_os");
 
     @Test
+    void v53OnboardsHealthCommissionWithoutDowngradingVerifiedProgress() throws Exception {
+        String schema = "health_commission_idempotent_onboarding";
+        var configuration = Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema).defaultSchema(schema);
+        configuration.target(MigrationVersion.fromVersion("52")).load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var source = connection.prepareStatement("""
+                 insert into health_commission_idempotent_onboarding.recruitment_source (
+                     id, code, name, base_uri, entry_uri, source_type, region, crawl_mode,
+                     enabled, cron_expression, time_zone, minimum_request_interval_ms,
+                     configuration, next_due_at
+                 ) values (
+                     '01992f09-0000-7000-8000-000000000416',
+                     'HZ_HEALTH_COMMISSION', 'preexisting health commission',
+                     'https://wsjkw.hangzhou.gov.cn/',
+                     'https://wsjkw.hangzhou.gov.cn/legacy',
+                     'OFFICIAL_GOVERNMENT', '浙江杭州', 'STATIC_HTML', true,
+                     '0 5 8 * * *', 'Asia/Shanghai', 1500, '{}'::jsonb, now()
+                 )
+                 """);
+             var target = connection.prepareStatement("""
+                 insert into health_commission_idempotent_onboarding.target_source_catalog (
+                     code, name, route_code, organization_type, region, authority_level,
+                     official_root_url, connection_status, recruitment_source_id, enabled,
+                     scope_level, scope_code, priority_tier, coverage_role, updated_at
+                 ) values (
+                     'HZ_HEALTH_COMMISSION', 'preexisting health commission',
+                     'UNIVERSITY_HOSPITAL_IT', 'GOVERNMENT', '浙江杭州', 'OFFICIAL_AGGREGATOR',
+                     'https://wsjkw.hangzhou.gov.cn/', 'CONNECTED',
+                     '01992f09-0000-7000-8000-000000000416', true,
+                     'CITY', 'HANGZHOU_HEALTH', 'P0', 'PRIMARY', now()
+                 )
+                 """);
+             var coverage = connection.prepareStatement("""
+                 insert into health_commission_idempotent_onboarding.source_year_coverage (
+                     source_id, recruitment_year, status, discovered_count, fetched_count,
+                     parsed_count, target_job_count, completion_basis, completed_at,
+                     listing_page_count, filtered_count, failed_count,
+                     earliest_published_on, latest_published_on, stop_reason, updated_at
+                 ) values (
+                     '01992f09-0000-7000-8000-000000000416', 2025, 'COMPLETE',
+                     475, 475, 475, 3, 'operator verified health lifecycle', now(),
+                     33, 420, 0, '2025-01-01', '2025-12-31',
+                     'REPORTED_TOTAL_REACHED', now()
+                 )
+                 """);
+             var checkpoint = connection.prepareStatement("""
+                 insert into health_commission_idempotent_onboarding.source_onboarding_checkpoint (
+                     source_id, checkpoint, status, evidence, verified_at
+                 ) values (
+                     '01992f09-0000-7000-8000-000000000416', 'CONTRACT_VERIFIED',
+                     'VERIFIED', 'operator verified 201 and 274 row contracts', now()
+                 )
+                 """)) {
+            assertThat(source.executeUpdate()).isEqualTo(1);
+            assertThat(target.executeUpdate()).isEqualTo(1);
+            assertThat(coverage.executeUpdate()).isEqualTo(1);
+            assertThat(checkpoint.executeUpdate()).isEqualTo(1);
+        }
+
+        configuration.target(MigrationVersion.LATEST).load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var source = connection.prepareStatement("""
+                 select target.connection_status,
+                        jsonb_array_length(source.configuration -> 'listingEntries') as entries
+                 from health_commission_idempotent_onboarding.recruitment_source source
+                 join health_commission_idempotent_onboarding.target_source_catalog target
+                   on target.recruitment_source_id=source.id
+                 where source.code='HZ_HEALTH_COMMISSION'
+                 """);
+             var coverage = connection.prepareStatement("""
+                 select count(*) as total,
+                        count(*) filter (where recruitment_year=2025 and status='COMPLETE'
+                          and discovered_count=475 and completion_basis='operator verified health lifecycle'
+                          and listing_page_count=33 and stop_reason='REPORTED_TOTAL_REACHED') as preserved
+                 from health_commission_idempotent_onboarding.source_year_coverage
+                 where source_id='01992f09-0000-7000-8000-000000000416'
+                   and recruitment_year between 2024 and 2027
+                 """);
+             var checkpoints = connection.prepareStatement("""
+                 select count(*) as total,
+                        count(*) filter (where checkpoint='CONTRACT_VERIFIED'
+                          and status='VERIFIED'
+                          and evidence='operator verified 201 and 274 row contracts') as preserved
+                 from health_commission_idempotent_onboarding.source_onboarding_checkpoint
+                 where source_id='01992f09-0000-7000-8000-000000000416'
+                 """)) {
+            try (var rows = source.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("connection_status")).isEqualTo("CONNECTED");
+                assertThat(rows.getInt("entries")).isEqualTo(2);
+            }
+            try (var rows = coverage.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt("total")).isEqualTo(4);
+                assertThat(rows.getInt("preserved")).isEqualTo(1);
+            }
+            try (var rows = checkpoints.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt("total")).isEqualTo(5);
+                assertThat(rows.getInt("preserved")).isEqualTo(1);
+            }
+        }
+    }
+
+    @Test
     void v49OnboardsFuyangWithoutDestroyingPreexistingProgress() throws Exception {
         String schema = "fuyang_idempotent_onboarding";
         var configuration = Flyway.configure()
@@ -369,7 +480,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(52);
+        assertThat(result.migrationsExecuted).isEqualTo(55);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -430,7 +541,10 @@ class MigrationIntegrationTest {
               var qiantangSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_QIANTANG_GOV' and source.enabled and source.entry_uri='https://www.qiantang.gov.cn/col/col1657687/index.html' and source.configuration ->> 'historicalPaginationMode'='JCMS_PARAM_JSON' and source.configuration ->> 'adapterType'='JCMS_LISTING' and (source.configuration ->> 'incrementalListingMaxPages')::int=10 and (source.configuration ->> 'historicalMaxPages')::int=200 and target.connection_status='PARTIAL'");
               var shangchengSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_SHANGCHENG_GOV' and source.enabled and source.entry_uri='https://www.hzsc.gov.cn/col/col1229554150/index.html' and jsonb_array_length(source.configuration -> 'listingEntries')=1 and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2025]'::jsonb and (source.configuration -> 'listingEntries' -> 0 ->> 'completenessRequired')::boolean and target.connection_status='PARTIAL'");
               var linanSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_LINAN_GOV' and source.enabled and jsonb_array_length(source.configuration -> 'listingEntries')=1 and source.configuration -> 'listingEntries' -> 0 -> 'jcmsSearch' @> '{\"xxgkId\":\"F001\",\"className\":\"人事信息\"}'::jsonb and target.connection_status='PARTIAL'");
-              var jiandeSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_JIANDE_GOV' and source.enabled and source.entry_uri like '%col1229535302%number=JD16-JD1602%' and source.configuration -> 'listingEntries' -> 0 -> 'jcmsSearch' @> '{\"xxgkId\":\"JD16-JD1602\",\"className\":\"招聘招录\"}'::jsonb and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2024]'::jsonb and target.connection_status='PARTIAL'")) {
+              var jiandeSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_JIANDE_GOV' and source.enabled and source.entry_uri like '%col1229535302%number=JD16-JD1602%' and source.configuration -> 'listingEntries' -> 0 -> 'jcmsSearch' @> '{\"xxgkId\":\"JD16-JD1602\",\"className\":\"招聘招录\"}'::jsonb and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2024]'::jsonb and target.connection_status='PARTIAL'");
+              var healthSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_HEALTH_COMMISSION' and source.enabled and jsonb_array_length(source.configuration -> 'listingEntries')=2 and source.configuration -> 'listingEntries' -> 0 ->> 'entryUri' like '%col1229318903%' and source.configuration -> 'listingEntries' -> 1 ->> 'entryUri' like '%col1229318910%' and target.scope_level='CITY' and target.priority_tier='P0' and target.connection_status='PARTIAL'");
+              var yuhangSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_YUHANG_GOV' and source.enabled and source.entry_uri like '%col1229191870%' and source.configuration -> 'listingEntries' -> 0 -> 'jcmsSearch' @> '{\"xxgkId\":\"W001-C001\",\"className\":\"人员考录\"}'::jsonb and (source.configuration -> 'listingEntries' -> 0 ->> 'reconcileReportedTotalByListingItems')::boolean and target.connection_status='PARTIAL'");
+              var xiaoshanSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_XIAOSHAN_GOV' and source.enabled and source.configuration -> 'listingEntries' -> 0 ->> 'mode'='STATIC_SUFFIX_TEMPLATE' and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2024]'::jsonb and target.connection_status='PARTIAL'")) {
             try (var rows = tables.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(14); }
             try (var rows = candidates.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = pendingIndex.executeQuery()) {
@@ -503,6 +617,9 @@ class MigrationIntegrationTest {
             try (var rows = shangchengSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = linanSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = jiandeSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+            try (var rows = healthSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+            try (var rows = yuhangSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+            try (var rows = xiaoshanSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
         }
 
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -521,7 +638,7 @@ class MigrationIntegrationTest {
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("EXPECTED");
                 assertThat(rows.next()).isFalse();
             }
-            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(33); }
+            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(42); }
             try (var rows = educationFactConstraint.executeQuery()) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString(1)).contains("EDUCATION_RECORDS", "GENDER", "POLITICAL_AFFILIATION", "EMPLOYMENT_HISTORY");

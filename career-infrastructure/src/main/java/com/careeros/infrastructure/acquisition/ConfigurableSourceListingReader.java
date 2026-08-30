@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -131,7 +132,7 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         LinkedHashMap<URI, DiscoveredLink> rawDistinct = new LinkedHashMap<>();
         Set<String> nonemptyFingerprints = new HashSet<>();
         int rawCount = 0;
-        int listedItemCount = 0;
+        Set<URI> listedItemIdentities = new LinkedHashSet<>();
         int emptyRun = 0;
         Integer reportedTotal = null;
         Integer reportedTotalPages = null;
@@ -140,7 +141,7 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             boolean reconcileByItems = configuredBoolean(
                 entry.configuration(), "reconcileReportedTotalByListingItems", false);
             if (reconcileByItems) {
-                listedItemCount += listingItemCount(entry, fetched.content());
+                listedItemIdentities.addAll(listingItemIdentities(entry, fetched.content()));
             }
             reportedTotal = consistentReported(entry, fetched.content(), "reportedTotalRegex",
                 reportedTotal, "total");
@@ -170,7 +171,7 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             rawCount = rawDistinct.size();
             addApplicableLinks(query, accepted, canonicalDistinct(
                 discover(source, entry, fetched.finalUri(), fetched.content())));
-            int reconciledCount = reconcileByItems ? listedItemCount : rawCount;
+            int reconciledCount = reconcileByItems ? listedItemIdentities.size() : rawCount;
             boolean terminal = reportedTotal != null && reconciledCount >= reportedTotal
                 || reportedTotalPages != null && page >= reportedTotalPages;
             if (terminal) {
@@ -196,9 +197,16 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         LinkedHashMap<URI, DiscoveredLink> rawDistinct = new LinkedHashMap<>();
         LinkedHashMap<URI, YearDiscoveredLink> accepted = new LinkedHashMap<>();
         Set<String> pageFingerprints = new HashSet<>();
+        boolean reconcileByItems = configuredBoolean(
+            entry.configuration(), "reconcileReportedTotalByListingItems", false);
+        Set<URI> listedItemIdentities = new LinkedHashSet<>();
         Integer total = null;
         for (int page = 1; page <= maxPages; page++) {
             FetchedDocument fetched = fetch(source, entry, jcmsPageUri(entry, page, pageSize));
+            int listedBefore = listedItemIdentities.size();
+            if (reconcileByItems) {
+                listedItemIdentities.addAll(listingItemIdentities(entry, fetched.content()));
+            }
             int reported = listingTotal(fetched.content());
             if (total == null) total = reported;
             else if (!total.equals(reported)) {
@@ -214,15 +222,20 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             raw.forEach(link -> rawDistinct.putIfAbsent(link.uri(), link));
             addApplicableLinks(query, accepted, canonicalDistinct(
                 discover(source, entry, fetched.finalUri(), fetched.content())));
-            if (page > 1 && rawDistinct.size() == before && before < total) {
+            int reconciledCount = reconcileByItems ? listedItemIdentities.size() : rawDistinct.size();
+            boolean listingAdvanced = reconcileByItems
+                ? listedItemIdentities.size() > listedBefore : rawDistinct.size() > before;
+            if (page > 1 && !listingAdvanced && reconciledCount < total) {
                 throw new FetchFailedException("Listing entry " + entry.code() + " page did not add any new entry");
             }
             if ((long) page * pageSize >= total) {
-                if (rawDistinct.size() != total) {
+                if (reconciledCount != total) {
                     throw new FetchFailedException("Listing entry " + entry.code()
-                        + " unique entry count did not match reported total");
+                        + (reconcileByItems
+                            ? " listing item count did not match reported total"
+                            : " unique entry count did not match reported total"));
                 }
-                return completed(query, List.copyOf(accepted.values()), page, total,
+                return completed(query, List.copyOf(accepted.values()), page, rawDistinct.size(),
                     "REPORTED_TOTAL_REACHED", "entry=" + entry.code() + "; official listing total=" + total);
             }
         }
@@ -793,15 +806,31 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         }
     }
 
-    private static int listingItemCount(ListingEntryContract entry, byte[] content) {
+    private static Set<URI> listingItemIdentities(ListingEntryContract entry, byte[] content) {
         String payload = new String(content, StandardCharsets.UTF_8);
         if (payload.stripLeading().startsWith("{")) {
             JsonNode root = json(content, "listing item counter");
             String html = root.path("data").path("html").asText();
             if (!html.isBlank()) payload = html;
         }
-        return Jsoup.parse(payload, entry.entryUri().toString())
-            .select(required(entry.configuration(), "listingItemSelector")).size();
+        var document = Jsoup.parse(payload, entry.entryUri().toString());
+        var items = document.select(required(entry.configuration(), "listingItemSelector"));
+        String linkSelector = required(entry.configuration(), "itemLinkSelector");
+        Set<URI> identities = new LinkedHashSet<>();
+        for (var item : items) {
+            var link = item.selectFirst(linkSelector);
+            if (link == null || link.attr("href").isBlank()) {
+                throw new FetchFailedException("Listing entry " + entry.code()
+                    + " cannot derive a stable identity for an official listing item");
+            }
+            try {
+                identities.add(canonical(entry.entryUri().resolve(link.attr("href"))));
+            } catch (IllegalArgumentException invalid) {
+                throw new FetchFailedException("Listing entry " + entry.code()
+                    + " exposed an invalid listing item URI", invalid);
+            }
+        }
+        return Set.copyOf(identities);
     }
 
     private static boolean configuredBoolean(

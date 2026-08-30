@@ -454,6 +454,66 @@ class ConfigurableSourceListingReaderTest {
     }
 
     @Test
+    void jcmsParamJsonCanReconcileOfficialRowsWhileKeepingOnlyContractedUniqueArticles() {
+        Map<String, Object> entry = baseEntry(
+            "health", "JCMS_PARAM_JSON", "https://official.example/health");
+        entry.put("listingApiUri", "https://official.example/api/unit?tag=health");
+        entry.put("historicalPageSize", 15);
+        entry.put("historicalMaxPages", 3);
+        entry.put("incrementalListingMaxPages", 2);
+        entry.put("reconcileReportedTotalByListingItems", true);
+        entry.put("listingItemSelector", "ul.items > li");
+        entry.put("itemLinkSelector", "a[href]");
+        String param = URLEncoder.encode(
+            "{\"pageNo\":1,\"pageSize\":15}", StandardCharsets.UTF_8);
+        URI first = URI.create("https://official.example/api/unit?tag=health&paramJson=" + param);
+        String html = "<div count=\"2\"></div><ul class='items'>"
+            + "<li><a href='/art/2026/8/20/art_1.html'>2026年招聘公告</a></li>"
+            + "<li><a href='https://external.example/post'>外部同步稿</a></li></ul>";
+        byte[] response = ("{\"data\":{\"html\":\""
+            + html.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}}")
+            .getBytes(StandardCharsets.UTF_8);
+        var fetcher = new MapFetcher(Map.of(first, response));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(fetcher.requests()).containsExactly(first);
+        assertThat(result.links()).hasSize(1);
+        assertThat(result.evidenceByEntry().get("health").evidenceByYear().get(2026).rawCount())
+            .isEqualTo(1);
+        assertThat(result.evidenceByEntry().get("health").evidenceByYear().get(2026).stopReason())
+            .isEqualTo("REPORTED_TOTAL_REACHED");
+    }
+
+    @Test
+    void jcmsItemReconciliationRejectsTheSameListingIdentityAcrossDifferentPages() {
+        Map<String, Object> entry = baseEntry(
+            "health", "JCMS_PARAM_JSON", "https://official.example/health");
+        entry.put("listingApiUri", "https://official.example/api/unit?tag=health");
+        entry.put("historicalPageSize", 1);
+        entry.put("historicalMaxPages", 3);
+        entry.put("incrementalListingMaxPages", 2);
+        entry.put("reconcileReportedTotalByListingItems", true);
+        entry.put("listingItemSelector", "ul.items > li");
+        entry.put("itemLinkSelector", "a[href]");
+        URI first = URI.create("https://official.example/api/unit?tag=health&paramJson="
+            + URLEncoder.encode("{\"pageNo\":1,\"pageSize\":1}", StandardCharsets.UTF_8));
+        URI second = URI.create("https://official.example/api/unit?tag=health&paramJson="
+            + URLEncoder.encode("{\"pageNo\":2,\"pageSize\":1}", StandardCharsets.UTF_8));
+        var fetcher = new MapFetcher(Map.of(
+            first, jcmsItemPage(2, "page-one", "/art/2026/8/20/art_1.html"),
+            second, jcmsItemPage(2, "page-two", "/art/2026/8/20/art_1.html")
+        ));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(
+            fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("page did not add any new entry");
+    }
+
+    @Test
     void numberedHtmlRejectsTerminalReportedTotalMismatch() {
         Map<String, Object> entry = baseEntry("data", "QUERY_PAGE", "https://official.example/notices");
         entry.put("historicalMaxPages", 5);
@@ -1008,6 +1068,15 @@ class ConfigurableSourceListingReaderTest {
             .replace("\\", "\\\\").replace("\"", "\\\"");
         return ("{\"success\":true,\"data\":{\"html\":\"" + escaped
             + "\"}}")
+            .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static byte[] jcmsItemPage(int count, String marker, String href) {
+        String html = "<div count=\"" + count + "\" data-marker=\"" + marker
+            + "\"></div><ul class='items'><li><a href='" + href
+            + "'>2026年招聘公告</a></li></ul>";
+        return ("{\"data\":{\"html\":\""
+            + html.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}}")
             .getBytes(StandardCharsets.UTF_8);
     }
 

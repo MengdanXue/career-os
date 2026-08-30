@@ -182,6 +182,72 @@ class OfficialSourceCatalogTest {
     }
 
     @Test
+    void catalogPublishesHealthCommissionAnnouncementsAndPublicityAsRequiredLifecycleEntries() {
+        var health = OfficialSourceCatalog.load().sources().stream()
+            .filter(source -> source.code().equals("HZ_HEALTH_COMMISSION"))
+            .findFirst().orElseThrow();
+
+        assertThat(health.enabled()).isTrue();
+        assertThat(health.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(health.historicalYears()).containsExactly(2024, 2025, 2026, 2027);
+        assertThat(health.listingEntries()).extracting(entry -> entry.get("code"))
+            .containsExactly("recruitment-announcements", "appointment-publicity");
+        assertThat(health.listingEntries()).allSatisfy(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "JCMS_PARAM_JSON")
+                .containsEntry("historicalPageSize", 15)
+                .containsEntry("reconcileReportedTotalByListingItems", true)
+                .containsEntry("completenessRequired", true);
+            assertThat(entry.get("allowedHosts")).isEqualTo(List.of(
+                "wsjkw.hangzhou.gov.cn",
+                "zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn"));
+        });
+        assertThat(health.listingEntries().get(0))
+            .containsEntry("historicalMaxPages", 16)
+            .containsEntry("role", "PRIMARY");
+        assertThat(health.listingEntries().get(1))
+            .containsEntry("historicalMaxPages", 22)
+            .containsEntry("role", "LIFECYCLE");
+    }
+
+    @Test
+    void catalogPublishesYuhangAndXiaoshanVerifiedP0DistrictContracts() {
+        var catalog = OfficialSourceCatalog.load();
+        var yuhang = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_YUHANG_GOV")).findFirst().orElseThrow();
+        var xiaoshan = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_XIAOSHAN_GOV")).findFirst().orElseThrow();
+
+        assertThat(yuhang.enabled()).isTrue();
+        assertThat(yuhang.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(yuhang.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "JCMS_PARAM_JSON")
+                .containsEntry("historicalPageSize", 15)
+                .containsEntry("historicalMaxPages", 20)
+                .containsEntry("reconcileReportedTotalByListingItems", true)
+                .containsEntry("completenessRequired", true);
+            assertThat(entry.get("entryUri")).isEqualTo(
+                "https://www.yuhang.gov.cn/col/col1229191870/index.html");
+            assertThat(entry.get("jcmsSearch")).isEqualTo(Map.of(
+                "xxgkId", "W001-C001", "xxgkType", "", "className", "人员考录"));
+        });
+
+        assertThat(xiaoshan.enabled()).isTrue();
+        assertThat(xiaoshan.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(xiaoshan.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "STATIC_SUFFIX_TEMPLATE")
+                .containsEntry("historicalMaxPages", 5)
+                .containsEntry("knownArchiveGapYears", List.of(2024))
+                .containsEntry("reconcileReportedTotalByListingItems", true)
+                .containsEntry("completenessRequired", true);
+            assertThat(entry.get("pageUriTemplate").toString())
+                .contains("pageId=1229292680", "pageNo%22%3A{page}", "pageSize%22%3A20");
+        });
+    }
+
+    @Test
     void catalogPublishesFirstHospitalAsAnExactAuthorityMultiEntrySource() {
         var hospital = OfficialSourceCatalog.load().sources().stream()
             .filter(source -> source.code().equals("HZ_FIRST_HOSPITAL"))

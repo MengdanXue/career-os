@@ -21,6 +21,58 @@ sources:
     historicalYears: [2024, 2025, 2026]
     enabled: true
     articleUrlRegex: '^https://hrss\.hangzhou\.gov\.cn(?:/col/col[0-9]+)?/art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+  - code: HZ_HEALTH_COMMISSION
+    name: 杭州市卫生健康委员会事业单位招聘
+    routeCode: UNIVERSITY_HOSPITAL_IT
+    officialRootUrl: https://wsjkw.hangzhou.gov.cn/
+    strategy: JCMS_LISTING
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    listingEntries:
+      - code: recruitment-announcements
+        entryUri: 'https://wsjkw.hangzhou.gov.cn/col/col1229318903/index.html?number=C011401'
+        role: PRIMARY
+        mode: JCMS_PARAM_JSON
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: true
+        listingApiUri: 'https://wsjkw.hangzhou.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=1305&tplSetId=ZSdbO0sdxNOkVbued9HHd&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A81&editType=null&pageId=1229318903'
+        historicalPageSize: 15
+        historicalMaxPages: 16
+        incrementalListingMaxPages: 2
+        reconcileReportedTotalByListingItems: true
+        allowedHosts: [wsjkw.hangzhou.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        articleUrlRegex: '^https://wsjkw\.hangzhou\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        listingItemSelector: '.page-content li'
+        itemLinkSelector: 'a[href]'
+        itemTitleSelector: 'a[href]'
+        itemPublishedDateSelector: 'b'
+        linkSelector: 'a[href]'
+        reportedTotalRegex: 'count=\\"(\d+)\\"'
+        reportedCurrentPageRegex: 'pageNo=\\"(\d+)\\"'
+        titleIncludeRegex: '招聘|招考|招录|选聘|引进|人才|报名|岗位|笔试|考试|资格|复审|成绩|面试|体检|考察|公示|录用|聘用|递补|取消|核减'
+        titleExcludeRegex: '招聘会|培训|讲座|编外|派遣'
+      - code: appointment-publicity
+        entryUri: https://wsjkw.hangzhou.gov.cn/col/col1229318910/index.html
+        role: LIFECYCLE
+        mode: JCMS_PARAM_JSON
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: true
+        listingApiUri: 'https://wsjkw.hangzhou.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=1305&tplSetId=ZSdbO0sdxNOkVbued9HHd&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A81&editType=null&pageId=1229318910'
+        historicalPageSize: 15
+        historicalMaxPages: 22
+        incrementalListingMaxPages: 2
+        reconcileReportedTotalByListingItems: true
+        allowedHosts: [wsjkw.hangzhou.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        articleUrlRegex: '^https://wsjkw\.hangzhou\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        listingItemSelector: '.page-content li'
+        itemLinkSelector: 'a[href]'
+        itemTitleSelector: 'a[href]'
+        itemPublishedDateSelector: 'b'
+        linkSelector: 'a[href]'
+        reportedTotalRegex: 'count=\\"(\d+)\\"'
+        reportedCurrentPageRegex: 'pageNo=\\"(\d+)\\"'
+        titleIncludeRegex: '招聘|招考|招录|选聘|引进|人才|资格|复审|成绩|面试|体检|考察|公示|录用|聘用|递补|取消|核减'
+        titleExcludeRegex: '招聘会|培训|讲座|编外|派遣'
   - code: HZ_BINJIANG_GOV
     name: 杭州高新区（滨江）政府招聘
     routeCode: PUBLIC_TECH
@@ -32,11 +84,33 @@ sources:
     name: 余杭区政府招聘
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.yuhang.gov.cn/
-    listingUrl: https://www.yuhang.gov.cn/col/col1229176178/index.html
-    strategy: STATIC_HTML
+    strategy: JCMS_LISTING
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
-    articleUrlRegex: '^https://www\.yuhang\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
+    enabled: true
+    listingEntries:
+      - code: personnel-recruitment
+        entryUri: https://www.yuhang.gov.cn/col/col1229191870/index.html
+        role: PRIMARY
+        mode: JCMS_PARAM_JSON
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: true
+        listingApiUri: 'https://www.yuhang.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=3095&tplSetId=rZlQrQ3MzlENOr1wE0PeW&pageType=column&tagId=%E7%BB%84%E9%85%8D%E5%88%86%E7%B1%BBlist&editType=null&pageId=1229191870'
+        jcmsSearch: {xxgkId: W001-C001, xxgkType: '', className: 人员考录}
+        historicalPageSize: 15
+        historicalMaxPages: 20
+        incrementalListingMaxPages: 2
+        reconcileReportedTotalByListingItems: true
+        allowedHosts: [www.yuhang.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        articleUrlRegex: '^https://www\.yuhang\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        listingItemSelector: 'ul.ajax-ul > li.cf.border-line'
+        itemLinkSelector: 'a.fl[href]'
+        itemTitleSelector: 'a.fl[href]'
+        itemPublishedDateSelector: 'span.fr'
+        linkSelector: 'a.fl[href]'
+        reportedTotalRegex: 'count=\\"(\d+)\\"'
+        reportedCurrentPageRegex: 'pageNo=\\"(\d+)\\"'
+        titleIncludeRegex: '招聘|招考|招录|选聘|引进|人才|报名|岗位|核减|取消|资格|复审|笔试|成绩|面试|体检|考察|公示|录用|聘用|递补|放弃'
+        titleExcludeRegex: '招聘会|培训|讲座'
   - code: HZ_QIANTANG_GOV
     name: 钱塘区政府招聘
     routeCode: PUBLIC_TECH
@@ -55,11 +129,32 @@ sources:
     name: 萧山区政府事业单位考试
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.xiaoshan.gov.cn/
-    listingUrl: https://www.xiaoshan.gov.cn/col/col1229292680/index.html
-    strategy: STATIC_HTML
+    strategy: JCMS_LISTING
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
-    articleUrlRegex: '^https://www\.xiaoshan\.gov\.cn/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+_[0-9]+\.html$'
+    enabled: true
+    listingEntries:
+      - code: institution-exams
+        entryUri: https://www.xiaoshan.gov.cn/col/col1229292680/index.html
+        role: PRIMARY
+        mode: STATIC_SUFFIX_TEMPLATE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024]
+        completenessRequired: true
+        pageUriTemplate: 'https://www.xiaoshan.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2243&tplSetId=GazmxWZitZXDWHJedYwxo&pageType=column&tagId=%E5%BD%93%E5%89%8D%E6%A0%8F%E7%9B%AE%E5%88%97%E8%A1%A81a&editType=null&pageId=1229292680&paramJson=%7B%22pageNo%22%3A{page}%2C%22pageSize%22%3A20%7D'
+        historicalMaxPages: 5
+        incrementalListingMaxPages: 2
+        reconcileReportedTotalByListingItems: true
+        allowedHosts: [www.xiaoshan.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        articleUrlRegex: '^https://www\.xiaoshan\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        listingItemSelector: '#当前栏目列表1a .page-content > li'
+        itemLinkSelector: 'a[href]'
+        itemTitleSelector: 'a[href]'
+        itemPublishedDateSelector: 'b.zfxxgk_zdgkc_time'
+        linkSelector: 'a[href]'
+        reportedTotalRegex: 'count:\s*\\"(\d+)\\"'
+        reportedCurrentPageRegex: 'pageNo:\s*\\"(\d+)\\"'
+        titleIncludeRegex: '招聘|招考|招录|选聘|选用|引进|人才|高学历事业人员|报名|岗位|通告|核减|取消|资格|复审|笔试|成绩|面试|体检|考察|公示|录用|聘用|递补|放弃'
+        titleExcludeRegex: '招聘会|培训|讲座'
   - code: HZ_LINPING_GOV
     name: 临平区政府招聘
     routeCode: PUBLIC_TECH

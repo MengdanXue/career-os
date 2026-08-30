@@ -221,6 +221,62 @@ class OfficialSourceLiveSmokeTest {
     }
 
     @Test
+    void healthCommissionClosesBothOfficialRecruitmentLifecycleColumns() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_HEALTH_COMMISSION"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var announcements = result.evidenceByEntry().get("recruitment-announcements")
+            .evidenceByYear().get(2026);
+        var publicity = result.evidenceByEntry().get("appointment-publicity")
+            .evidenceByYear().get(2026);
+
+        assertThat(announcements.pageCount()).isEqualTo(14);
+        assertThat(announcements.rawCount()).isEqualTo(201);
+        assertThat(publicity.pageCount()).isEqualTo(19);
+        assertThat(publicity.rawCount()).isEqualTo(272);
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+        assertThat(result.links()).isNotEmpty();
+    }
+
+    @Test
+    void yuhangCloses252OfficialRowsWithoutAuthorizingTheExternalPinnedLink() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_YUHANG_GOV"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var evidence = result.evidenceByEntry().get("personnel-recruitment")
+            .evidenceByYear().get(2026);
+
+        assertThat(evidence.pageCount()).isEqualTo(17);
+        assertThat(evidence.rawCount()).isEqualTo(251);
+        assertThat(evidence.stopReason()).isEqualTo("REPORTED_TOTAL_REACHED");
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+        assertThat(result.links()).isNotEmpty();
+    }
+
+    @Test
+    void xiaoshanCloses22RowsWithoutHidingThe2024ArchiveGap() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_XIAOSHAN_GOV"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var evidence = result.evidenceByEntry().get("institution-exams")
+            .evidenceByYear().get(2026);
+
+        assertThat(evidence.pageCount()).isEqualTo(2);
+        assertThat(evidence.rawCount()).isEqualTo(22);
+        assertThat(evidence.stopReason()).isEqualTo("REPORTED_TOTAL_REACHED");
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isFalse();
+        assertThat(result.evidenceByYear().get(2024).stopReason())
+            .isEqualTo("KNOWN_OFFICIAL_ARCHIVE_GAP");
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+        assertThat(result.links()).isNotEmpty();
+    }
+
+    @Test
     void xixiLiveListingPreservesLinksDatesAndIncrementalYearClassification() {
         var source = multiEntrySource(multiEntryDefinition("HZ_XIXI_HOSPITAL"));
         var entry = ListingEntryContract.from(source).stream()
