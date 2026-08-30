@@ -98,6 +98,36 @@ class OfficialSourceCatalogTest {
     }
 
     @Test
+    void catalogPublishesFirstHospitalAsAnExactAuthorityMultiEntrySource() {
+        var hospital = OfficialSourceCatalog.load().sources().stream()
+            .filter(source -> source.code().equals("HZ_FIRST_HOSPITAL"))
+            .findFirst().orElseThrow();
+
+        assertThat(hospital.enabled()).isTrue();
+        assertThat(hospital.historicalYears()).containsExactly(2024, 2025, 2026, 2027);
+        assertThat(hospital.listingUrl()).isNull();
+        assertThat(hospital.configuration())
+            .containsEntry("imageEvidenceSelector", "img[src*='file_zp/attached/']")
+            .doesNotContainKeys("historicalEvidenceByYear", "historicalPaginationMode");
+        assertThat(hospital.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("code", "official-notices")
+                .containsEntry("mode", "QUERY_PAGE")
+                .containsEntry("transportPolicy", "AUDITED_HTTP_READ_ONLY")
+                .containsEntry("reportedTotalRegex", "共\\s*(\\d+)\\s*条")
+                .containsEntry("reportedTotalPagesRegex", "共\\s*(\\d+)\\s*页");
+            assertThat(entry.get("entryUri")).isEqualTo(
+                "http://124.160.72.42:8080/apply/getMore.action?pageNumber=1");
+            assertThat(entry.get("exactAuthorities")).isEqualTo(List.of("124.160.72.42:8080"));
+            assertThat(entry.get("allowedPathPrefixes")).isEqualTo(List.of(
+                "/apply/getMore.action", "/apply/getNotice.action",
+                "/apply/downloadAccessory.action", "/file_zp/attached/"));
+        });
+        assertThat(hospital.configuration().toString())
+            .doesNotContain("zp.hz-hospital.com", "renshi.wechathospital.com");
+    }
+
+    @Test
     void catalogContainsTwentyUniqueOfficialTargetsAcrossAllRoutes() {
         var catalog = OfficialSourceCatalog.load();
 
@@ -128,9 +158,7 @@ class OfficialSourceCatalogTest {
         var hospital = catalog.sources().stream().filter(source -> source.code().equals("HZ_FIRST_HOSPITAL"))
             .findFirst().orElseThrow();
         assertThat(hospital.enabled()).isTrue();
-        assertThat(hospital.configuration().toString())
-            .contains("FIXED_HTTPS_EVIDENCE", "HOSPITAL_OFFICIAL_EVIDENCE")
-            .doesNotContain("http://zhaopin.hz-hospital.com:8080");
+        assertThat(hospital.listingEntries()).isNotEmpty();
     }
 
     @Test

@@ -87,7 +87,7 @@ class OfficialSourceLiveSmokeTest {
             .filter(source -> !source.listingEntries().isEmpty())
             .toList();
         assertThat(sources).extracting(OfficialSourceCatalog.SourceDefinition::code)
-            .contains("HZ_TCM_HOSPITAL", "HZ_XIXI_HOSPITAL", "HZ_DATA_GROUP");
+            .contains("HZ_TCM_HOSPITAL", "HZ_XIXI_HOSPITAL", "HZ_DATA_GROUP", "HZ_FIRST_HOSPITAL");
         var reader = new ConfigurableSourceListingReader(fetcher, discoverer);
         sources.forEach(definition -> {
             RecruitmentSource source = multiEntrySource(definition);
@@ -102,7 +102,8 @@ class OfficialSourceLiveSmokeTest {
     void multiEntryCatalogSourcesCanReachTheirConfiguredHistoricalTerminalPage() {
         var sources = OfficialSourceCatalog.load().sources().stream()
             .filter(source -> Set.of(
-                "HZ_TCM_HOSPITAL", "HZ_XIXI_HOSPITAL", "HZ_DATA_GROUP").contains(source.code()))
+                "HZ_TCM_HOSPITAL", "HZ_XIXI_HOSPITAL", "HZ_DATA_GROUP",
+                "HZ_FIRST_HOSPITAL").contains(source.code()))
             .toList();
         var reader = new ConfigurableSourceListingReader(fetcher, discoverer);
         sources.forEach(definition -> {
@@ -115,6 +116,36 @@ class OfficialSourceLiveSmokeTest {
                 .allSatisfy(entry -> assertThat(entry.evidenceByYear().values())
                     .allSatisfy(evidence -> assertThat(evidence.traversalComplete()).isTrue()));
         });
+    }
+
+    @Test
+    void firstHospitalExactHttpSourceReconcilesItsLiveIncrementalListing() {
+        var definition = multiEntryDefinition("HZ_FIRST_HOSPITAL");
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(multiEntrySource(definition), new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).isNotEmpty();
+        assertThat(result.links()).allSatisfy(link -> assertThat(link.link().uri())
+            .hasHost("124.160.72.42").hasPort(8080));
+    }
+
+    @Test
+    void firstHospitalExactHttpSourceReconcilesAllEightyEightNoticesAcrossThirteenPages() {
+        var definition = multiEntryDefinition("HZ_FIRST_HOSPITAL");
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(multiEntrySource(definition), new ListingQuery(Set.of(2025, 2026, 2027), true));
+        var evidence = result.evidenceByEntry().get("official-notices").evidenceByYear().get(2026);
+
+        assertThat(evidence.pageCount()).isEqualTo(13);
+        assertThat(evidence.rawCount()).isEqualTo(88);
+        assertThat(evidence.traversalComplete()).isTrue();
+        assertThat(evidence.stopReason()).isEqualTo("REPORTED_LAST_PAGE_REACHED");
+    }
+
+    private static OfficialSourceCatalog.SourceDefinition multiEntryDefinition(String code) {
+        return OfficialSourceCatalog.load().sources().stream()
+            .filter(source -> source.code().equals(code))
+            .findFirst().orElseThrow();
     }
 
     private void assertCompatible(RecruitmentSource source) {
@@ -150,7 +181,7 @@ class OfficialSourceLiveSmokeTest {
         OfficialSourceCatalog.SourceDefinition definition
     ) {
         Instant now = Instant.parse("2026-08-15T00:00:00Z");
-        URI entry = URI.create(definition.listingEntries().getFirst().get("entryUri").toString());
+        URI entry = URI.create(definition.officialRootUrl());
         return new RecruitmentSource(
             UUID.nameUUIDFromBytes(definition.code().getBytes(java.nio.charset.StandardCharsets.UTF_8)),
             definition.code(), definition.name(), URI.create(definition.officialRootUrl()), entry,

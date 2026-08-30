@@ -126,17 +126,13 @@ public record ListingEntryContract(
         }
 
         Set<String> exactHosts = hosts(source, entryUri, merged, transportPolicy);
+        Set<String> exactAuthorities = strings(merged.get("exactAuthorities"));
         Set<String> pathPrefixes = strings(merged.get("allowedPathPrefixes"));
         HttpReadContract readContract = new HttpReadContract(
-            transportPolicy, exactHosts, pathPrefixes);
-        if (transportPolicy == TransportPolicy.AUDITED_HTTP_READ_ONLY
-            && pathPrefixes.stream().noneMatch(entryUri.getPath()::startsWith)) {
+            transportPolicy, exactHosts, exactAuthorities, pathPrefixes);
+        if (!readContract.authorizesTarget(entryUri)) {
             throw new IllegalArgumentException(
-                "AUDITED_HTTP_READ_ONLY entry URI must be within an allowed path prefix");
-        }
-        if (readContract.exactHosts().stream()
-            .noneMatch(host -> host.equalsIgnoreCase(entryUri.getHost()))) {
-            throw new IllegalArgumentException("listing entry URI host is not an exact allowed host");
+                "listing entry URI is outside its transport read contract");
         }
 
         return new ListingEntryContract(

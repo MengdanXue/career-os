@@ -14,6 +14,9 @@ import com.careeros.application.AcquisitionHttpPorts.TransportRisk;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import java.net.URI;
+import java.net.Authenticator;
+import java.net.CookieManager;
+import java.net.PasswordAuthentication;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -29,6 +32,26 @@ class JavaHttpDocumentFetcherTest {
     private WireMockServer server;
     private final RecordingSleeper sleeper = new RecordingSleeper();
     private JavaHttpDocumentFetcher fetcher;
+
+    @Test
+    void constructorRejectsClientsThatCanFollowRedirectsOrCarryAmbientState() {
+        List<HttpClient> unsafeClients = List.of(
+            HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build(),
+            HttpClient.newBuilder().cookieHandler(new CookieManager()).build(),
+            HttpClient.newBuilder().authenticator(new Authenticator() {
+                @Override protected PasswordAuthentication getPasswordAuthentication() {
+                    return new PasswordAuthentication("user", "secret".toCharArray());
+                }
+            }).build()
+        );
+
+        for (HttpClient unsafe : unsafeClients) {
+            assertThatThrownBy(() -> new JavaHttpDocumentFetcher(
+                unsafe, new MediaTypeDetector(), sleeper, "CareerOS/0.3 (test)", 5, 2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("stateless");
+        }
+    }
 
     @Test
     void auditedHttpGetMarksPlaintextRiskAndCarriesNoCredentialsOrBody() {
@@ -80,6 +103,24 @@ class JavaHttpDocumentFetcherTest {
             URI.create("http://official.example:8080/public/list"), request))
             .isInstanceOf(FetchRejectedException.class)
             .hasMessageContaining("default port");
+    }
+
+    @Test
+    void exactAuthorityContractReportsDefaultPortAsOutsideItsAuthority() {
+        var contract = new HttpReadContract(
+            TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            Set.of("124.160.72.42"),
+            Set.of("124.160.72.42:8080"),
+            Set.of("/apply/"));
+        var request = new FetchRequest(
+            URI.create("http://124.160.72.42:8080/apply/index.action"),
+            Set.of("124.160.72.42"), null, null, Duration.ofSeconds(20), 1024,
+            null, Duration.ZERO, FetchMethod.GET, contract);
+
+        assertThatThrownBy(() -> JavaHttpDocumentFetcher.requireAllowed(
+            URI.create("http://124.160.72.42/apply/index.action"), request))
+            .isInstanceOf(FetchRejectedException.class)
+            .hasMessageContaining("exact authority");
     }
 
     @Test
@@ -294,7 +335,7 @@ class JavaHttpDocumentFetcherTest {
         return new FetchRequest(uri, Set.of("localhost"), null, null,
             Duration.ofSeconds(20), 1024, null, Duration.ZERO, method,
             new HttpReadContract(TransportPolicy.AUDITED_HTTP_READ_ONLY,
-                Set.of("localhost"), Set.of("/public")));
+                Set.of("localhost"), Set.of("localhost:" + server.port()), Set.of("/public")));
     }
 
     private static FetchRequest auditedOfficialRequest(URI uri) {

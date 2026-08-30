@@ -155,20 +155,36 @@ public final class AcquisitionHttpPorts {
     public record HttpReadContract(
         TransportPolicy transportPolicy,
         Set<String> exactHosts,
+        Set<String> exactAuthorities,
         Set<String> allowedPathPrefixes
     ) {
         private static final java.util.regex.Pattern UNSAFE_RAW_PATH =
             java.util.regex.Pattern.compile("(?i)(%2e|%2f|%5c|%25|\\\\)");
 
+        public HttpReadContract(
+            TransportPolicy transportPolicy,
+            Set<String> exactHosts,
+            Set<String> allowedPathPrefixes
+        ) {
+            this(transportPolicy, exactHosts, Set.of(), allowedPathPrefixes);
+        }
+
         public HttpReadContract {
             Objects.requireNonNull(transportPolicy, "transportPolicy");
-            exactHosts = exactHosts == null ? Set.of() : exactHosts.stream()
+            Set<String> normalizedHosts = exactHosts == null ? Set.of() : exactHosts.stream()
                 .map(host -> transportPolicy == TransportPolicy.AUDITED_HTTP_READ_ONLY
                     ? exactHost(host) : legacyHost(host))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            exactHosts = normalizedHosts;
+            exactAuthorities = exactAuthorities == null ? Set.of() : exactAuthorities.stream()
+                .map(authority -> exactAuthority(authority, normalizedHosts))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
             allowedPathPrefixes = allowedPathPrefixes == null ? Set.of() : allowedPathPrefixes.stream()
                 .map(HttpReadContract::pathPrefix)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            if (transportPolicy == TransportPolicy.HTTPS_ONLY && !exactAuthorities.isEmpty()) {
+                throw new IllegalArgumentException("HTTPS_ONLY does not permit exact authorities");
+            }
             if (transportPolicy == TransportPolicy.AUDITED_HTTP_READ_ONLY) {
                 if (exactHosts.isEmpty()) {
                     throw new IllegalArgumentException("AUDITED_HTTP_READ_ONLY requires exact hosts");
@@ -190,8 +206,12 @@ public final class AcquisitionHttpPorts {
                     || loopback && "http".equalsIgnoreCase(uri.getScheme());
                 return allowedScheme && (loopback || uri.getPort() == -1 || uri.getPort() == 443);
             }
-            if (!"http".equalsIgnoreCase(uri.getScheme())
-                || !loopback && uri.getPort() != -1 && uri.getPort() != 80) return false;
+            if (!"http".equalsIgnoreCase(uri.getScheme())) return false;
+            int port = uri.getPort();
+            if (!exactAuthorities.isEmpty()) {
+                int effectivePort = port == -1 ? 80 : port;
+                if (!exactAuthorities.contains(host + ":" + effectivePort)) return false;
+            } else if (port != -1 && port != 80) return false;
             String rawPath = uri.getRawPath();
             if (rawPath != null && UNSAFE_RAW_PATH.matcher(rawPath).find()) return false;
             String path = uri.normalize().getPath();
@@ -212,6 +232,38 @@ public final class AcquisitionHttpPorts {
 
         private static String legacyHost(String value) {
             return Objects.requireNonNull(value, "exact host").toLowerCase(Locale.ROOT);
+        }
+
+        private static String exactAuthority(String value, Set<String> exactHosts) {
+            if (value == null || value.isBlank() || !value.equals(value.trim())
+                || value.contains("://") || value.indexOf('/') >= 0 || value.indexOf('@') >= 0
+                || value.indexOf('?') >= 0 || value.indexOf('#') >= 0) {
+                throw new IllegalArgumentException(
+                    "transport read contract requires bare exact authorities");
+            }
+            try {
+                URI parsed = URI.create("http://" + value);
+                String host = parsed.getHost();
+                int port = parsed.getPort();
+                if (host == null || port < 1 || port > 65_535
+                    || parsed.getRawUserInfo() != null
+                    || parsed.getRawPath() != null && !parsed.getRawPath().isEmpty()
+                    || parsed.getRawQuery() != null || parsed.getRawFragment() != null) {
+                    throw new IllegalArgumentException(
+                        "transport read contract requires bare exact authorities");
+                }
+                String normalizedHost = exactHost(host);
+                if (!exactHosts.contains(normalizedHost)) {
+                    throw new IllegalArgumentException(
+                        "exact authority host must also be an exact host: " + normalizedHost);
+                }
+                return normalizedHost + ":" + port;
+            } catch (IllegalArgumentException invalid) {
+                if (invalid.getMessage() != null
+                    && invalid.getMessage().contains("exact authority host")) throw invalid;
+                throw new IllegalArgumentException(
+                    "transport read contract requires bare exact authorities", invalid);
+            }
         }
 
         private static String pathPrefix(String value) {

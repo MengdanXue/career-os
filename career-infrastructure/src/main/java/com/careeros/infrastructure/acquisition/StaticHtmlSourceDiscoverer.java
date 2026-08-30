@@ -72,13 +72,7 @@ public final class StaticHtmlSourceDiscoverer implements SourceDiscoverer {
             if (title.isEmpty()) title = titleElement.text().strip();
             LocalDate publishedOn = publishedOn(item,
                 optional(entry.configuration(), "itemPublishedDateSelector"));
-            boolean allowedScheme = "https".equalsIgnoreCase(resolved.getScheme())
-                || entry.readContract().transportPolicy()
-                    == com.careeros.application.AcquisitionHttpPorts.TransportPolicy.AUDITED_HTTP_READ_ONLY
-                    && "http".equalsIgnoreCase(resolved.getScheme());
-            if (title.isEmpty() || !allowedScheme
-                || entry.readContract().exactHosts().stream()
-                    .noneMatch(host -> host.equalsIgnoreCase(resolved.getHost()))
+            if (title.isEmpty() || !entry.readContract().authorizesTarget(resolved)
                 || !article.matcher(resolved.toString()).matches()) continue;
             distinct.putIfAbsent(resolved, new DiscoveredLink(resolved, title, publishedOn));
         }

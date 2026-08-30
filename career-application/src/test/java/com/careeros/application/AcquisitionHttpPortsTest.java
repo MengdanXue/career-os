@@ -46,6 +46,79 @@ class AcquisitionHttpPortsTest {
     }
 
     @Test
+    void legacyAuditedContractKeepsRejectingNonDefaultPorts() {
+        var contract = new HttpReadContract(
+            TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            Set.of("124.160.72.42"),
+            Set.of("/apply/"));
+
+        assertThat(contract.exactAuthorities()).isEmpty();
+        assertThat(contract.authorizesTarget(
+            URI.create("http://124.160.72.42:8080/apply/index.action"))).isFalse();
+    }
+
+    @Test
+    void auditedContractAuthorizesOnlyTheConfiguredExactAuthority() {
+        var contract = new HttpReadContract(
+            TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            Set.of("124.160.72.42"),
+            Set.of("124.160.72.42:8080"),
+            Set.of("/apply/"));
+
+        assertThat(contract.authorizesTarget(
+            URI.create("http://124.160.72.42:8080/apply/index.action"))).isTrue();
+        assertThat(contract.authorizesTarget(
+            URI.create("http://124.160.72.42:8081/apply/index.action"))).isFalse();
+        assertThat(contract.authorizesTarget(
+            URI.create("http://124.160.72.42/apply/index.action"))).isFalse();
+        assertThat(contract.authorizesTarget(
+            URI.create("http://124.160.72.42:80/apply/index.action"))).isFalse();
+        assertThat(contract.authorizesTarget(
+            URI.create("http://124.160.72.43:8080/apply/index.action"))).isFalse();
+    }
+
+    @Test
+    void exactAuthoritiesMustBeBareHostPortValuesForAnExactHost() {
+        for (String invalid : List.of(
+            "http://124.160.72.42:8080",
+            "user@124.160.72.42:8080",
+            "124.160.72.42:8080/apply",
+            "124.160.72.42:8080?x=1",
+            "124.160.72.42:8080#fragment",
+            "124.160.72.42",
+            "124.160.72.42:not-a-port"
+        )) {
+            assertThatThrownBy(() -> new HttpReadContract(
+                TransportPolicy.AUDITED_HTTP_READ_ONLY,
+                Set.of("124.160.72.42"),
+                Set.of(invalid),
+                Set.of("/apply/")))
+                .as(invalid)
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exact authorities");
+        }
+
+        assertThatThrownBy(() -> new HttpReadContract(
+            TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            Set.of("official.example"),
+            Set.of("other.example:8080"),
+            Set.of("/apply/")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("exact host");
+    }
+
+    @Test
+    void httpsOnlyContractsRejectExactAuthorities() {
+        assertThatThrownBy(() -> new HttpReadContract(
+            TransportPolicy.HTTPS_ONLY,
+            Set.of("official.example"),
+            Set.of("official.example:8443"),
+            Set.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("HTTPS_ONLY");
+    }
+
+    @Test
     void legacyFetchRequestConstructorsDefaultToSafeHttpsGet() {
         var request = new FetchRequest(
             URI.create("https://official.example/notices"), Set.of("OFFICIAL.EXAMPLE"),

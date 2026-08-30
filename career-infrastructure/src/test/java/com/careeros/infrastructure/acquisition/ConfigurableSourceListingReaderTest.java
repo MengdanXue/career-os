@@ -24,6 +24,42 @@ import org.junit.jupiter.api.Test;
 
 class ConfigurableSourceListingReaderTest {
     @Test
+    void auditedLinkedEntryRejectsANextPageOnAnUncontractedPort() {
+        Map<String, Object> entry = auditedEntry("LINKED_PAGE");
+        entry.put("historicalMaxPages", 2);
+        entry.put("nextPageSelector", "a.next[href]");
+        URI first = URI.create("http://legacy.example:8080/public/index.html");
+        URI wrongPort = URI.create("http://legacy.example:8081/public/index_2.html");
+        var fetcher = new MapFetcher(Map.of(
+            first, linkedPage(
+                "http://legacy.example:8080/public/art_1.html", "2026年招聘公告",
+                wrongPort.toString()),
+            wrongPort, page(
+                "http://legacy.example:8080/public/art_2.html", "2026年招聘公告（二）")
+        ));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(
+            fetcher, new StaticHtmlSourceDiscoverer()).read(
+                singleEntrySource(entry), new ListingQuery(Set.of(2026), true)))
+            .isInstanceOf(com.careeros.application.AcquisitionHttpPorts.FetchFailedException.class)
+            .hasMessageContaining("read contract");
+        assertThat(fetcher.requests()).containsExactly(first);
+    }
+
+    @Test
+    void auditedFixedEvidenceRejectsADetailOnAnUncontractedPort() {
+        Map<String, Object> entry = auditedEntry("FIXED_EVIDENCE");
+        entry.put("historicalEvidenceByYear", Map.of("2026", List.of(
+            "http://legacy.example:8081/public/art_1.html")));
+
+        assertThatThrownBy(() -> new ConfigurableSourceListingReader(
+            new MapFetcher(Map.of()), new StaticHtmlSourceDiscoverer()).read(
+                singleEntrySource(entry), new ListingQuery(Set.of(2026), true)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("read contract");
+    }
+
+    @Test
     void auditedListingEntryAnnotatesItsDiscoveredDetailWithTheSameReadContract() {
         URI listing = URI.create("http://legacy.example/public/jobs/index.html");
         Map<String, Object> entry = baseEntry("legacy", "CAMPAIGN_STATE", listing.toString());
@@ -807,6 +843,26 @@ class ConfigurableSourceListingReaderTest {
         entry.put("completenessRequired", true);
         entry.put("adapterType", "STATIC_HTML");
         entry.put("articleUrlRegex", "^https://official\\.example/art/[0-9]{4}/[0-9]+/[0-9]+/art_[0-9]+\\.html$");
+        entry.put("linkSelector", "a[href]");
+        entry.put("titleIncludeRegex", "招聘");
+        entry.put("titleExcludeRegex", "(?!)");
+        return entry;
+    }
+
+    private static Map<String, Object> auditedEntry(String mode) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("code", "audited");
+        entry.put("entryUri", "http://legacy.example:8080/public/index.html");
+        entry.put("mode", mode);
+        entry.put("role", "PRIMARY");
+        entry.put("recruitmentYears", List.of(2026));
+        entry.put("completenessRequired", true);
+        entry.put("adapterType", "STATIC_HTML");
+        entry.put("transportPolicy", "AUDITED_HTTP_READ_ONLY");
+        entry.put("allowedHosts", List.of("legacy.example"));
+        entry.put("exactAuthorities", List.of("legacy.example:8080"));
+        entry.put("allowedPathPrefixes", List.of("/public/"));
+        entry.put("articleUrlRegex", "^http://legacy\\.example:8080/public/art_[0-9]+\\.html$");
         entry.put("linkSelector", "a[href]");
         entry.put("titleIncludeRegex", "招聘");
         entry.put("titleExcludeRegex", "(?!)");

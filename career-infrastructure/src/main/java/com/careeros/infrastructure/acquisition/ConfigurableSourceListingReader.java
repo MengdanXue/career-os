@@ -684,13 +684,7 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
     }
 
     private static void requireOfficial(ListingEntryContract entry, URI uri) {
-        String scheme = uri.getScheme();
-        boolean allowedScheme = "https".equalsIgnoreCase(scheme)
-            || entry.readContract().transportPolicy()
-                == com.careeros.application.AcquisitionHttpPorts.TransportPolicy.AUDITED_HTTP_READ_ONLY
-                && "http".equalsIgnoreCase(scheme);
-        if (!allowedScheme || uri.getHost() == null || entry.readContract().exactHosts().stream()
-            .noneMatch(host -> host.equalsIgnoreCase(uri.getHost()))) {
+        if (!entry.readContract().authorizesTarget(uri)) {
             throw new IllegalArgumentException("Listing URI must use its configured official read contract");
         }
     }

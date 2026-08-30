@@ -22,6 +22,71 @@ class MigrationIntegrationTest {
         .withPassword("career_os");
 
     @Test
+    void v47InvalidatesLegacyFirstHospitalCoverageBeforeUsingTheNewContract() throws Exception {
+        String schema = "first_hospital_contract_upgrade";
+        var configuration = Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema).defaultSchema(schema);
+        configuration.target(MigrationVersion.fromVersion("46")).load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var legacy = connection.prepareStatement("""
+                 update first_hospital_contract_upgrade.source_year_coverage coverage
+                 set status='COMPLETE', discovered_count=9, fetched_count=9,
+                     parsed_count=9, target_job_count=2,
+                     completion_basis='legacy fixed evidence', completed_at=now(),
+                     listing_page_count=3, filtered_count=1, failed_count=0,
+                     earliest_published_on='2024-01-01', latest_published_on='2024-12-31',
+                     stop_reason='LEGACY_FIXED_EVIDENCE', updated_at=now()
+                 from first_hospital_contract_upgrade.recruitment_source source
+                 where coverage.source_id=source.id
+                   and source.code='HZ_FIRST_HOSPITAL'
+                   and coverage.recruitment_year=2024
+                 """)) {
+            assertThat(legacy.executeUpdate()).isEqualTo(1);
+        }
+
+        configuration.target(MigrationVersion.LATEST).load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var coverage = connection.prepareStatement("""
+                 select recruitment_year, status, discovered_count, fetched_count,
+                        parsed_count, target_job_count, completion_basis, completed_at,
+                        listing_page_count, filtered_count, failed_count,
+                        earliest_published_on, latest_published_on, stop_reason
+                 from first_hospital_contract_upgrade.source_year_coverage coverage
+                 join first_hospital_contract_upgrade.recruitment_source source
+                   on source.id=coverage.source_id
+                 where source.code='HZ_FIRST_HOSPITAL'
+                   and recruitment_year between 2024 and 2027
+                 order by recruitment_year
+                 """)) {
+            try (var rows = coverage.executeQuery()) {
+                for (int year = 2024; year <= 2027; year++) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getInt("recruitment_year")).isEqualTo(year);
+                    assertThat(rows.getString("status")).isEqualTo("NOT_DISCOVERED");
+                    assertThat(rows.getInt("discovered_count")).isZero();
+                    assertThat(rows.getInt("fetched_count")).isZero();
+                    assertThat(rows.getInt("parsed_count")).isZero();
+                    assertThat(rows.getInt("target_job_count")).isZero();
+                    assertThat(rows.getString("completion_basis")).isNull();
+                    assertThat(rows.getTimestamp("completed_at")).isNull();
+                    assertThat(rows.getInt("listing_page_count")).isZero();
+                    assertThat(rows.getInt("filtered_count")).isZero();
+                    assertThat(rows.getInt("failed_count")).isZero();
+                    assertThat(rows.getDate("earliest_published_on")).isNull();
+                    assertThat(rows.getDate("latest_published_on")).isNull();
+                    assertThat(rows.getString("stop_reason")).isNull();
+                }
+                assertThat(rows.next()).isFalse();
+            }
+        }
+    }
+
+    @Test
     void migrationsRegisterFirstHttpsBatchAsPartialUntilBackfillVerification() throws Exception {
         Flyway.configure()
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
@@ -145,7 +210,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(46);
+        assertThat(result.migrationsExecuted).isEqualTo(47);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -162,7 +227,7 @@ class MigrationIntegrationTest {
              var waveOneSourceSeeds = connection.prepareStatement("select count(*) from recruitment_source where enabled and code in ('HDU_RECRUITMENT','ZJGSU_RECRUITMENT') and configuration ->> 'historicalPaginationMode'='STATIC_PAGE_SUFFIX' and configuration ->> 'adapterType'='STATIC_HTML'");
              var waveOneTargetState = connection.prepareStatement("select count(*) from target_source_catalog where code in ('HDU_RECRUITMENT','ZJGSU_RECRUITMENT') and connection_status='PARTIAL' and recruitment_source_id is not null");
              var legacyConnectedTargets = connection.prepareStatement("select count(*) from target_source_catalog where code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION') and connection_status='CONNECTED'");
-             var hospitalSource = connection.prepareStatement("select count(*) from recruitment_source where enabled and code='HZ_FIRST_HOSPITAL' and configuration ->> 'historicalPaginationMode'='FIXED_HTTPS_EVIDENCE' and configuration ->> 'adapterType'='HOSPITAL_OFFICIAL_EVIDENCE' and configuration::text not like '%http://zhaopin.hz-hospital.com:8080%'");
+             var hospitalSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.enabled and source.code='HZ_FIRST_HOSPITAL' and source.entry_uri='https://www.hz-hospital.com/' and jsonb_array_length(source.configuration -> 'listingEntries')=1 and source.configuration -> 'listingEntries' -> 0 -> 'exactAuthorities' @> '[\"124.160.72.42:8080\"]'::jsonb and source.configuration::text not like '%zp.hz-hospital.com%' and target.connection_status='PARTIAL'");
              var historicalPagination = connection.prepareStatement("""
                  select count(*) from recruitment_source
                  where code in ('ZJ_HRSS_INSTITUTION','HZ_HRSS_INSTITUTION')

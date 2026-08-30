@@ -41,6 +41,30 @@ class HtmlAttachmentDiscovererTest {
     }
 
     @Test
+    void auditedHospitalContractDiscoversAuthorizedExtensionlessAccessoryDownload() {
+        var contract = new HttpReadContract(TransportPolicy.AUDITED_HTTP_READ_ONLY,
+            java.util.Set.of("124.160.72.42"),
+            java.util.Set.of("124.160.72.42:8080"),
+            java.util.Set.of("/apply/getNotice.action", "/apply/downloadAccessory.action"));
+        var parent = new DiscoveredLink(
+            URI.create("http://124.160.72.42:8080/apply/getNotice.action?keycode=notice"),
+            "招聘公告", contract);
+        byte[] html = """
+            <a href='/apply/downloadAccessory.action?keycode=attachment'>岗位附件</a>
+            <a href='/apply/other.action?keycode=attachment'>越权下载</a>
+            """.getBytes(StandardCharsets.UTF_8);
+
+        var links = new HtmlAttachmentDiscoverer().discover(source(), parent, html);
+
+        assertThat(links).singleElement().satisfies(link -> {
+            assertThat(link.uri()).isEqualTo(URI.create(
+                "http://124.160.72.42:8080/apply/downloadAccessory.action?keycode=attachment"));
+            assertThat(link.title()).isEqualTo("岗位附件");
+            assertThat(link.readContract()).isEqualTo(contract);
+        });
+    }
+
+    @Test
     void findsSupportedAttachmentsOnOfficialAndConfiguredHostsOnly() {
         byte[] html = """
             <html><body>

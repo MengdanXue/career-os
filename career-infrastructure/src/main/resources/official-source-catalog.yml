@@ -181,15 +181,38 @@ sources:
     name: 杭州市第一人民医院招聘
     routeCode: UNIVERSITY_HOSPITAL_IT
     officialRootUrl: https://www.hz-hospital.com/
-    listingUrl: https://www.hz-hospital.com/
     strategy: STATIC_HTML
-    historicalYears: [2024, 2025, 2026]
+    historicalYears: [2024, 2025, 2026, 2027]
     enabled: true
-    historicalPaginationMode: FIXED_HTTPS_EVIDENCE
-    adapterType: HOSPITAL_OFFICIAL_EVIDENCE
-    articleUrlRegex: '^https://www\.hz-hospital\.com/content/details/id/[0-9]+(?:\?cid=[0-9]+)?$'
-    titleIncludeRegex: '招聘|招贤|人才'
-    titleExcludeRegex: '拟聘|公示|成绩|体检|递补'
+    imageEvidenceSelector: "img[src*='file_zp/attached/']"
+    listingEntries:
+      - code: official-notices
+        entryUri: http://124.160.72.42:8080/apply/getMore.action?pageNumber=1
+        role: PRIMARY
+        mode: QUERY_PAGE
+        recruitmentYears: [2025, 2026, 2027]
+        completenessRequired: true
+        transportPolicy: AUDITED_HTTP_READ_ONLY
+        allowedHosts: [124.160.72.42]
+        exactAuthorities: ['124.160.72.42:8080']
+        allowedPathPrefixes:
+          - /apply/getMore.action
+          - /apply/getNotice.action
+          - /apply/downloadAccessory.action
+          - /file_zp/attached/
+        pageParameter: pageNumber
+        historicalMaxPages: 30
+        incrementalListingMaxPages: 2
+        reportedTotalRegex: '共\s*(\d+)\s*条'
+        reportedTotalPagesRegex: '共\s*(\d+)\s*页'
+        listingItemSelector: div.keleyi
+        itemLinkSelector: "a[href*='getNotice.action?keycode=']"
+        itemTitleSelector: "a[href*='getNotice.action?keycode=']"
+        itemPublishedDateSelector: 'span:matchesOwn(^20\d{2}-\d{2}-\d{2}$)'
+        linkSelector: "div.keleyi a[href*='getNotice.action?keycode=']"
+        articleUrlRegex: '^http://124\.160\.72\.42:8080/apply/getNotice\.action\?keycode=[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+        titleIncludeRegex: '招聘|招考|引进|报名|笔试|面试|考务|资格|复审|体检|考察|公示|录用|递补|成绩|后续|名单|通知'
+        titleExcludeRegex: '招聘会|技术支持|岗位培训'
   - code: HZ_CHILDRENS_HOSPITAL
     name: 杭州市儿童医院招聘
     routeCode: UNIVERSITY_HOSPITAL_IT

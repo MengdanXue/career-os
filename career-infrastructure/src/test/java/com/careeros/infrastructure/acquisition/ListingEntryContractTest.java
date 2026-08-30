@@ -330,6 +330,45 @@ class ListingEntryContractTest {
         assertThat(contract.allowedPathPrefixes()).containsExactly("/public/jobs/");
     }
 
+    @Test
+    void scopedAuditedHttpParsesAnExactAuthorityForItsNonDefaultPort() {
+        RecruitmentSource source = source(Map.of("listingEntries", List.of(
+            Map.ofEntries(
+                Map.entry("code", "primary"),
+                Map.entry("entryUri", "http://124.160.72.42:8080/apply/index.action"),
+                Map.entry("mode", "LINKED_PAGE"),
+                Map.entry("transportPolicy", "AUDITED_HTTP_READ_ONLY"),
+                Map.entry("allowedHosts", List.of("124.160.72.42")),
+                Map.entry("exactAuthorities", List.of("124.160.72.42:8080")),
+                Map.entry("allowedPathPrefixes", List.of("/apply/"))
+            )
+        )));
+
+        var contract = ListingEntryContract.from(source).getFirst().readContract();
+
+        assertThat(contract.exactAuthorities()).containsExactly("124.160.72.42:8080");
+        assertThat(contract.authorizesTarget(
+            URI.create("http://124.160.72.42:8080/apply/index.action"))).isTrue();
+    }
+
+    @Test
+    void scopedAuditedHttpRejectsANonDefaultEntryPortWithoutItsExactAuthority() {
+        RecruitmentSource source = source(Map.of("listingEntries", List.of(
+            Map.ofEntries(
+                Map.entry("code", "primary"),
+                Map.entry("entryUri", "http://124.160.72.42:8080/apply/index.action"),
+                Map.entry("mode", "LINKED_PAGE"),
+                Map.entry("transportPolicy", "AUDITED_HTTP_READ_ONLY"),
+                Map.entry("allowedHosts", List.of("124.160.72.42")),
+                Map.entry("allowedPathPrefixes", List.of("/apply/"))
+            )
+        )));
+
+        assertThatThrownBy(() -> ListingEntryContract.from(source))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("read contract");
+    }
+
     private static RecruitmentSource source(Map<String, Object> configuration) {
         Instant now = Instant.parse("2026-08-27T12:00:00Z");
         return new RecruitmentSource(

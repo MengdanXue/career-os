@@ -47,7 +47,7 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
         HttpClient client, MediaTypeDetector mediaTypes, Sleeper sleeper,
         String userAgent, int maxRedirects, int maxRetries, Clock clock
     ) {
-        this.client=Objects.requireNonNull(client); this.mediaTypes=Objects.requireNonNull(mediaTypes);
+        this.client=requireSafeClient(client); this.mediaTypes=Objects.requireNonNull(mediaTypes);
         this.sleeper=Objects.requireNonNull(sleeper); this.userAgent=requireText(userAgent);
         this.clock=Objects.requireNonNull(clock);
         if (maxRedirects < 0 || maxRetries < 0) throw new IllegalArgumentException("limits cannot be negative");
@@ -64,6 +64,7 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
             HttpResponse<InputStream> response;
             try {
                 awaitRequestWindow(request);
+                requireAllowed(current, request);
                 response = client.send(buildRequest(current, request), HttpResponse.BodyHandlers.ofInputStream());
             } catch (IOException exception) {
                 if (attempt++ < maxRetries) { sleeper.sleep(backoff(attempt)); continue; }
@@ -167,11 +168,19 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
         if (!"http".equalsIgnoreCase(uri.getScheme())) {
             throw new FetchRejectedException("AUDITED_HTTP_READ_ONLY permits plain HTTP targets only");
         }
-        if (!loopback && uri.getPort() != -1 && uri.getPort() != 80) {
-            throw new FetchRejectedException("Official HTTP source URI must use the default port");
-        }
         if (!request.readContract().exactHosts().contains(host)) {
             throw new FetchRejectedException("Target is outside the audited exact host contract: " + host);
+        }
+        int port = uri.getPort();
+        int effectivePort = port == -1 ? 80 : port;
+        if (!request.readContract().exactAuthorities().isEmpty()
+            && !request.readContract().exactAuthorities().contains(host + ":" + effectivePort)) {
+            throw new FetchRejectedException(
+                "Target is outside the audited exact authority contract: " + host + ":" + effectivePort);
+        }
+        if (request.readContract().exactAuthorities().isEmpty()
+            && port != -1 && port != 80) {
+            throw new FetchRejectedException("Official HTTP source URI must use the default port");
         }
         String rawPath = uri.getRawPath();
         if (rawPath != null && UNSAFE_RAW_PATH.matcher(rawPath).find()) {
@@ -227,6 +236,16 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
         catch (NumberFormatException ignored) { return java.util.Optional.empty(); }
     }
     private static Duration backoff(int attempt) { return Duration.ofMillis(Math.min(250L * attempt, 1000)); }
+    private static HttpClient requireSafeClient(HttpClient client) {
+        Objects.requireNonNull(client, "client");
+        if (client.followRedirects() != HttpClient.Redirect.NEVER
+            || client.cookieHandler().isPresent()
+            || client.authenticator().isPresent()) {
+            throw new IllegalArgumentException(
+                "HTTP client must be stateless with redirects disabled");
+        }
+        return client;
+    }
     private static String requireText(String value) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException("userAgent is required");
         return value;

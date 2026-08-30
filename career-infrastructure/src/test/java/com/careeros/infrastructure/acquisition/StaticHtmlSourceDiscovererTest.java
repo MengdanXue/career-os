@@ -18,6 +18,34 @@ import org.junit.jupiter.api.Test;
 
 class StaticHtmlSourceDiscovererTest {
     @Test
+    void auditedEntryRejectsDiscoveredDetailsOnAnUncontractedPort() {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("code", "audited");
+        entry.put("entryUri", "http://legacy.example:8080/public/index.html");
+        entry.put("mode", "LINKED_PAGE");
+        entry.put("transportPolicy", "AUDITED_HTTP_READ_ONLY");
+        entry.put("allowedHosts", List.of("legacy.example"));
+        entry.put("exactAuthorities", List.of("legacy.example:8080"));
+        entry.put("allowedPathPrefixes", List.of("/public/"));
+        entry.put("articleUrlRegex", "^http://legacy\\.example:808[01]/public/art_[0-9]+\\.html$");
+        entry.put("linkSelector", "a[href]");
+        entry.put("titleIncludeRegex", "招聘");
+        entry.put("titleExcludeRegex", "(?!)");
+        RecruitmentSource source = sourceWithEntries(List.of(entry));
+        ListingEntryContract contract = ListingEntryContract.from(source).getFirst();
+        byte[] html = ("<a href='http://legacy.example:8080/public/art_1.html'>2026年招聘公告</a>"
+            + "<a href='http://legacy.example:8081/public/art_2.html'>2026年招聘公告（伪端口）</a>")
+            .getBytes(StandardCharsets.UTF_8);
+
+        var links = new StaticHtmlSourceDiscoverer()
+            .discoverAll(source, contract, contract.entryUri(), html);
+
+        assertThat(links).singleElement().satisfies(link ->
+            assertThat(link.uri()).hasToString(
+                "http://legacy.example:8080/public/art_1.html"));
+    }
+
+    @Test
     void structuredItemsExtractTemplateUrisTitlesAndPublishedDates() {
         Map<String, Object> configured = new LinkedHashMap<>(multiEntrySource().configuration());
         Map<String, Object> entry = new LinkedHashMap<>((Map<String, Object>)
@@ -139,5 +167,14 @@ class StaticHtmlSourceDiscovererTest {
             "0 10 8 * * *", "Asia/Shanghai", Duration.ofSeconds(1),
             Map.of("listingEntries", java.util.List.of(primary, lifecycle)),
             null, null, now, 0, now, now);
+    }
+
+    private static RecruitmentSource sourceWithEntries(List<Map<String, Object>> entries) {
+        Instant now = Instant.parse("2026-08-15T00:00:00Z");
+        return new RecruitmentSource(UUID.randomUUID(), "AUDITED", "审计 HTTP 来源",
+            URI.create("https://official.example/"), URI.create("https://official.example/jobs"),
+            SourceType.OFFICIAL_GOVERNMENT, "杭州", CrawlMode.STATIC_HTML, true,
+            "0 10 8 * * *", "Asia/Shanghai", Duration.ofSeconds(1),
+            Map.of("listingEntries", entries), null, null, now, 0, now, now);
     }
 }
