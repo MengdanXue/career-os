@@ -98,6 +98,26 @@ class OfficialSourceCatalogTest {
     }
 
     @Test
+    void catalogPublishesFuyangGeneralAndHealthJcmsContractsAsPartialCoverageInputs() {
+        var fuyang = OfficialSourceCatalog.load().sources().stream()
+            .filter(source -> source.code().equals("HZ_FUYANG_GOV"))
+            .findFirst().orElseThrow();
+
+        assertThat(fuyang.enabled()).isTrue();
+        assertThat(fuyang.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(fuyang.listingEntries()).extracting(entry -> entry.get("code"))
+            .containsExactly("establishment", "health-establishment");
+        assertThat(fuyang.listingEntries()).allSatisfy(entry -> {
+            assertThat(entry).containsEntry("mode", "STATIC_SUFFIX_TEMPLATE");
+            assertThat(entry).containsEntry("completenessRequired", true);
+            assertThat(entry.get("pageUriTemplate").toString())
+                .contains("pageNo%22%3A{page}", "search%22%3A%22");
+            assertThat(entry).containsEntry("reportedTotalRegex", "count=\\\\\"(\\d+)\\\\\"");
+            assertThat(entry).containsEntry("reportedCurrentPageRegex", "pageNo=\\\\\"(\\d+)\\\\\"");
+        });
+    }
+
+    @Test
     void catalogPublishesFirstHospitalAsAnExactAuthorityMultiEntrySource() {
         var hospital = OfficialSourceCatalog.load().sources().stream()
             .filter(source -> source.code().equals("HZ_FIRST_HOSPITAL"))

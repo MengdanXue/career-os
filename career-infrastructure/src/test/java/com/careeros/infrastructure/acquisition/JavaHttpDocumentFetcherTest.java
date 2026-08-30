@@ -200,10 +200,21 @@ class JavaHttpDocumentFetcherTest {
     }
 
     @Test void identifiesRequestsAsXmlHttpRequestsForOfficialJcmsUnitApi() {
-        server.stubFor(get("/unit").withHeader("X-Requested-With", equalTo("XMLHttpRequest"))
+        String path = "/api-gateway/jpaas-publish-server/front/page/build/unit";
+        server.stubFor(get(path).withHeader("X-Requested-With", equalTo("XMLHttpRequest"))
             .willReturn(okJson("{\"success\":true}")));
 
-        var result = fetcher.fetch(request("/unit", null, null, 1024));
+        var result = fetcher.fetch(request(path, null, null, 1024));
+
+        assertThat(result.status()).isEqualTo(200);
+    }
+
+    @Test void ordinaryHtmlRequestsAreNotMisidentifiedAsXmlHttpRequests() {
+        server.stubFor(get("/notice").withHeader("X-Requested-With", absent())
+            .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "text/html")
+                .withBody("<html><body>招聘公告</body></html>")));
+
+        var result = fetcher.fetch(request("/notice", null, null, 1024));
 
         assertThat(result.status()).isEqualTo(200);
     }

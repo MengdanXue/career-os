@@ -32,6 +32,7 @@ class ListingEntryContractTest {
                     Map.entry("role", "PRIMARY"),
                     Map.entry("mode", "QUERY_PAGE"),
                     Map.entry("recruitmentYears", List.of(2025, 2026)),
+                    Map.entry("knownArchiveGapYears", List.of(2025)),
                     Map.entry("completenessRequired", true)
                 ),
                 Map.ofEntries(
@@ -52,6 +53,7 @@ class ListingEntryContractTest {
         assertThat(entries.get(0).role()).isEqualTo(ListingEntryContract.Role.PRIMARY);
         assertThat(entries.get(0).mode()).isEqualTo(ListingEntryContract.Mode.QUERY_PAGE);
         assertThat(entries.get(0).recruitmentYears()).containsExactlyInAnyOrder(2025, 2026);
+        assertThat(entries.get(0).knownArchiveGapYears()).containsExactly(2025);
         assertThat(entries.get(0).articleUrlRegex())
             .isEqualTo("^https://official\\.example/notices/.+$");
         assertThat(entries.get(0).readContract().exactHosts())

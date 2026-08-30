@@ -131,11 +131,17 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         LinkedHashMap<URI, DiscoveredLink> rawDistinct = new LinkedHashMap<>();
         Set<String> nonemptyFingerprints = new HashSet<>();
         int rawCount = 0;
+        int listedItemCount = 0;
         int emptyRun = 0;
         Integer reportedTotal = null;
         Integer reportedTotalPages = null;
         for (int page = 1; page <= maxPages; page++) {
             FetchedDocument fetched = fetch(source, entry, pageUri.apply(page));
+            boolean reconcileByItems = configuredBoolean(
+                entry.configuration(), "reconcileReportedTotalByListingItems", false);
+            if (reconcileByItems) {
+                listedItemCount += listingItemCount(entry, fetched.content());
+            }
             reportedTotal = consistentReported(entry, fetched.content(), "reportedTotalRegex",
                 reportedTotal, "total");
             reportedTotalPages = consistentReported(entry, fetched.content(), "reportedTotalPagesRegex",
@@ -164,10 +170,11 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             rawCount = rawDistinct.size();
             addApplicableLinks(query, accepted, canonicalDistinct(
                 discover(source, entry, fetched.finalUri(), fetched.content())));
-            boolean terminal = reportedTotal != null && rawCount >= reportedTotal
+            int reconciledCount = reconcileByItems ? listedItemCount : rawCount;
+            boolean terminal = reportedTotal != null && reconciledCount >= reportedTotal
                 || reportedTotalPages != null && page >= reportedTotalPages;
             if (terminal) {
-                if (reportedTotal != null && rawCount != reportedTotal) {
+                if (reportedTotal != null && reconciledCount != reportedTotal) {
                     throw new FetchFailedException("Listing entry " + entry.code()
                         + " unique entry count did not match reported total");
                 }
@@ -425,7 +432,9 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                 .filter(entry -> entry.recruitmentYears().isEmpty()
                     || entry.recruitmentYears().contains(year))
                 .toList();
-            boolean complete = !required.isEmpty() && required.stream().allMatch(entry -> {
+            boolean knownArchiveGap = required.stream()
+                .anyMatch(entry -> entry.knownArchiveGapYears().contains(year));
+            boolean complete = !required.isEmpty() && !knownArchiveGap && required.stream().allMatch(entry -> {
                 ListingEntryEvidence evidence = byEntry.get(entry.code());
                 return evidence != null && evidence.evidenceByYear().containsKey(year)
                     && evidence.evidenceByYear().get(year).traversalComplete();
@@ -436,11 +445,13 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                 .filter(Objects::nonNull).max(LocalDate::compareTo).orElse(null);
             String stopReason = required.isEmpty()
                 ? "NO_APPLICABLE_REQUIRED_ENTRY"
-                : complete ? "ALL_REQUIRED_ENTRIES_COMPLETE" : "REQUIRED_ENTRY_INCOMPLETE";
+                : knownArchiveGap ? "KNOWN_OFFICIAL_ARCHIVE_GAP"
+                    : complete ? "ALL_REQUIRED_ENTRIES_COMPLETE" : "REQUIRED_ENTRY_INCOMPLETE";
             String basis = required.isEmpty()
                 ? "no completeness-required listing entry applies to the requested year"
-                : complete ? "all applicable completeness-required entries completed"
-                    : "at least one applicable completeness-required entry is incomplete";
+                : knownArchiveGap ? "at least one required entry has a verified official archive gap"
+                    : complete ? "all applicable completeness-required entries completed"
+                        : "at least one applicable completeness-required entry is incomplete";
             aggregated.put(year, new ListingEvidence(pages, raw, accepted, filtered, failed,
                 earliest, latest, complete, stopReason, basis));
         }
@@ -756,6 +767,28 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         } catch (Exception invalid) {
             throw new FetchFailedException(description + " returned malformed JSON", invalid);
         }
+    }
+
+    private static int listingItemCount(ListingEntryContract entry, byte[] content) {
+        String payload = new String(content, StandardCharsets.UTF_8);
+        if (payload.stripLeading().startsWith("{")) {
+            JsonNode root = json(content, "listing item counter");
+            String html = root.path("data").path("html").asText();
+            if (!html.isBlank()) payload = html;
+        }
+        return Jsoup.parse(payload, entry.entryUri().toString())
+            .select(required(entry.configuration(), "listingItemSelector")).size();
+    }
+
+    private static boolean configuredBoolean(
+        Map<String, Object> configuration, String key, boolean defaultValue
+    ) {
+        Object configured = configuration.get(key);
+        if (configured == null) return defaultValue;
+        if (configured instanceof Boolean value) return value;
+        if ("true".equalsIgnoreCase(configured.toString())) return true;
+        if ("false".equalsIgnoreCase(configured.toString())) return false;
+        throw new IllegalArgumentException(key + " must be boolean");
     }
 
     private static JsonNode jsonPath(JsonNode root, String path) {

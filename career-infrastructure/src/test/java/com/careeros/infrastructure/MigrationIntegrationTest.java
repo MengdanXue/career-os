@@ -22,6 +22,165 @@ class MigrationIntegrationTest {
         .withPassword("career_os");
 
     @Test
+    void v49OnboardsFuyangWithoutDestroyingPreexistingProgress() throws Exception {
+        String schema = "fuyang_idempotent_onboarding";
+        var configuration = Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema).defaultSchema(schema);
+        configuration.target(MigrationVersion.fromVersion("48")).load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var source = connection.prepareStatement("""
+                 insert into fuyang_idempotent_onboarding.recruitment_source (
+                     id, code, name, base_uri, entry_uri, source_type, region, crawl_mode,
+                     enabled, cron_expression, time_zone, minimum_request_interval_ms,
+                     configuration, next_due_at
+                 ) values (
+                     '01992f09-0000-7000-8000-000000000412',
+                     'HZ_FUYANG_GOV', 'preexisting fuyang',
+                     'https://www.fuyang.gov.cn/', 'https://www.fuyang.gov.cn/legacy',
+                     'OFFICIAL_GOVERNMENT', '杭州富阳', 'STATIC_HTML', true,
+                     '0 20 9 * * *', 'Asia/Shanghai', 1500, '{}'::jsonb, now()
+                 )
+                 """);
+             var coverage = connection.prepareStatement("""
+                 insert into fuyang_idempotent_onboarding.source_year_coverage (
+                     source_id, recruitment_year, status, discovered_count, fetched_count,
+                     parsed_count, target_job_count, completion_basis, completed_at,
+                     listing_page_count, filtered_count, failed_count,
+                     earliest_published_on, latest_published_on, stop_reason, updated_at
+                 ) values (
+                     '01992f09-0000-7000-8000-000000000412', 2025, 'COMPLETE',
+                     59, 59, 59, 8, 'controlled backfill evidence', now(),
+                     4, 20, 0, '2025-01-01', '2025-12-31',
+                     'REPORTED_TOTAL_REACHED', now()
+                 )
+                 """);
+             var checkpoint = connection.prepareStatement("""
+                 insert into fuyang_idempotent_onboarding.source_onboarding_checkpoint (
+                     source_id, checkpoint, status, evidence, verified_at
+                 ) values (
+                     '01992f09-0000-7000-8000-000000000412', 'CONTRACT_VERIFIED',
+                     'VERIFIED', 'operator-verified 59 and 177 row contracts', now()
+                 )
+                 """)) {
+            assertThat(source.executeUpdate()).isEqualTo(1);
+            assertThat(coverage.executeUpdate()).isEqualTo(1);
+            assertThat(checkpoint.executeUpdate()).isEqualTo(1);
+        }
+
+        configuration.target(MigrationVersion.LATEST).load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var source = connection.prepareStatement("""
+                 select source.enabled,
+                        jsonb_array_length(source.configuration -> 'listingEntries') as entries,
+                        target.connection_status
+                 from fuyang_idempotent_onboarding.recruitment_source source
+                 join fuyang_idempotent_onboarding.target_source_catalog target
+                   on target.recruitment_source_id=source.id
+                 where source.code='HZ_FUYANG_GOV'
+                 """);
+             var coverage = connection.prepareStatement("""
+                 select count(*) as total,
+                        count(*) filter (where recruitment_year=2025
+                          and status='COMPLETE' and discovered_count=59
+                          and fetched_count=59 and parsed_count=59 and target_job_count=8
+                          and completion_basis='controlled backfill evidence'
+                          and listing_page_count=4 and filtered_count=20 and failed_count=0
+                          and earliest_published_on='2025-01-01'
+                          and latest_published_on='2025-12-31'
+                          and stop_reason='REPORTED_TOTAL_REACHED') as preserved
+                 from fuyang_idempotent_onboarding.source_year_coverage
+                 where source_id='01992f09-0000-7000-8000-000000000412'
+                   and recruitment_year between 2024 and 2027
+                 """);
+             var checkpoints = connection.prepareStatement("""
+                 select count(*) as total,
+                        count(*) filter (where checkpoint='REGISTERED'
+                          and status='VERIFIED') as registered,
+                        count(*) filter (where checkpoint='CONTRACT_VERIFIED'
+                          and status='VERIFIED'
+                          and evidence='operator-verified 59 and 177 row contracts') as preserved
+                 from fuyang_idempotent_onboarding.source_onboarding_checkpoint
+                 where source_id='01992f09-0000-7000-8000-000000000412'
+                 """)) {
+            try (var rows = source.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getBoolean("enabled")).isTrue();
+                assertThat(rows.getInt("entries")).isEqualTo(2);
+                assertThat(rows.getString("connection_status")).isEqualTo("PARTIAL");
+            }
+            try (var rows = coverage.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt("total")).isEqualTo(4);
+                assertThat(rows.getInt("preserved")).isEqualTo(1);
+            }
+            try (var rows = checkpoints.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt("total")).isEqualTo(5);
+                assertThat(rows.getInt("registered")).isEqualTo(1);
+                assertThat(rows.getInt("preserved")).isEqualTo(1);
+            }
+        }
+    }
+
+    @Test
+    void v48InvalidatesXixiCoverageAfterCorrectingTheHtmlRequestContract() throws Exception {
+        String schema = "xixi_request_contract_upgrade";
+        var configuration = Flyway.configure()
+            .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+            .schemas(schema).defaultSchema(schema);
+        configuration.target(MigrationVersion.fromVersion("47")).load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var legacy = connection.prepareStatement("""
+                 update xixi_request_contract_upgrade.source_year_coverage coverage
+                 set status='COMPLETE', discovered_count=9, fetched_count=9,
+                     parsed_count=9, target_job_count=2,
+                     completion_basis='legacy ajax evidence', completed_at=now(),
+                     listing_page_count=3, filtered_count=1, failed_count=0,
+                     earliest_published_on='2024-01-01', latest_published_on='2024-12-31',
+                     stop_reason='LEGACY_AJAX_EVIDENCE', updated_at=now()
+                 from xixi_request_contract_upgrade.recruitment_source source
+                 where coverage.source_id=source.id
+                   and source.code='HZ_XIXI_HOSPITAL'
+                   and coverage.recruitment_year=2024
+                 """)) {
+            assertThat(legacy.executeUpdate()).isEqualTo(1);
+        }
+
+        configuration.target(MigrationVersion.LATEST).load().migrate();
+
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var coverage = connection.prepareStatement("""
+                 select count(*) as total,
+                        count(*) filter (where status='NOT_DISCOVERED'
+                          and discovered_count=0 and fetched_count=0 and parsed_count=0
+                          and target_job_count=0 and completion_basis is null
+                          and completed_at is null and listing_page_count=0
+                          and filtered_count=0 and failed_count=0
+                          and earliest_published_on is null and latest_published_on is null
+                          and stop_reason is null) as reset_count
+                 from xixi_request_contract_upgrade.source_year_coverage coverage
+                 join xixi_request_contract_upgrade.recruitment_source source
+                   on source.id=coverage.source_id
+                 where source.code='HZ_XIXI_HOSPITAL'
+                   and recruitment_year between 2024 and 2027
+                 """)) {
+            try (var rows = coverage.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt("total")).isEqualTo(4);
+                assertThat(rows.getInt("reset_count")).isEqualTo(4);
+            }
+        }
+    }
+
+    @Test
     void v47InvalidatesLegacyFirstHospitalCoverageBeforeUsingTheNewContract() throws Exception {
         String schema = "first_hospital_contract_upgrade";
         var configuration = Flyway.configure()
@@ -210,7 +369,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(47);
+        assertThat(result.migrationsExecuted).isEqualTo(49);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");

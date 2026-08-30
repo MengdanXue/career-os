@@ -9,6 +9,7 @@ import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
 import com.careeros.infrastructure.acquisition.ConfigurableSourceListingReader;
 import com.careeros.infrastructure.acquisition.JavaHttpDocumentFetcher;
+import com.careeros.infrastructure.acquisition.ListingEntryContract;
 import com.careeros.infrastructure.acquisition.MediaTypeDetector;
 import com.careeros.infrastructure.acquisition.OfficialSourceCatalog;
 import com.careeros.infrastructure.acquisition.StaticHtmlSourceDiscoverer;
@@ -140,6 +141,62 @@ class OfficialSourceLiveSmokeTest {
         assertThat(evidence.rawCount()).isEqualTo(88);
         assertThat(evidence.traversalComplete()).isTrue();
         assertThat(evidence.stopReason()).isEqualTo("REPORTED_LAST_PAGE_REACHED");
+    }
+
+    @Test
+    void fuyangOfficialSubtreesReconcileCountersWithoutHidingThe2024ArchiveGap() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_FUYANG_GOV"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var general = result.evidenceByEntry().get("establishment").evidenceByYear().get(2026);
+        var health = result.evidenceByEntry().get("health-establishment").evidenceByYear().get(2026);
+
+        assertThat(general.pageCount()).isEqualTo(4);
+        assertThat(general.rawCount()).isEqualTo(59);
+        assertThat(general.stopReason()).isEqualTo("REPORTED_TOTAL_REACHED");
+        assertThat(health.pageCount()).isEqualTo(12);
+        // The official counter includes three WeChat rows outside the government read contract.
+        assertThat(health.rawCount()).isEqualTo(174);
+        assertThat(health.stopReason()).isEqualTo("REPORTED_TOTAL_REACHED");
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isFalse();
+        assertThat(result.evidenceByYear().get(2024).stopReason())
+            .isEqualTo("KNOWN_OFFICIAL_ARCHIVE_GAP");
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isTrue();
+        assertThat(result.links()).isNotEmpty();
+    }
+
+    @Test
+    void xixiLiveListingPreservesLinksDatesAndIncrementalYearClassification() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_XIXI_HOSPITAL"));
+        var entry = ListingEntryContract.from(source).stream()
+            .filter(value -> value.code().equals("announcements"))
+            .findFirst().orElseThrow();
+        var fetched = fetcher.fetch(new FetchRequest(
+            entry.entryUri(), entry.readContract().exactHosts(), null, null,
+            Duration.ofSeconds(20), 26_214_400, source.id(), Duration.ZERO,
+            com.careeros.application.AcquisitionHttpPorts.FetchMethod.GET,
+            entry.readContract()));
+
+        assertThat(fetched.status()).isEqualTo(200);
+        String html = new String(fetched.content(), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(html).contains("ul-imgtxt1", "announcement_desc", "date date2");
+        assertThat(html.stripLeading()).startsWith("<!DOCTYPE");
+        var document = org.jsoup.Jsoup.parse(html, fetched.finalUri().toString());
+        assertThat(document.select("ul").eachAttr("class"))
+            .as("parsed ul classes from %s", fetched.finalUri())
+            .contains("ul-imgtxt1");
+        assertThat(document.select(".ul-imgtxt1 > li")).isNotEmpty();
+        var anchor = document.select(".ul-imgtxt1 > li").getFirst().selectFirst("h3 a[href]");
+        assertThat(anchor).isNotNull();
+        URI resolved = fetched.finalUri().resolve(anchor.attr("href"));
+        assertThat(entry.readContract().authorizesTarget(resolved)).isTrue();
+        assertThat(resolved.toString()).matches(entry.articleUrlRegex());
+        assertThat(discoverer.discoverAll(source, entry, fetched.finalUri(), fetched.content()))
+            .isNotEmpty().allSatisfy(link -> assertThat(link.publishedOn()).isNotNull());
+        assertThat(discoverer.discover(source, entry, fetched.finalUri(), fetched.content()))
+            .isNotEmpty();
+        assertThat(new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(), false)).links()).isNotEmpty();
     }
 
     private static OfficialSourceCatalog.SourceDefinition multiEntryDefinition(String code) {

@@ -27,6 +27,8 @@ import java.util.regex.Pattern;
 
 public final class JavaHttpDocumentFetcher implements DocumentFetcher {
     private static final Pattern UNSAFE_RAW_PATH = Pattern.compile("(?i)(%2e|%2f|%5c|%25|\\\\)");
+    private static final String JCMS_UNIT_PATH =
+        "/api-gateway/jpaas-publish-server/front/page/build/unit";
     private final HttpClient client;
     private final MediaTypeDetector mediaTypes;
     private final Sleeper sleeper;
@@ -131,8 +133,10 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
             .method(request.method().name(), HttpRequest.BodyPublishers.noBody())
             .timeout(request.requestTimeout())
             .header("User-Agent", userAgent)
-            .header("X-Requested-With", "XMLHttpRequest")
             .header("Accept", "text/html,application/xhtml+xml,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*;q=0.1");
+        if (JCMS_UNIT_PATH.equals(uri.getPath())) {
+            builder.header("X-Requested-With", "XMLHttpRequest");
+        }
         if (request.etag() != null && !request.etag().isBlank()) builder.header("If-None-Match", request.etag());
         if (request.lastModified() != null && !request.lastModified().isBlank()) builder.header("If-Modified-Since", request.lastModified());
         return builder.build();

@@ -20,6 +20,7 @@ public record ListingEntryContract(
     Role role,
     Mode mode,
     Set<Integer> recruitmentYears,
+    Set<Integer> knownArchiveGapYears,
     boolean completenessRequired,
     String articleUrlRegex,
     String linkSelector,
@@ -47,9 +48,19 @@ public record ListingEntryContract(
         Objects.requireNonNull(role, "role");
         Objects.requireNonNull(mode, "mode");
         recruitmentYears = recruitmentYears == null ? Set.of() : Set.copyOf(recruitmentYears);
+        knownArchiveGapYears = knownArchiveGapYears == null ? Set.of() : Set.copyOf(knownArchiveGapYears);
         for (int year : recruitmentYears) {
             if (year < 2000 || year > 2100) {
                 throw new IllegalArgumentException("entry recruitment year is invalid: " + year);
+            }
+        }
+        for (int year : knownArchiveGapYears) {
+            if (year < 2000 || year > 2100) {
+                throw new IllegalArgumentException("known archive gap year is invalid: " + year);
+            }
+            if (!recruitmentYears.isEmpty() && !recruitmentYears.contains(year)) {
+                throw new IllegalArgumentException(
+                    "known archive gap year must be an applicable recruitment year: " + year);
             }
         }
         Objects.requireNonNull(readContract, "readContract");
@@ -96,6 +107,8 @@ public record ListingEntryContract(
             Role.class, value(merged, "role", "PRIMARY"), "entry role for " + code);
         Mode mode = mode(merged, code);
         Set<Integer> years = years(merged);
+        Set<Integer> knownArchiveGapYears = configuredYears(
+            merged.get("knownArchiveGapYears"), "known archive gap year");
         boolean completenessRequired = booleanValue(
             merged.get("completenessRequired"),
             role != Role.LIFECYCLE && role != Role.CAMPAIGN_STATE);
@@ -136,7 +149,7 @@ public record ListingEntryContract(
         }
 
         return new ListingEntryContract(
-            code, entryUri, role, mode, years, completenessRequired,
+            code, entryUri, role, mode, years, knownArchiveGapYears, completenessRequired,
             optionalText(merged.get("articleUrlRegex")),
             optionalText(merged.get("linkSelector")),
             optionalText(merged.get("titleIncludeRegex")),
@@ -170,8 +183,13 @@ public record ListingEntryContract(
         if (configured == null) configured = values.get("applicableYears");
         if (configured == null) configured = values.get("years");
         if (configured == null) return Set.of();
+        return configuredYears(configured, "entry recruitment year");
+    }
+
+    private static Set<Integer> configuredYears(Object configured, String description) {
+        if (configured == null) return Set.of();
         if (!(configured instanceof Iterable<?> iterable)) {
-            throw new IllegalArgumentException("entry recruitmentYears must be an array");
+            throw new IllegalArgumentException(description + " values must be an array");
         }
         Set<Integer> years = new LinkedHashSet<>();
         for (Object value : iterable) {
@@ -180,7 +198,7 @@ public record ListingEntryContract(
                     ? new BigDecimal(number.toString()).intValueExact()
                     : Integer.parseInt(String.valueOf(value)));
             } catch (ArithmeticException | NumberFormatException invalid) {
-                throw new IllegalArgumentException("entry recruitment year is invalid: " + value, invalid);
+                throw new IllegalArgumentException(description + " is invalid: " + value, invalid);
             }
         }
         return Set.copyOf(years);

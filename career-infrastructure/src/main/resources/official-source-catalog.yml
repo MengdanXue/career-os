@@ -108,9 +108,54 @@ sources:
     name: 富阳区政府招聘
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.fuyang.gov.cn/
-    strategy: UNSUPPORTED
+    strategy: JCMS_LISTING
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
+    enabled: true
+    listingEntries:
+      - code: establishment
+        entryUri: https://www.fuyang.gov.cn/col/col1228923273/index.html
+        role: PRIMARY
+        mode: STATIC_SUFFIX_TEMPLATE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024]
+        completenessRequired: true
+        pageUriTemplate: 'https://www.fuyang.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2754&tplSetId=KruLArIzu5zMBXJpWlwJX&pageType=column&tagId=%E4%BF%A1%E6%81%AF%E5%88%97%E8%A1%A8&editType=null&pageId=1228922793&paramJson=%7B%22pageNo%22%3A{page}%2C%22pageSize%22%3A15%2C%22search%22%3A%22%7B%5C%22xxgkId%5C%22%3A%5C%22F001-E001%5C%22%2C%5C%22xxgkType%5C%22%3A%5C%22%5C%22%2C%5C%22className%5C%22%3A%5C%22%5C%22%7D%22%7D'
+        historicalMaxPages: 20
+        incrementalListingMaxPages: 2
+        allowedHosts: [www.fuyang.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        articleUrlRegex: '^https://www\.fuyang\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        listingItemSelector: 'ul.ajax-ul > li.cf.border-line'
+        itemLinkSelector: 'a.fl[href]'
+        itemTitleSelector: 'a.fl[href]'
+        itemPublishedDateSelector: 'span.fr'
+        linkSelector: 'a.fl[href]'
+        reportedTotalRegex: 'count=\\"(\d+)\\"'
+        reportedCurrentPageRegex: 'pageNo=\\"(\d+)\\"'
+        reconcileReportedTotalByListingItems: true
+        titleIncludeRegex: '招聘|招考|选聘|引进|人才|报名|笔试|考试|资格|复审|成绩|面试|体检|考察|公示|录用|聘用|递补|取消|核减'
+        titleExcludeRegex: '招聘会|培训|讲座'
+      - code: health-establishment
+        entryUri: https://www.fuyang.gov.cn/col/col1228922800/index.html
+        role: SECTOR
+        mode: STATIC_SUFFIX_TEMPLATE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024]
+        completenessRequired: true
+        pageUriTemplate: 'https://www.fuyang.gov.cn/api-gateway/jpaas-publish-server/front/page/build/unit?parseType=bulidstatic&webId=2754&tplSetId=KruLArIzu5zMBXJpWlwJX&pageType=column&tagId=%E4%BF%A1%E6%81%AF%E5%88%97%E8%A1%A8&editType=null&pageId=1228922800&paramJson=%7B%22pageNo%22%3A{page}%2C%22pageSize%22%3A15%2C%22search%22%3A%22%7B%5C%22xxgkId%5C%22%3A%5C%22F001-G001%5C%22%2C%5C%22xxgkType%5C%22%3A%5C%22%5C%22%2C%5C%22className%5C%22%3A%5C%22%5C%22%7D%22%7D'
+        historicalMaxPages: 30
+        incrementalListingMaxPages: 2
+        allowedHosts: [www.fuyang.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        articleUrlRegex: '^https://www\.fuyang\.gov\.cn/(?:col/col[0-9]+/)?art/[0-9]{4}(?:/[0-9]+/[0-9]+)?/art_[A-Za-z0-9_]+\.html$'
+        listingItemSelector: 'ul.ajax-ul > li.cf.border-line'
+        itemLinkSelector: 'a.fl[href]'
+        itemTitleSelector: 'a.fl[href]'
+        itemPublishedDateSelector: 'span.fr'
+        linkSelector: 'a.fl[href]'
+        reportedTotalRegex: 'count=\\"(\d+)\\"'
+        reportedCurrentPageRegex: 'pageNo=\\"(\d+)\\"'
+        reconcileReportedTotalByListingItems: true
+        titleIncludeRegex: '招聘|招考|选聘|引进|人才|报名|笔试|考试|资格|复审|成绩|面试|体检|考察|公示|录用|聘用|递补|取消|核减'
+        titleExcludeRegex: '招聘会|培训|讲座|编外'
   - code: HZ_LINAN_GOV
     name: 临安区政府招聘
     routeCode: PUBLIC_TECH

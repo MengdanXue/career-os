@@ -134,6 +134,30 @@ class ConfigurableSourceListingReaderTest {
     }
 
     @Test
+    void aKnownOfficialArchiveGapCannotBeReportedAsCompleteAfterIndexTraversal() {
+        Map<String, Object> entry = baseEntry(
+            "partial-archive", "LINKED_PAGE", "https://official.example/2024/index.html");
+        entry.put("recruitmentYears", List.of(2024));
+        entry.put("knownArchiveGapYears", List.of(2024));
+        entry.put("historicalMaxPages", 2);
+        entry.put("nextPageSelector", "a.next[href]");
+
+        var result = new ConfigurableSourceListingReader(new MapFetcher(Map.of(
+            URI.create("https://official.example/2024/index.html"),
+            page("/art/2024/8/20/art_1.html", "2024年招聘公告"))),
+            new StaticHtmlSourceDiscoverer()).read(sourceWithEntries(List.of(entry)),
+                new ListingQuery(Set.of(2024), true));
+
+        assertThat(result.evidenceByEntry().get("partial-archive")
+            .evidenceByYear().get(2024).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isFalse();
+        assertThat(result.evidenceByYear().get(2024).stopReason())
+            .isEqualTo("KNOWN_OFFICIAL_ARCHIVE_GAP");
+        assertThat(result.evidenceByYear().get(2024).completionBasis())
+            .contains("official archive gap");
+    }
+
+    @Test
     void anOptionalCampaignEntryCannotProveAnnualCompletenessByItself() {
         Map<String, Object> entry = baseEntry(
             "campaign", "CAMPAIGN_STATE", "https://official.example/campaign");
@@ -397,6 +421,34 @@ class ConfigurableSourceListingReaderTest {
 
         assertThat(fetcher.requests()).containsExactly(first);
         assertThat(result.evidenceByEntry().get("data").evidenceByYear().get(2026).stopReason())
+            .isEqualTo("REPORTED_TOTAL_REACHED");
+    }
+
+    @Test
+    void numberedJcmsCanReconcileOfficialRowsWhileRejectingUncontractedExternalLinks() {
+        Map<String, Object> entry = baseEntry(
+            "health", "STATIC_SUFFIX_TEMPLATE", "https://official.example/health");
+        entry.put("historicalMaxPages", 3);
+        entry.put("pageUriTemplate", "https://official.example/api/unit?page={page}");
+        entry.put("reportedTotalRegex", "count=\\\\\"(\\d+)\\\\\"");
+        entry.put("reconcileReportedTotalByListingItems", true);
+        entry.put("listingItemSelector", "ul.ajax-ul > li");
+        entry.put("itemLinkSelector", "a[href]");
+        URI first = URI.create("https://official.example/api/unit?page=1");
+        byte[] response = ("{\"data\":{\"html\":\"<div count=\\\"2\\\"></div>"
+            + "<ul class='ajax-ul'><li><a href='/art/2026/8/20/art_1.html'>2026年招聘公告</a></li>"
+            + "<li><a href='https://external.example/post'>外部同步稿</a></li></ul>\"}}")
+            .getBytes(StandardCharsets.UTF_8);
+        var fetcher = new MapFetcher(Map.of(first, response));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(fetcher.requests()).containsExactly(first);
+        assertThat(result.links()).hasSize(1);
+        assertThat(result.evidenceByEntry().get("health").evidenceByYear().get(2026).rawCount())
+            .isEqualTo(1);
+        assertThat(result.evidenceByEntry().get("health").evidenceByYear().get(2026).stopReason())
             .isEqualTo("REPORTED_TOTAL_REACHED");
     }
 
