@@ -79,7 +79,8 @@ public record DocumentTransition(
 
     public AcquiredDocument bind(UUID sourceId, UUID parentDocumentId, DocumentKind kind, URI storageUri) {
         return new AcquiredDocument(document.id(), sourceId, document.canonicalUri(), parentDocumentId, kind,
-            document.mediaType(), document.contentFingerprint(), document.etag(), document.lastModified(), storageUri,
+            document.mediaType(), document.contentFingerprint(), document.listingMetadataFingerprint(),
+            document.etag(), document.lastModified(), storageUri,
             document.transportRisk(), document.state(), document.firstSeenAt(), document.lastSeenAt(), document.lastChangedAt(),
             document.lastGoneAt(), document.consecutiveGoneCount(), document.lastHttpStatus(),
             document.lastProcessedFingerprint(), document.lastProcessorVersion(), document.version());
@@ -91,7 +92,8 @@ public record DocumentTransition(
         int goneCount, int status, TransportRisk transportRisk
     ) {
         return new AcquiredDocument(value.id(), value.sourceId(), value.canonicalUri(), value.parentDocumentId(),
-            value.kind(), mediaType, fingerprint, etag, lastModified, storageUri, transportRisk, state, value.firstSeenAt(), seen,
+            value.kind(), mediaType, fingerprint, value.listingMetadataFingerprint(), etag, lastModified,
+            storageUri, transportRisk, state, value.firstSeenAt(), seen,
             changed, gone, goneCount, status, value.lastProcessedFingerprint(), value.lastProcessorVersion(),
             value.version());
     }

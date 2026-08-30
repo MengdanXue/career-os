@@ -87,6 +87,7 @@ final class AcquisitionJpaModels {
         @Enumerated(EnumType.STRING) @Column(name = "document_kind", nullable = false) DocumentKind kind;
         @Column(name = "media_type", nullable = false) String mediaType;
         @Column(name = "content_fingerprint", nullable = false, length = 64) String contentFingerprint;
+        @Column(name = "listing_metadata_fingerprint", length = 64) String listingMetadataFingerprint;
         @Column String etag;
         @Column(name = "last_modified") String lastModified;
         @Column(name = "storage_uri", nullable = false) String storageUri;

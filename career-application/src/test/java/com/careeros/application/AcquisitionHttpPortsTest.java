@@ -23,6 +23,25 @@ import org.junit.jupiter.api.Test;
 
 class AcquisitionHttpPortsTest {
     @Test
+    void postFetchRequestAcceptsOnlySmallSafeHeadersAndBody() {
+        var contract = new AcquisitionHttpPorts.HttpReadContract(
+            AcquisitionHttpPorts.TransportPolicy.HTTPS_ONLY,
+            java.util.Set.of("official.example"), java.util.Set.of());
+
+        var request = new AcquisitionHttpPorts.FetchRequest(
+            java.net.URI.create("https://official.example/api/search"),
+            java.util.Set.of("official.example"), null, null,
+            java.time.Duration.ofSeconds(10), 1024, null, java.time.Duration.ZERO,
+            AcquisitionHttpPorts.FetchMethod.POST, contract,
+            java.util.Map.of("Content-Type", "application/json", "language", "1"),
+            "{\"search\":\"招聘\"}");
+
+        assertThat(request.method()).isEqualTo(AcquisitionHttpPorts.FetchMethod.POST);
+        assertThat(request.headers()).containsEntry("content-type", "application/json")
+            .containsEntry("language", "1");
+        assertThat(request.body()).contains("招聘");
+    }
+    @Test
     void discoveredLinkCarriesAnOptionalExactTransportContract() {
         var audited = new HttpReadContract(
             TransportPolicy.AUDITED_HTTP_READ_ONLY,

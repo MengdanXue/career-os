@@ -103,13 +103,22 @@ public final class AcquisitionHttpPorts {
     public record ListingResult(
         List<YearDiscoveredLink> links,
         Map<Integer, ListingEvidence> evidenceByYear,
-        Map<String, ListingEntryEvidence> evidenceByEntry
+        Map<String, ListingEntryEvidence> evidenceByEntry,
+        boolean traversalComplete
     ) {
         public ListingResult(
             List<YearDiscoveredLink> links,
             Map<Integer, ListingEvidence> evidenceByYear
         ) {
-            this(links, evidenceByYear, Map.of());
+            this(links, evidenceByYear, Map.of(), true);
+        }
+
+        public ListingResult(
+            List<YearDiscoveredLink> links,
+            Map<Integer, ListingEvidence> evidenceByYear,
+            Map<String, ListingEntryEvidence> evidenceByEntry
+        ) {
+            this(links, evidenceByYear, evidenceByEntry, true);
         }
 
         public ListingResult {
@@ -126,27 +135,42 @@ public final class AcquisitionHttpPorts {
     }
 
     public record DiscoveredLink(
-        URI uri, String title, HttpReadContract readContract, LocalDate publishedOn
+        URI uri, String title, HttpReadContract readContract, LocalDate publishedOn,
+        URI fetchUri, String responseBodyJsonPath
     ) {
         public DiscoveredLink(URI uri, String title) {
-            this(uri, title, null, null);
+            this(uri, title, null, null, uri, null);
         }
 
         public DiscoveredLink(URI uri, String title, HttpReadContract readContract) {
-            this(uri, title, readContract, null);
+            this(uri, title, readContract, null, uri, null);
         }
 
         public DiscoveredLink(URI uri, String title, LocalDate publishedOn) {
-            this(uri, title, null, publishedOn);
+            this(uri, title, null, publishedOn, uri, null);
+        }
+
+        public DiscoveredLink(
+            URI uri, String title, HttpReadContract readContract, LocalDate publishedOn
+        ) {
+            this(uri, title, readContract, publishedOn, uri, null);
         }
 
         public DiscoveredLink {
             Objects.requireNonNull(uri, "uri");
             if (title == null || title.isBlank()) throw new IllegalArgumentException("title is required");
+            fetchUri = fetchUri == null ? uri : fetchUri;
+            if (!fetchUri.isAbsolute() || fetchUri.getHost() == null || fetchUri.getRawUserInfo() != null) {
+                throw new IllegalArgumentException("fetchUri must be absolute, credential-free, and have a host");
+            }
+            if (responseBodyJsonPath != null
+                && !responseBodyJsonPath.matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*")) {
+                throw new IllegalArgumentException("responseBodyJsonPath is invalid");
+            }
         }
     }
 
-    public enum FetchMethod { GET, HEAD }
+    public enum FetchMethod { GET, HEAD, POST }
 
     public enum TransportPolicy { HTTPS_ONLY, AUDITED_HTTP_READ_ONLY }
 
@@ -284,8 +308,14 @@ public final class AcquisitionHttpPorts {
         UUID sourceId,
         Duration minimumRequestInterval,
         FetchMethod method,
-        HttpReadContract readContract
+        HttpReadContract readContract,
+        Map<String, String> headers,
+        String body,
+        String responseBodyJsonPath
     ) {
+        private static final Set<String> SAFE_REQUEST_HEADERS = Set.of(
+            "accept-language", "content-type", "language", "x-requested-with");
+
         public FetchRequest(
             URI uri, Set<String> allowedHosts, String etag, String lastModified,
             Duration requestTimeout, long maxBytes
@@ -299,7 +329,27 @@ public final class AcquisitionHttpPorts {
         ) {
             this(uri, allowedHosts, etag, lastModified, requestTimeout, maxBytes, sourceId,
                 minimumRequestInterval, FetchMethod.GET,
-                new HttpReadContract(TransportPolicy.HTTPS_ONLY, allowedHosts, Set.of()));
+                new HttpReadContract(TransportPolicy.HTTPS_ONLY, allowedHosts, Set.of()),
+                Map.of(), null, null);
+        }
+
+        public FetchRequest(
+            URI uri, Set<String> allowedHosts, String etag, String lastModified,
+            Duration requestTimeout, long maxBytes, UUID sourceId,
+            Duration minimumRequestInterval, FetchMethod method, HttpReadContract readContract
+        ) {
+            this(uri, allowedHosts, etag, lastModified, requestTimeout, maxBytes, sourceId,
+                minimumRequestInterval, method, readContract, Map.of(), null, null);
+        }
+
+        public FetchRequest(
+            URI uri, Set<String> allowedHosts, String etag, String lastModified,
+            Duration requestTimeout, long maxBytes, UUID sourceId,
+            Duration minimumRequestInterval, FetchMethod method, HttpReadContract readContract,
+            Map<String, String> headers, String body
+        ) {
+            this(uri, allowedHosts, etag, lastModified, requestTimeout, maxBytes, sourceId,
+                minimumRequestInterval, method, readContract, headers, body, null);
         }
 
         public FetchRequest {
@@ -317,6 +367,34 @@ public final class AcquisitionHttpPorts {
             }
             Objects.requireNonNull(method, "method");
             Objects.requireNonNull(readContract, "readContract");
+            Map<String, String> normalizedHeaders = new java.util.LinkedHashMap<>();
+            if (headers != null) headers.forEach((name, value) -> {
+                if (name == null || value == null) {
+                    throw new IllegalArgumentException("request headers cannot contain nulls");
+                }
+                String normalizedName = name.trim().toLowerCase(Locale.ROOT);
+                if (!SAFE_REQUEST_HEADERS.contains(normalizedName)) {
+                    throw new IllegalArgumentException("request header is not allowlisted: " + normalizedName);
+                }
+                if (value.length() > 256 || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+                    throw new IllegalArgumentException("request header value is unsafe: " + normalizedName);
+                }
+                normalizedHeaders.put(normalizedName, value);
+            });
+            headers = Map.copyOf(normalizedHeaders);
+            if (body != null && body.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 65_536) {
+                throw new IllegalArgumentException("request body exceeds 64 KiB");
+            }
+            if (method == FetchMethod.POST && (body == null || body.isBlank())) {
+                throw new IllegalArgumentException("POST request body is required");
+            }
+            if (method != FetchMethod.POST && body != null && !body.isBlank()) {
+                throw new IllegalArgumentException("GET and HEAD requests cannot carry a body");
+            }
+            if (responseBodyJsonPath != null
+                && !responseBodyJsonPath.matches("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*")) {
+                throw new IllegalArgumentException("responseBodyJsonPath is invalid");
+            }
         }
     }
 

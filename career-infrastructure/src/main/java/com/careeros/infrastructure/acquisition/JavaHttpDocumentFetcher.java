@@ -24,8 +24,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public final class JavaHttpDocumentFetcher implements DocumentFetcher {
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static final Pattern UNSAFE_RAW_PATH = Pattern.compile("(?i)(%2e|%2f|%5c|%25|\\\\)");
     private static final String JCMS_UNIT_PATH =
         "/api-gateway/jpaas-publish-server/front/page/build/unit";
@@ -102,6 +105,10 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
                 ? closeAndEmpty(response.body()) : readBounded(response.body(), request.maxBytes());
             String headerType = response.headers().firstValue("Content-Type").orElse(null);
             String mediaType = content.length == 0 ? null : mediaTypes.detect(current, headerType, content);
+            if (content.length > 0 && request.responseBodyJsonPath() != null) {
+                content = extractJsonBody(content, request.responseBodyJsonPath());
+                mediaType = MediaTypeDetector.HTML;
+            }
             return new FetchedDocument(current, status, mediaType, content,
                 response.headers().firstValue("ETag").orElse(request.etag()),
                 response.headers().firstValue("Last-Modified").orElse(request.lastModified()),
@@ -129,17 +136,36 @@ public final class JavaHttpDocumentFetcher implements DocumentFetcher {
     }
 
     private HttpRequest buildRequest(URI uri, FetchRequest request) {
+        HttpRequest.BodyPublisher publisher = request.method() == FetchMethod.POST
+            ? HttpRequest.BodyPublishers.ofString(request.body(), java.nio.charset.StandardCharsets.UTF_8)
+            : HttpRequest.BodyPublishers.noBody();
         var builder = HttpRequest.newBuilder(uri)
-            .method(request.method().name(), HttpRequest.BodyPublishers.noBody())
+            .method(request.method().name(), publisher)
             .timeout(request.requestTimeout())
             .header("User-Agent", userAgent)
             .header("Accept", "text/html,application/xhtml+xml,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*;q=0.1");
+        request.headers().forEach(builder::header);
         if (JCMS_UNIT_PATH.equals(uri.getPath())) {
             builder.header("X-Requested-With", "XMLHttpRequest");
         }
         if (request.etag() != null && !request.etag().isBlank()) builder.header("If-None-Match", request.etag());
         if (request.lastModified() != null && !request.lastModified().isBlank()) builder.header("If-Modified-Since", request.lastModified());
         return builder.build();
+    }
+
+    private static byte[] extractJsonBody(byte[] content, String path) {
+        try {
+            JsonNode node = JSON.readTree(content);
+            for (String segment : path.split("\\.")) node = node.path(segment);
+            if (!node.isTextual() || node.asText().isBlank()) {
+                throw new FetchFailedException("Configured JSON response body path is not nonblank text");
+            }
+            return node.asText().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        } catch (FetchFailedException failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw new FetchFailedException("Could not extract configured JSON response body", failure);
+        }
     }
 
     static void requireAllowed(URI uri, FetchRequest request) {

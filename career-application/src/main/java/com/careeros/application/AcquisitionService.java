@@ -311,7 +311,10 @@ public final class AcquisitionService {
         store.saveRun(SourceCrawlRun.running(runId, source.id(), trigger, started));
         Counts counts = new Counts();
         try {
-            List<DiscoveredLink> details = discoverIncremental(source);
+            ListingResult incrementalListing = discoverIncremental(source);
+            List<DiscoveredLink> details = incrementalListing.links().stream()
+                .map(YearDiscoveredLink::link)
+                .toList();
             if (details.isEmpty()) {
                 throw new FetchFailedException(
                     "Incremental listing yielded zero candidate announcements; discovery contract is unverified");
@@ -343,6 +346,8 @@ public final class AcquisitionService {
                     }
                 }
             }
+            reconcileListingAbsences(source, runId, details,
+                incrementalListing.traversalComplete(), counts);
             saveIncrementalCoverage(source.id(), byYear);
             RunStatus status = counts.failed == 0 ? RunStatus.SUCCEEDED
                 : counts.hasSuccess() ? RunStatus.PARTIALLY_SUCCEEDED : RunStatus.FAILED;
@@ -376,10 +381,38 @@ public final class AcquisitionService {
         }
     }
 
-    private List<DiscoveredLink> discoverIncremental(RecruitmentSource source) {
-        return listings.read(source, new ListingQuery(Set.of(), false)).links().stream()
-            .map(YearDiscoveredLink::link)
-            .toList();
+    private ListingResult discoverIncremental(RecruitmentSource source) {
+        return listings.read(source, new ListingQuery(Set.of(), false));
+    }
+
+    private void reconcileListingAbsences(
+        RecruitmentSource source, UUID runId, List<DiscoveredLink> current,
+        boolean traversalComplete, Counts counts
+    ) {
+        if (!traversalComplete) return;
+        if (!Boolean.parseBoolean(String.valueOf(
+            source.configuration().getOrDefault("listingAbsenceDeactivationEnabled", false)))) return;
+        Set<URI> present = current.stream().map(DiscoveredLink::uri)
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Instant now = clock.instant();
+        for (AcquiredDocument previous : store.findDocuments(source.id())) {
+            if (previous.kind() != DocumentKind.ANNOUNCEMENT
+                || previous.parentDocumentId() != null || present.contains(previous.canonicalUri())) continue;
+            DocumentTransition transition = DocumentTransition.decide(
+                previous, FetchObservation.gone(previous.canonicalUri(), 410), now);
+            if (transition.type() != TransitionType.DEACTIVATED) {
+                store.saveDocument(transition.document());
+                continue;
+            }
+            var change = new AcquisitionChange(UUID.randomUUID(), runId, source.id(), previous.id(),
+                ChangeType.DEACTIVATED, previous.contentFingerprint(),
+                AcquisitionChange.DEACTIVATED_FINGERPRINT, previous.canonicalUri(),
+                Map.of("reason", "MISSING_FROM_SUCCESSFUL_LISTING", "consecutiveMisses",
+                    transition.document().consecutiveGoneCount()), now);
+            store.saveDocumentAndChange(transition.document(), change);
+            counts.deactivated++;
+            observer.document(source.code(), "DEACTIVATED");
+        }
     }
 
     private ListingResult readLegacySinglePage(RecruitmentSource source, ListingQuery query) {
@@ -480,9 +513,20 @@ public final class AcquisitionService {
             document = transition.bind(source.id(), parent == null ? null : parent.id(), kind,
                 URI.create(artifact.storageUri()));
         }
+        String listingMetadataFingerprint = kind == DocumentKind.ANNOUNCEMENT
+            ? listingMetadataFingerprint(link) : null;
+        boolean listingMetadataChanged = prior
+            .map(AcquiredDocument::listingMetadataFingerprint)
+            .filter(Objects::nonNull)
+            .map(previous -> !previous.equals(listingMetadataFingerprint))
+            .orElse(false);
+        if (listingMetadataFingerprint != null) {
+            document = document.withListingMetadataFingerprint(listingMetadataFingerprint,
+                listingMetadataChanged ? clock.instant() : document.lastChangedAt());
+        }
         ProcessingResult processing = null;
         boolean processorChanged = !Objects.equals(document.lastProcessorVersion(), processor.version());
-        if (transition.shouldProcess() || processorChanged) {
+        if (transition.shouldProcess() || processorChanged || listingMetadataChanged) {
             try {
                 byte[] content = response.content().length > 0 ? response.content() : readStored(document);
                 processing = processor.process(processCommand(
@@ -507,16 +551,27 @@ public final class AcquisitionService {
                 observer.processingFailure(source.code(), document.mediaType());
             }
         }
-        ChangeType changeType = changeType(transition.type());
+        boolean listingMetadataOnlyUpdate = listingMetadataChanged
+            && transition.type() == TransitionType.UNCHANGED;
+        ChangeType changeType = listingMetadataOnlyUpdate
+            ? ChangeType.UPDATED : changeType(transition.type());
         if (changeType == null) {
             document = store.saveDocument(document);
             counts.unchanged++;
         } else {
             String current = changeType == ChangeType.DEACTIVATED
-                ? AcquisitionChange.DEACTIVATED_FINGERPRINT : document.contentFingerprint();
+                ? AcquisitionChange.DEACTIVATED_FINGERPRINT
+                : listingMetadataOnlyUpdate ? listingMetadataFingerprint
+                    : document.contentFingerprint();
+            String previous = listingMetadataOnlyUpdate
+                ? prior.map(AcquiredDocument::listingMetadataFingerprint).orElse(null)
+                : transition.previousFingerprint();
+            Map<String, Object> summary = new LinkedHashMap<>(
+                processing == null ? Map.of() : processing.summary());
+            if (listingMetadataChanged) summary.put("listingMetadataChanged", true);
             var change = new AcquisitionChange(UUID.randomUUID(), runId, source.id(), document.id(), changeType,
-                transition.previousFingerprint(), current, document.canonicalUri(),
-                processing == null ? Map.of() : processing.summary(), clock.instant());
+                previous, current, document.canonicalUri(),
+                summary, clock.instant());
             document = store.saveDocumentAndChange(document, change).document();
             switch (changeType) {
                 case ADDED -> counts.added++;
@@ -583,12 +638,13 @@ public final class AcquisitionService {
     }
 
     private FetchRequest request(RecruitmentSource source, DiscoveredLink link, AcquiredDocument prior) {
-        URI uri = link.uri();
+        URI uri = link.fetchUri();
         if (link.readContract() != null) {
             return new FetchRequest(uri, link.readContract().exactHosts(),
                 prior == null ? null : prior.etag(), prior == null ? null : prior.lastModified(),
                 Duration.ofSeconds(20), maxDocumentBytes, source.id(), source.minimumRequestInterval(),
-                FetchMethod.GET, link.readContract());
+                FetchMethod.GET, link.readContract(), Map.of(), null,
+                link.responseBodyJsonPath());
         }
         Set<String> hosts = new LinkedHashSet<>();
         hosts.add(source.baseUri().getHost());
@@ -597,7 +653,9 @@ public final class AcquisitionService {
         if (configured instanceof Collection<?> values) values.stream().map(Object::toString).forEach(hosts::add);
         return new FetchRequest(uri, hosts, prior == null ? null : prior.etag(),
             prior == null ? null : prior.lastModified(), Duration.ofSeconds(20), maxDocumentBytes,
-            source.id(), source.minimumRequestInterval());
+            source.id(), source.minimumRequestInterval(), FetchMethod.GET,
+            new HttpReadContract(TransportPolicy.HTTPS_ONLY, hosts, Set.of()), Map.of(), null,
+            link.responseBodyJsonPath());
     }
 
     private FetchRequest request(RecruitmentSource source, URI uri, AcquiredDocument prior) {
@@ -683,6 +741,22 @@ public final class AcquisitionService {
             FetchObservation.ObservationType.FAILURE, null, null, null, null, risk);
         return FetchObservation.ok(stableUri, response.status(), sha256(response.content()),
             response.mediaType(), response.etag(), response.lastModified(), risk);
+    }
+
+    private static String listingMetadataFingerprint(DiscoveredLink link) {
+        byte[] title = link.title().getBytes(StandardCharsets.UTF_8);
+        byte[] published = (link.publishedOn() == null ? "" : link.publishedOn().toString())
+            .getBytes(StandardCharsets.UTF_8);
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(java.nio.ByteBuffer.allocate(Integer.BYTES).putInt(title.length).array());
+            digest.update(title);
+            digest.update(java.nio.ByteBuffer.allocate(Integer.BYTES).putInt(published.length).array());
+            digest.update(published);
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (Exception exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private static ChangeType changeType(TransitionType type) {

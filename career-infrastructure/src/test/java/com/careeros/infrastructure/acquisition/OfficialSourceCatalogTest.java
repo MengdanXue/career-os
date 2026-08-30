@@ -160,6 +160,48 @@ class OfficialSourceCatalogTest {
     }
 
     @Test
+    void catalogPublishesCapitalAndMetroOfficialJsonRecruitmentContracts() {
+        var catalog = OfficialSourceCatalog.load();
+        var capital = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_CAPITAL_GROUP"))
+            .findFirst().orElseThrow();
+        var metro = catalog.sources().stream()
+            .filter(source -> source.code().equals("HZ_METRO_GROUP"))
+            .findFirst().orElseThrow();
+
+        assertThat(capital.enabled()).isTrue();
+        assertThat(capital.officialRootUrl()).isEqualTo("https://www.hzzbco.com/");
+        assertThat(capital.configuration()).containsEntry("attachmentSelector", "a[href]");
+        assertThat(capital.configuration()).containsEntry("listingAbsenceDeactivationEnabled", true);
+        assertThat(capital.allowedHosts()).contains("hzzb-web.oss-cn-hangzhou.aliyuncs.com");
+        assertThat(capital.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "JSON_API")
+                .containsEntry("jsonUrlTemplate", "/newDet_{value}_8")
+                .containsEntry("jsonPublishedDateField", "issueTimeStr")
+                .containsEntry("knownArchiveGapYears", List.of(2024, 2025));
+            assertThat(entry.get("allowedHosts").toString()).contains("hzzb-web.oss-cn-hangzhou.aliyuncs.com");
+        });
+
+        assertThat(metro.enabled()).isTrue();
+        assertThat(metro.configuration()).containsEntry("imageEvidenceSelector", "img[src]");
+        assertThat(metro.configuration()).containsEntry("listingAbsenceDeactivationEnabled", true);
+        assertThat(metro.allowedHosts()).contains("prod-bucket-mh.hangzhou7.zos.ctyun.cn");
+        assertThat(metro.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "JSON_API")
+                .containsEntry("httpMethod", "POST")
+                .containsEntry("paginationLocation", "BODY")
+                .containsEntry("jsonFetchUrlTemplate", "/api/section/articleInfo?articleId={value}")
+                .containsEntry("jsonFetchContentPath", "data.contentHtml")
+                .containsEntry("jsonPublishedDateField", "publishTime")
+                .containsEntry("knownArchiveGapYears", List.of(2024, 2025));
+            assertThat(entry.get("requestBodyTemplate").toString())
+                .contains("招聘", "{page}", "{pageSize}");
+        });
+    }
+
+    @Test
     void catalogPublishesFuyangGeneralAndHealthJcmsContractsAsPartialCoverageInputs() {
         var fuyang = OfficialSourceCatalog.load().sources().stream()
             .filter(source -> source.code().equals("HZ_FUYANG_GOV"))

@@ -14,6 +14,7 @@ public record AcquiredDocument(
     DocumentKind kind,
     String mediaType,
     String contentFingerprint,
+    String listingMetadataFingerprint,
     String etag,
     String lastModified,
     URI storageUri,
@@ -42,6 +43,7 @@ public record AcquiredDocument(
         Objects.requireNonNull(lastSeenAt, "lastSeenAt");
         Objects.requireNonNull(lastChangedAt, "lastChangedAt");
         validateFingerprint(contentFingerprint, "contentFingerprint", true);
+        validateFingerprint(listingMetadataFingerprint, "listingMetadataFingerprint", false);
         validateFingerprint(lastProcessedFingerprint, "lastProcessedFingerprint", false);
         if (lastProcessorVersion != null && lastProcessorVersion.isBlank()) {
             throw new IllegalArgumentException("lastProcessorVersion must not be blank");
@@ -53,12 +55,25 @@ public record AcquiredDocument(
     public AcquiredDocument(
         UUID id, UUID sourceId, URI canonicalUri, UUID parentDocumentId, DocumentKind kind,
         String mediaType, String contentFingerprint, String etag, String lastModified,
+        URI storageUri, TransportRisk transportRisk, DocumentState state, Instant firstSeenAt,
+        Instant lastSeenAt, Instant lastChangedAt, Instant lastGoneAt, int consecutiveGoneCount,
+        int lastHttpStatus, String lastProcessedFingerprint, String lastProcessorVersion, long version
+    ) {
+        this(id, sourceId, canonicalUri, parentDocumentId, kind, mediaType, contentFingerprint,
+            null, etag, lastModified, storageUri, transportRisk, state, firstSeenAt, lastSeenAt,
+            lastChangedAt, lastGoneAt, consecutiveGoneCount, lastHttpStatus,
+            lastProcessedFingerprint, lastProcessorVersion, version);
+    }
+
+    public AcquiredDocument(
+        UUID id, UUID sourceId, URI canonicalUri, UUID parentDocumentId, DocumentKind kind,
+        String mediaType, String contentFingerprint, String etag, String lastModified,
         URI storageUri, DocumentState state, Instant firstSeenAt, Instant lastSeenAt,
         Instant lastChangedAt, Instant lastGoneAt, int consecutiveGoneCount, int lastHttpStatus,
         String lastProcessedFingerprint, String lastProcessorVersion, long version
     ) {
         this(id, sourceId, canonicalUri, parentDocumentId, kind, mediaType, contentFingerprint,
-            etag, lastModified, storageUri, transportRiskFor(canonicalUri), state, firstSeenAt,
+            null, etag, lastModified, storageUri, transportRiskFor(canonicalUri), state, firstSeenAt,
             lastSeenAt, lastChangedAt, lastGoneAt, consecutiveGoneCount, lastHttpStatus,
             lastProcessedFingerprint, lastProcessorVersion, version);
     }
@@ -81,8 +96,17 @@ public record AcquiredDocument(
             throw new IllegalArgumentException("processorVersion is required");
         }
         return new AcquiredDocument(id, sourceId, canonicalUri, parentDocumentId, kind, mediaType,
-            contentFingerprint, etag, lastModified, storageUri, transportRisk, state, firstSeenAt, lastSeenAt,
+            contentFingerprint, listingMetadataFingerprint, etag, lastModified, storageUri,
+            transportRisk, state, firstSeenAt, lastSeenAt,
             lastChangedAt, lastGoneAt, consecutiveGoneCount, lastHttpStatus, fingerprint, processorVersion, version);
+    }
+
+    public AcquiredDocument withListingMetadataFingerprint(String fingerprint, Instant changedAt) {
+        validateFingerprint(fingerprint, "fingerprint", false);
+        return new AcquiredDocument(id, sourceId, canonicalUri, parentDocumentId, kind, mediaType,
+            contentFingerprint, fingerprint, etag, lastModified, storageUri, transportRisk, state,
+            firstSeenAt, lastSeenAt, changedAt, lastGoneAt, consecutiveGoneCount, lastHttpStatus,
+            lastProcessedFingerprint, lastProcessorVersion, version);
     }
 
     private static TransportRisk transportRiskFor(URI canonicalUri) {

@@ -759,14 +759,79 @@ sources:
   - code: HZ_CAPITAL_GROUP
     name: 杭州市国有资本投资运营有限公司招聘
     routeCode: GOVERNMENT_SOE_DIGITAL
-    officialRootUrl: https://hr.hzfi.cn/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    officialRootUrl: https://www.hzzbco.com/
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    allowedHosts: [www.hzzbco.com, hzzbco.com, hzzb-web.oss-cn-hangzhou.aliyuncs.com]
+    allowedPathPrefixes: [/, /hzzb/]
+    attachmentSelector: 'a[href]'
+    listingAbsenceDeactivationEnabled: true
+    listingEntries:
+      - code: current-recruitment-and-lifecycle
+        entryUri: https://www.hzzbco.com/consult/list?menuId=273&languageId=1
+        role: PRIMARY
+        mode: JSON_API
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025]
+        completenessRequired: true
+        historicalMaxPages: 10
+        incrementalListingMaxPages: 2
+        historicalPageSize: 100
+        pageParameter: current
+        pageSizeParameter: size
+        httpMethod: GET
+        requestHeaders: {language: '1'}
+        jsonItemsPath: data.list
+        jsonTotalPath: data.total
+        jsonUrlField: id
+        jsonUrlTemplate: '/newDet_{value}_8'
+        jsonTitleField: title
+        jsonPublishedDateField: issueTimeStr
+        allowedHosts: [www.hzzbco.com, hzzbco.com, hzzb-web.oss-cn-hangzhou.aliyuncs.com]
+        allowedPathPrefixes: [/consult/, /newDet_, /hzzb/]
+        articleUrlRegex: '^https://www\.hzzbco\.com/newDet_[0-9]+_8$'
+        titleIncludeRegex: '招聘|招考|选聘|引进|考试|笔试|面试|资格复审|体检|考察|成绩|公示|录用|聘用|递补'
+        titleExcludeRegex: '招聘服务|猎头合作|采购|供应商|招标|中标|成交|遴选|询价|竞争性磋商|竞争性谈判|劳务派遣|劳务外包|业务外包|实习'
   - code: HZ_METRO_GROUP
     name: 杭州地铁集团招聘
     routeCode: GOVERNMENT_SOE_DIGITAL
     officialRootUrl: https://www.hzmetro.com/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    allowedHosts: [www.hzmetro.com, prod-bucket-mh.hangzhou7.zos.ctyun.cn, prod-hzmetro-portal.hangzhou7.zos.ctyun.cn]
+    allowedPathPrefixes: [/, /public/common/]
+    attachmentSelector: 'a[href]'
+    imageEvidenceSelector: 'img[src]'
+    listingAbsenceDeactivationEnabled: true
+    listingEntries:
+      - code: current-recruitment-and-lifecycle
+        entryUri: https://www.hzmetro.com/api/article/search
+        role: PRIMARY
+        mode: JSON_API
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025]
+        completenessRequired: true
+        historicalMaxPages: 10
+        incrementalListingMaxPages: 2
+        historicalPageSize: 100
+        pageParameter: current
+        pageSizeParameter: size
+        paginationLocation: BODY
+        httpMethod: POST
+        requestHeaders: {Content-Type: application/json}
+        requestBodyTemplate: '{"search":"招聘","current":"{page}","size":{pageSize}}'
+        jsonItemsPath: data.articleVOPage.records
+        jsonTotalPath: data.articleVOPage.total
+        jsonUrlField: id
+        jsonUrlTemplate: '/newsCenter/newsContent?id={value}'
+        jsonFetchUrlTemplate: '/api/section/articleInfo?articleId={value}'
+        jsonFetchContentPath: data.contentHtml
+        jsonTitleField: articleTitle
+        jsonPublishedDateField: publishTime
+        allowedHosts: [www.hzmetro.com, prod-bucket-mh.hangzhou7.zos.ctyun.cn, prod-hzmetro-portal.hangzhou7.zos.ctyun.cn]
+        allowedPathPrefixes: [/api/article/, /api/section/, /newsCenter/newsContent, /public/common/]
+        articleUrlRegex: '^https://www\.hzmetro\.com/newsCenter/newsContent\?id=[0-9]+$'
+        titleIncludeRegex: '招聘|招考|选聘|考试|笔试|面试|资格复审|体检|考察|成绩|公示|录用|聘用|递补'
+        titleExcludeRegex: '招聘工作|招聘稳步推进|招聘服务|猎头合作|采购|供应商|培训|实训|校企合作|劳务派遣|劳务外包|业务外包|实习'

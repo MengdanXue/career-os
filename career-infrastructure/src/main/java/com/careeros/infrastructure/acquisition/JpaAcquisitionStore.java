@@ -366,7 +366,9 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         var entity=new AcquisitionJpaModels.AcquiredDocumentEntity();
         entity.id=value.id(); entity.sourceId=value.sourceId(); entity.canonicalUri=value.canonicalUri().toString();
         entity.parentDocumentId=value.parentDocumentId(); entity.kind=value.kind(); entity.mediaType=value.mediaType();
-        entity.contentFingerprint=value.contentFingerprint(); entity.etag=value.etag(); entity.lastModified=value.lastModified();
+        entity.contentFingerprint=value.contentFingerprint();
+        entity.listingMetadataFingerprint=value.listingMetadataFingerprint();
+        entity.etag=value.etag(); entity.lastModified=value.lastModified();
         entity.storageUri=value.storageUri().toString(); entity.transportRisk=value.transportRisk();
         entity.state=value.state(); entity.firstSeenAt=value.firstSeenAt();
         entity.lastSeenAt=value.lastSeenAt(); entity.lastChangedAt=value.lastChangedAt(); entity.lastGoneAt=value.lastGoneAt();
@@ -377,7 +379,8 @@ public class JpaAcquisitionStore implements AcquisitionStore {
 
     private static AcquiredDocument toDomain(AcquisitionJpaModels.AcquiredDocumentEntity value) {
         return new AcquiredDocument(value.id,value.sourceId,URI.create(value.canonicalUri),value.parentDocumentId,
-            value.kind,value.mediaType,value.contentFingerprint,value.etag,value.lastModified,URI.create(value.storageUri),
+            value.kind,value.mediaType,value.contentFingerprint,value.listingMetadataFingerprint,
+            value.etag,value.lastModified,URI.create(value.storageUri),
             value.transportRisk,value.state,value.firstSeenAt,value.lastSeenAt,value.lastChangedAt,value.lastGoneAt,value.consecutiveGoneCount,
             value.lastHttpStatus,value.lastProcessedFingerprint,value.lastProcessorVersion,value.version);
     }

@@ -33,7 +33,11 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
         String adapterType,
         List<Map<String, Object>> listingEntries,
         String imageEvidenceSelector,
-        String scriptAttachmentVariable
+        String scriptAttachmentVariable,
+        List<String> allowedHosts,
+        List<String> allowedPathPrefixes,
+        String attachmentSelector,
+        boolean listingAbsenceDeactivationEnabled
     ) {
         public SourceDefinition {
             code = required(code, "code");
@@ -59,6 +63,9 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
             adapterType = optional(adapterType);
             imageEvidenceSelector = optional(imageEvidenceSelector);
             scriptAttachmentVariable = optional(scriptAttachmentVariable);
+            allowedHosts = allowedHosts == null ? List.of() : List.copyOf(allowedHosts);
+            allowedPathPrefixes = allowedPathPrefixes == null ? List.of() : List.copyOf(allowedPathPrefixes);
+            attachmentSelector = optional(attachmentSelector);
             if (enabled && !multiEntry && (historicalPaginationMode == null || adapterType == null)) {
                 throw new IllegalArgumentException(code + " enabled source requires pagination and adapter contracts");
             }
@@ -73,7 +80,7 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
         ) {
             this(code, name, routeCode, officialRootUrl, listingUrl, strategy, historicalYears,
                 enabled, articleUrlRegex, linkSelector, titleIncludeRegex, titleExcludeRegex,
-                historicalPaginationMode, adapterType, List.of(), null, null);
+                historicalPaginationMode, adapterType, List.of(), null, null, List.of(), List.of(), null, false);
         }
 
         public SourceDefinition(
@@ -86,7 +93,22 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
         ) {
             this(code, name, routeCode, officialRootUrl, listingUrl, strategy, historicalYears,
                 enabled, articleUrlRegex, linkSelector, titleIncludeRegex, titleExcludeRegex,
-                historicalPaginationMode, adapterType, listingEntries, null, null);
+                historicalPaginationMode, adapterType, listingEntries, null, null, List.of(), List.of(), null, false);
+        }
+
+        public SourceDefinition(
+            String code, String name, String routeCode, String officialRootUrl,
+            String listingUrl, DiscoveryStrategy strategy, List<Integer> historicalYears,
+            boolean enabled, String articleUrlRegex, String linkSelector,
+            String titleIncludeRegex, String titleExcludeRegex,
+            String historicalPaginationMode, String adapterType,
+            List<Map<String, Object>> listingEntries,
+            String imageEvidenceSelector, String scriptAttachmentVariable
+        ) {
+            this(code, name, routeCode, officialRootUrl, listingUrl, strategy, historicalYears,
+                enabled, articleUrlRegex, linkSelector, titleIncludeRegex, titleExcludeRegex,
+                historicalPaginationMode, adapterType, listingEntries, imageEvidenceSelector,
+                scriptAttachmentVariable, List.of(), List.of(), null, false);
         }
 
         public Map<String, Object> configuration() {
@@ -98,6 +120,14 @@ public record OfficialSourceCatalog(List<SourceDefinition> sources) {
             if (imageEvidenceSelector != null) values.put("imageEvidenceSelector", imageEvidenceSelector);
             if (scriptAttachmentVariable != null) {
                 values.put("scriptAttachmentVariable", scriptAttachmentVariable);
+            }
+            if (!allowedHosts.isEmpty()) values.put("allowedHosts", allowedHosts);
+            if (!allowedPathPrefixes.isEmpty()) {
+                values.put("allowedPathPrefixes", allowedPathPrefixes);
+            }
+            if (attachmentSelector != null) values.put("attachmentSelector", attachmentSelector);
+            if (listingAbsenceDeactivationEnabled) {
+                values.put("listingAbsenceDeactivationEnabled", true);
             }
             return Map.copyOf(values);
         }

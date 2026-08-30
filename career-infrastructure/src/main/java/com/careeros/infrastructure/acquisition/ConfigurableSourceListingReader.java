@@ -4,6 +4,7 @@ import com.careeros.application.AcquisitionHttpPorts.DiscoveredLink;
 import com.careeros.application.AcquisitionHttpPorts.DocumentFetcher;
 import com.careeros.application.AcquisitionHttpPorts.FetchFailedException;
 import com.careeros.application.AcquisitionHttpPorts.FetchRequest;
+import com.careeros.application.AcquisitionHttpPorts.FetchMethod;
 import com.careeros.application.AcquisitionHttpPorts.FetchedDocument;
 import com.careeros.application.AcquisitionHttpPorts.ListingEvidence;
 import com.careeros.application.AcquisitionHttpPorts.ListingEntryEvidence;
@@ -84,12 +85,15 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             .toList();
         LinkedHashMap<URI, YearDiscoveredLink> links = new LinkedHashMap<>();
         Map<String, ListingEntryEvidence> byEntry = new LinkedHashMap<>();
+        boolean traversalComplete = true;
         for (ListingEntryContract entry : ordered) {
             ListingResult result = readEntry(source, entry, scopedQuery(entry, query));
+            traversalComplete &= result.traversalComplete();
             result.links().forEach(link -> links.putIfAbsent(canonical(link.link().uri()),
                 new YearDiscoveredLink(
                     new DiscoveredLink(canonical(link.link().uri()), link.link().title(),
-                        entry.readContract(), link.link().publishedOn()),
+                        entry.readContract(), link.link().publishedOn(), link.link().fetchUri(),
+                        link.link().responseBodyJsonPath()),
                     link.recruitmentYear())));
             byEntry.put(entry.code(), new ListingEntryEvidence(
                 entry.code(), entry.completenessRequired(), result.evidenceByYear()));
@@ -100,7 +104,8 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                     RecruitmentLifecycle.classify(link.link().title()).isEmpty())
                 .thenComparing(link -> link.link().uri().toString()))
             .toList();
-        return new ListingResult(orderedLinks, aggregateEvidence(query, entries, byEntry), byEntry);
+        return new ListingResult(orderedLinks, aggregateEvidence(query, entries, byEntry), byEntry,
+            traversalComplete);
     }
 
     private ListingResult readEntry(
@@ -185,7 +190,8 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                     reason, "entry=" + entry.code() + "; official dynamic listing counters reconciled");
             }
         }
-        if (!query.historical()) return new ListingResult(List.copyOf(accepted.values()), Map.of());
+        if (!query.historical()) return new ListingResult(
+            List.copyOf(accepted.values()), Map.of(), Map.of(), false);
         throw new FetchFailedException("Listing entry " + entry.code() + " exceeded configured page limit");
     }
 
@@ -239,7 +245,8 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                     "REPORTED_TOTAL_REACHED", "entry=" + entry.code() + "; official listing total=" + total);
             }
         }
-        if (!query.historical()) return new ListingResult(List.copyOf(accepted.values()), Map.of());
+        if (!query.historical()) return new ListingResult(
+            List.copyOf(accepted.values()), Map.of(), Map.of(), false);
         throw new FetchFailedException("Listing entry " + entry.code() + " exceeded configured page limit");
     }
 
@@ -250,14 +257,18 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         int maxPages = pageLimit(entry.configuration(), query);
         String pageParameter = required(entry.configuration(), "pageParameter");
         String pageSizeParameter = required(entry.configuration(), "pageSizeParameter");
+        boolean paginationInBody = "BODY".equalsIgnoreCase(
+            String.valueOf(entry.configuration().getOrDefault("paginationLocation", "QUERY")));
         LinkedHashMap<URI, DiscoveredLink> rawDistinct = new LinkedHashMap<>();
         LinkedHashMap<URI, YearDiscoveredLink> accepted = new LinkedHashMap<>();
         Set<String> fingerprints = new HashSet<>();
         Integer total = null;
         for (int page = 1; page <= maxPages; page++) {
-            URI pageUri = queryPageUri(
+            URI pageUri = paginationInBody ? entry.entryUri() : queryPageUri(
                 queryPageUri(entry.entryUri(), pageParameter, page), pageSizeParameter, pageSize);
-            FetchedDocument fetched = fetch(source, entry, pageUri);
+            String requestBody = paginationInBody
+                ? requestBody(entry.configuration(), page, pageSize) : null;
+            FetchedDocument fetched = fetch(source, entry, pageUri, requestBody);
             JsonNode root = json(fetched.content(), "JSON_API entry " + entry.code());
             int reported = jsonPath(root, required(entry.configuration(), "jsonTotalPath")).asInt(-1);
             if (reported < 0) throw new FetchFailedException("JSON_API entry does not declare a valid total");
@@ -287,7 +298,8 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                     "REPORTED_TOTAL_REACHED", "entry=" + entry.code() + "; official JSON total=" + total);
             }
         }
-        if (!query.historical()) return new ListingResult(List.copyOf(accepted.values()), Map.of());
+        if (!query.historical()) return new ListingResult(
+            List.copyOf(accepted.values()), Map.of(), Map.of(), false);
         throw new FetchFailedException("JSON_API exceeded configured page limit");
     }
 
@@ -347,7 +359,8 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             }
             if (page == maxPages) {
                 if (!query.historical()) {
-                    return new ListingResult(List.copyOf(accepted.values()), Map.of());
+                    return new ListingResult(
+                        List.copyOf(accepted.values()), Map.of(), Map.of(), false);
                 }
                 throw new FetchFailedException("Listing entry " + entry.code() + " exceeded configured page limit");
             }
@@ -406,7 +419,11 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
     private static ListingQuery scopedQuery(
         ListingEntryContract entry, ListingQuery query
     ) {
-        if (!query.historical() || entry.recruitmentYears().isEmpty()) return query;
+        if (!query.historical()) {
+            return entry.recruitmentYears().isEmpty()
+                ? query : new ListingQuery(entry.recruitmentYears(), false);
+        }
+        if (entry.recruitmentYears().isEmpty()) return query;
         Set<Integer> intersection = query.recruitmentYears().stream()
             .filter(entry.recruitmentYears()::contains)
             .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
@@ -477,6 +494,7 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         LinkedHashMap<URI, YearDiscoveredLink> accepted = new LinkedHashMap<>();
         Set<String> pageFingerprints = new HashSet<>();
         Integer total = null;
+        boolean complete = false;
         for (int page = 1; page <= maxPages; page++) {
             FetchedDocument fetched = fetch(source, jcmsPageUri(source, page, pageSize));
             int reported = listingTotal(fetched.content());
@@ -492,9 +510,12 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                 recruitmentYear(link)
                     .ifPresent(year -> accepted.putIfAbsent(link.uri(), new YearDiscoveredLink(link, year)));
             }
-            if ((long) page * pageSize >= total) break;
+            if ((long) page * pageSize >= total) {
+                complete = true;
+                break;
+            }
         }
-        return new ListingResult(List.copyOf(accepted.values()), Map.of());
+        return new ListingResult(List.copyOf(accepted.values()), Map.of(), Map.of(), complete);
     }
 
     private ListingResult readLinkedPages(RecruitmentSource source, ListingQuery query) {
@@ -670,13 +691,20 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
     private FetchedDocument fetch(
         RecruitmentSource source, ListingEntryContract entry, URI uri
     ) {
+        return fetch(source, entry, uri, null);
+    }
+
+    private FetchedDocument fetch(
+        RecruitmentSource source, ListingEntryContract entry, URI uri, String body
+    ) {
         requireOfficial(entry, uri);
+        FetchMethod method = FetchMethod.valueOf(String.valueOf(
+            entry.configuration().getOrDefault("httpMethod", "GET")).toUpperCase(java.util.Locale.ROOT));
         FetchedDocument fetched = fetcher.fetch(new FetchRequest(
             uri, entry.readContract().exactHosts(), null, null,
             Duration.ofSeconds(20), MAX_LISTING_BYTES, source.id(),
             source.minimumRequestInterval(),
-            com.careeros.application.AcquisitionHttpPorts.FetchMethod.GET,
-            entry.readContract()));
+            method, entry.readContract(), requestHeaders(entry.configuration()), body));
         if (fetched.status() != 200 || fetched.content().length == 0) {
             throw new FetchFailedException("Listing entry did not return content: " + fetched.status());
         }
@@ -860,18 +888,93 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         if (!items.isArray()) throw new FetchFailedException("configured JSON items path is not an array");
         String urlField = required(entry.configuration(), "jsonUrlField");
         String titleField = required(entry.configuration(), "jsonTitleField");
+        String urlTemplate = optionalText(entry.configuration(), "jsonUrlTemplate");
+        String fetchUrlTemplate = optionalText(entry.configuration(), "jsonFetchUrlTemplate");
+        String responseBodyJsonPath = optionalText(entry.configuration(), "jsonFetchContentPath");
+        if (responseBodyJsonPath != null && fetchUrlTemplate == null) {
+            throw new IllegalArgumentException(
+                "jsonFetchContentPath requires jsonFetchUrlTemplate");
+        }
+        String publishedDateField = optionalText(entry.configuration(), "jsonPublishedDateField");
         LinkedHashMap<URI, DiscoveredLink> distinct = new LinkedHashMap<>();
         for (JsonNode item : items) {
             String rawUrl = jsonPath(item, urlField).asText().trim();
+            String rawValue = rawUrl;
             String title = jsonPath(item, titleField).asText().trim();
             if (rawUrl.isEmpty() || title.isEmpty()) {
                 throw new FetchFailedException("configured JSON item is missing its URL or title");
             }
+            if (urlTemplate != null) {
+                if (!urlTemplate.contains("{value}")) {
+                    throw new IllegalArgumentException("jsonUrlTemplate must contain {value}");
+                }
+                if (!rawUrl.matches("[A-Za-z0-9._@-]+")) {
+                    throw new FetchFailedException("configured JSON URL value is unsafe");
+                }
+                rawUrl = urlTemplate.replace("{value}", rawUrl);
+            }
             URI uri = canonical(pageUri.resolve(rawUrl));
             requireOfficial(entry, uri);
-            distinct.putIfAbsent(uri, new DiscoveredLink(uri, title));
+            URI fetchUri = uri;
+            if (fetchUrlTemplate != null) {
+                if (!fetchUrlTemplate.contains("{value}")) {
+                    throw new IllegalArgumentException("jsonFetchUrlTemplate must contain {value}");
+                }
+                if (!rawValue.matches("[A-Za-z0-9._@-]+")) {
+                    throw new FetchFailedException("configured JSON fetch URL value is unsafe");
+                }
+                fetchUri = canonical(pageUri.resolve(fetchUrlTemplate.replace("{value}", rawValue)));
+                requireOfficial(entry, fetchUri);
+            }
+            LocalDate publishedOn = publishedDateField == null ? null
+                : parseJsonDate(jsonPath(item, publishedDateField).asText());
+            distinct.putIfAbsent(uri, new DiscoveredLink(
+                uri, title, null, publishedOn, fetchUri, responseBodyJsonPath));
         }
         return List.copyOf(distinct.values());
+    }
+
+    private static LocalDate parseJsonDate(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        Matcher matcher = Pattern.compile("(20\\d{2})[-/](\\d{1,2})[-/](\\d{1,2})").matcher(raw.trim());
+        if (!matcher.find()) {
+            throw new FetchFailedException("configured JSON publication date is invalid");
+        }
+        return LocalDate.of(Integer.parseInt(matcher.group(1)),
+            Integer.parseInt(matcher.group(2)), Integer.parseInt(matcher.group(3)));
+    }
+
+    private static Map<String, String> requestHeaders(Map<String, Object> configuration) {
+        Object configured = configuration.get("requestHeaders");
+        if (configured == null) return Map.of();
+        if (!(configured instanceof Map<?, ?> values)) {
+            throw new IllegalArgumentException("requestHeaders must be an object");
+        }
+        Map<String, String> headers = new LinkedHashMap<>();
+        values.forEach((key, value) -> {
+            if (key == null || value == null) {
+                throw new IllegalArgumentException("requestHeaders cannot contain nulls");
+            }
+            headers.put(key.toString(), value.toString());
+        });
+        return Map.copyOf(headers);
+    }
+
+    private static String optionalText(Map<String, Object> configuration, String key) {
+        Object value = configuration.get(key);
+        if (value == null) return null;
+        String text = value.toString().trim();
+        return text.isEmpty() ? null : text;
+    }
+
+    private static String requestBody(Map<String, Object> configuration, int page, int pageSize) {
+        String template = required(configuration, "requestBodyTemplate");
+        if (!template.contains("{page}") || !template.contains("{pageSize}")) {
+            throw new IllegalArgumentException(
+                "requestBodyTemplate must contain {page} and {pageSize}");
+        }
+        return template.replace("{page}", Integer.toString(page))
+            .replace("{pageSize}", Integer.toString(pageSize));
     }
 
     private static List<DiscoveredLink> filterConfigured(
@@ -954,7 +1057,8 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         for (DiscoveredLink value : values) {
             URI canonical = canonical(value.uri());
             distinct.putIfAbsent(canonical, new DiscoveredLink(canonical, value.title().trim(),
-                value.readContract(), value.publishedOn()));
+                value.readContract(), value.publishedOn(), value.fetchUri(),
+                value.responseBodyJsonPath()));
         }
         return List.copyOf(distinct.values());
     }

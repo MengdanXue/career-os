@@ -659,6 +659,168 @@ class ConfigurableSourceListingReaderTest {
     }
 
     @Test
+    void jsonApiBuildsCanonicalUrlsFromIdsAndSendsConfiguredHeaders() {
+        Map<String, Object> entry = baseEntry(
+            "api", "JSON_API", "https://official.example/api/notices?category=jobs");
+        entry.put("historicalMaxPages", 1);
+        entry.put("historicalPageSize", 100);
+        entry.put("pageParameter", "current");
+        entry.put("pageSizeParameter", "size");
+        entry.put("jsonItemsPath", "data.list");
+        entry.put("jsonTotalPath", "data.total");
+        entry.put("jsonUrlField", "id");
+        entry.put("jsonUrlTemplate", "/newDet_{value}_8");
+        entry.put("jsonTitleField", "title");
+        entry.put("requestHeaders", Map.of("language", "1"));
+        entry.put("articleUrlRegex", "^https://official\\.example/newDet_[0-9]+_8$");
+        URI first = URI.create(
+            "https://official.example/api/notices?category=jobs&current=1&size=100");
+        byte[] json = "{\"data\":{\"total\":1,\"list\":[{\"id\":2469,\"title\":\"2026年公开招聘公告\"}]}}"
+            .getBytes(StandardCharsets.UTF_8);
+        var fetcher = new MapFetcher(Map.of(first, json));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.links()).singleElement().satisfies(link -> assertThat(link.link().uri())
+            .hasToString("https://official.example/newDet_2469_8"));
+        assertThat(fetcher.fetchRequests()).singleElement().satisfies(request ->
+            assertThat(request.headers()).containsEntry("language", "1"));
+    }
+
+    @Test
+    void jsonApiCanPutPaginationIntoAPostJsonBody() {
+        Map<String, Object> entry = baseEntry(
+            "api", "JSON_API", "https://official.example/api/article/search");
+        entry.put("historicalMaxPages", 1);
+        entry.put("historicalPageSize", 100);
+        entry.put("pageParameter", "current");
+        entry.put("pageSizeParameter", "size");
+        entry.put("paginationLocation", "BODY");
+        entry.put("httpMethod", "POST");
+        entry.put("requestHeaders", Map.of("Content-Type", "application/json"));
+        entry.put("requestBodyTemplate", "{\"search\":\"招聘\",\"current\":\"{page}\",\"size\":{pageSize}}");
+        entry.put("jsonItemsPath", "data.articleVOPage.records");
+        entry.put("jsonTotalPath", "data.articleVOPage.total");
+        entry.put("jsonUrlField", "id");
+        entry.put("jsonUrlTemplate", "/newsCenter/newsContent?id={value}");
+        entry.put("jsonFetchUrlTemplate", "/api/section/articleInfo?articleId={value}");
+        entry.put("jsonFetchContentPath", "data.contentHtml");
+        entry.put("jsonTitleField", "articleTitle");
+        entry.put("articleUrlRegex", "^https://official\\.example/newsCenter/newsContent\\?id=[0-9]+$");
+        byte[] json = "{\"data\":{\"articleVOPage\":{\"total\":1,\"records\":[{\"id\":1666,\"articleTitle\":\"2026年校园招聘公告\"}]}}}"
+            .getBytes(StandardCharsets.UTF_8);
+        var fetcher = new MapFetcher(Map.of(URI.create(
+            "https://official.example/api/article/search"), json));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.links()).singleElement().satisfies(link -> {
+            assertThat(link.link().uri())
+                .hasToString("https://official.example/newsCenter/newsContent?id=1666");
+            assertThat(link.link().fetchUri())
+                .hasToString("https://official.example/api/section/articleInfo?articleId=1666");
+            assertThat(link.link().responseBodyJsonPath()).isEqualTo("data.contentHtml");
+        });
+        assertThat(fetcher.fetchRequests()).singleElement().satisfies(request -> {
+            assertThat(request.method()).isEqualTo(com.careeros.application.AcquisitionHttpPorts.FetchMethod.POST);
+            assertThat(request.body()).isEqualTo("{\"search\":\"招聘\",\"current\":\"1\",\"size\":100}");
+            assertThat(request.headers()).containsEntry("content-type", "application/json");
+        });
+    }
+
+    @Test
+    void jsonApiUsesTheConfiguredOfficialPublicationDateForYearClassification() {
+        Map<String, Object> entry = baseEntry(
+            "api", "JSON_API", "https://official.example/api/notices");
+        entry.put("historicalMaxPages", 1);
+        entry.put("historicalPageSize", 100);
+        entry.put("pageParameter", "current");
+        entry.put("pageSizeParameter", "size");
+        entry.put("jsonItemsPath", "data.records");
+        entry.put("jsonTotalPath", "data.total");
+        entry.put("jsonUrlField", "id");
+        entry.put("jsonUrlTemplate", "/newsContent?id={value}");
+        entry.put("jsonTitleField", "title");
+        entry.put("jsonPublishedDateField", "publishTime");
+        entry.put("articleUrlRegex", "^https://official\\.example/newsContent\\?id=[0-9]+$");
+        URI first = URI.create("https://official.example/api/notices?current=1&size=100");
+        byte[] json = "{\"data\":{\"total\":1,\"records\":[{\"id\":88,\"title\":\"公开招聘公告\",\"publishTime\":\"2025-11-06 08:30:00\"}]}}"
+            .getBytes(StandardCharsets.UTF_8);
+
+        var result = new ConfigurableSourceListingReader(new MapFetcher(Map.of(first, json)),
+            new StaticHtmlSourceDiscoverer()).read(singleEntrySource(entry),
+                new ListingQuery(Set.of(2025), true));
+
+        assertThat(result.links()).singleElement().satisfies(link -> {
+            assertThat(link.recruitmentYear()).isEqualTo(2025);
+            assertThat(link.link().publishedOn()).isEqualTo(java.time.LocalDate.of(2025, 11, 6));
+        });
+    }
+
+    @Test
+    void incrementalJsonApiIgnoresRecordsOutsideTheEntryWatchYears() {
+        Map<String, Object> entry = baseEntry(
+            "api", "JSON_API", "https://official.example/api/notices");
+        entry.put("historicalMaxPages", 1);
+        entry.put("incrementalListingMaxPages", 1);
+        entry.put("historicalPageSize", 100);
+        entry.put("pageParameter", "current");
+        entry.put("pageSizeParameter", "size");
+        entry.put("jsonItemsPath", "data.records");
+        entry.put("jsonTotalPath", "data.total");
+        entry.put("jsonUrlField", "id");
+        entry.put("jsonUrlTemplate", "/newsContent?id={value}");
+        entry.put("jsonTitleField", "title");
+        entry.put("jsonPublishedDateField", "publishTime");
+        entry.put("articleUrlRegex", "^https://official\\.example/newsContent\\?id=[0-9]+$");
+        URI first = URI.create("https://official.example/api/notices?current=1&size=100");
+        byte[] json = ("{\"data\":{\"total\":2,\"records\":["
+            + "{\"id\":1,\"title\":\"旧招聘公告\",\"publishTime\":\"2020-01-02\"},"
+            + "{\"id\":2,\"title\":\"新招聘公告\",\"publishTime\":\"2026-08-20\"}]}}")
+            .getBytes(StandardCharsets.UTF_8);
+
+        var result = new ConfigurableSourceListingReader(new MapFetcher(Map.of(first, json)),
+            new StaticHtmlSourceDiscoverer()).read(singleEntrySource(entry),
+                new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).singleElement().satisfies(link -> {
+            assertThat(link.recruitmentYear()).isEqualTo(2026);
+            assertThat(link.link().uri()).hasToString("https://official.example/newsContent?id=2");
+        });
+    }
+
+    @Test
+    void incrementalJsonApiMarksTraversalIncompleteWhenReportedTotalExceedsThePageLimit() {
+        Map<String, Object> entry = baseEntry(
+            "api", "JSON_API", "https://official.example/api/notices");
+        entry.put("historicalMaxPages", 2);
+        entry.put("incrementalListingMaxPages", 1);
+        entry.put("historicalPageSize", 1);
+        entry.put("pageParameter", "current");
+        entry.put("pageSizeParameter", "size");
+        entry.put("jsonItemsPath", "data.records");
+        entry.put("jsonTotalPath", "data.total");
+        entry.put("jsonUrlField", "id");
+        entry.put("jsonUrlTemplate", "/newsContent?id={value}");
+        entry.put("jsonTitleField", "title");
+        entry.put("jsonPublishedDateField", "publishTime");
+        entry.put("articleUrlRegex", "^https://official\\.example/newsContent\\?id=[0-9]+$");
+        URI first = URI.create("https://official.example/api/notices?current=1&size=1");
+        byte[] json = ("{\"data\":{\"total\":2,\"records\":["
+            + "{\"id\":1,\"title\":\"招聘公告\",\"publishTime\":\"2026-08-20\"}]}}")
+            .getBytes(StandardCharsets.UTF_8);
+
+        var result = new ConfigurableSourceListingReader(new MapFetcher(Map.of(first, json)),
+            new StaticHtmlSourceDiscoverer()).read(singleEntrySource(entry),
+                new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).hasSize(1);
+        assertThat(result.traversalComplete()).isFalse();
+    }
+
+    @Test
     void jsonApiRejectsADeclaredTotalMismatch() {
         Map<String, Object> entry = baseEntry(
             "api", "JSON_API", "https://official.example/api/notices");
@@ -1100,6 +1262,7 @@ class ConfigurableSourceListingReaderTest {
     private static final class MapFetcher implements DocumentFetcher {
         private final Map<URI, byte[]> pages;
         private final java.util.List<URI> requests = new java.util.ArrayList<>();
+        private final java.util.List<FetchRequest> fetchRequests = new java.util.ArrayList<>();
 
         private MapFetcher(Map<URI, byte[]> pages) {
             this.pages = new LinkedHashMap<>(pages);
@@ -1108,6 +1271,7 @@ class ConfigurableSourceListingReaderTest {
         @Override
         public FetchedDocument fetch(FetchRequest request) {
             requests.add(request.uri());
+            fetchRequests.add(request);
             byte[] content = pages.get(request.uri());
             if (content == null) throw new IllegalArgumentException("Unexpected URI " + request.uri());
             return new FetchedDocument(request.uri(), 200, "text/html", content, null, null);
@@ -1115,6 +1279,10 @@ class ConfigurableSourceListingReaderTest {
 
         java.util.List<URI> requests() {
             return java.util.List.copyOf(requests);
+        }
+
+        java.util.List<FetchRequest> fetchRequests() {
+            return java.util.List.copyOf(fetchRequests);
         }
     }
 }

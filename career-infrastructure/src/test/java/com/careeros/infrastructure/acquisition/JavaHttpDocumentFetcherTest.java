@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -217,6 +218,45 @@ class JavaHttpDocumentFetcherTest {
         var result = fetcher.fetch(request("/notice", null, null, 1024));
 
         assertThat(result.status()).isEqualTo(200);
+    }
+
+    @Test void postSendsTheConfiguredJsonBodyAndSafeStaticHeaders() {
+        server.stubFor(post("/api/article/search")
+            .withHeader("Content-Type", equalTo("application/json"))
+            .withHeader("language", equalTo("1"))
+            .withRequestBody(equalToJson("{\"search\":\"招聘\",\"current\":1}"))
+            .willReturn(okJson("{\"data\":{\"total\":0}}")));
+        var contract = new HttpReadContract(
+            TransportPolicy.HTTPS_ONLY, Set.of("localhost"), Set.of());
+        var request = new FetchRequest(
+            URI.create(server.baseUrl() + "/api/article/search"), Set.of("localhost"),
+            null, null, Duration.ofSeconds(20), 1024, null, Duration.ZERO,
+            FetchMethod.POST, contract,
+            Map.of("Content-Type", "application/json", "language", "1"),
+            "{\"search\":\"招聘\",\"current\":1}");
+
+        var result = fetcher.fetch(request);
+
+        assertThat(result.status()).isEqualTo(200);
+        server.verify(1, postRequestedFor(urlEqualTo("/api/article/search")));
+    }
+
+    @Test void extractsConfiguredOfficialHtmlFromAJsonDetailResponse() {
+        server.stubFor(get("/api/section/articleInfo?articleId=1666")
+            .willReturn(okJson("{\"data\":{\"contentHtml\":\"<article><h1>招聘公告</h1><p>完整正文</p></article>\"}}")));
+        var contract = new HttpReadContract(
+            TransportPolicy.HTTPS_ONLY, Set.of("localhost"), Set.of());
+        var request = new FetchRequest(
+            URI.create(server.baseUrl() + "/api/section/articleInfo?articleId=1666"),
+            Set.of("localhost"), null, null, Duration.ofSeconds(20), 4096,
+            null, Duration.ZERO, FetchMethod.GET, contract, java.util.Map.of(), null,
+            "data.contentHtml");
+
+        var result = fetcher.fetch(request);
+
+        assertThat(result.mediaType()).isEqualTo(MediaTypeDetector.HTML);
+        assertThat(new String(result.content(), StandardCharsets.UTF_8))
+            .contains("招聘公告", "完整正文").doesNotContain("contentHtml");
     }
 
     @Test void rejectsRedirectToHostOutsideAllowlist() {

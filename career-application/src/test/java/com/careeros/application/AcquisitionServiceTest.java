@@ -37,6 +37,7 @@ class AcquisitionServiceTest {
     private static final URI LIST = URI.create("https://official.example/list.html");
     private static final URI LIST_API = URI.create("https://official.example/api/list?page=1");
     private static final URI DETAIL = URI.create("https://official.example/art/2026/notice.html");
+    private static final URI SECOND_DETAIL = URI.create("https://official.example/art/2026/notice-2.html");
     private static final URI ATTACHMENT = URI.create("https://official.example/document/download?fileName=jobs.xlsx&fileUrl=token%2Fvalue%3D");
     private static final URI IMAGE = URI.create("https://official.example/images/2026-job-table.png");
 
@@ -132,6 +133,75 @@ class AcquisitionServiceTest {
         assertThat(fixture.store.changes).extracting(AcquisitionChange::changeType)
             .containsExactly(ChangeType.ADDED, ChangeType.UPDATED);
         assertThat(fixture.processor.calls).isEqualTo(2);
+    }
+
+    @Test
+    void changedOfficialListingTitleCreatesAnUpdateWhenTheDetailBodyIsUnchanged() {
+        Fixture fixture = new Fixture();
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.discoverer.pages.put("<html>list", List.of(
+            new DiscoveredLink(DETAIL, "2026年公开招聘公告（更正）")));
+        fixture.fetcher.detailNotModified = true;
+
+        SourceCrawlRun changed = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.discoverer.pages.put("<html>list", List.of(
+            new DiscoveredLink(DETAIL, "2026年公开招聘公告（第二次更正）")));
+        SourceCrawlRun changedAgain = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(changed.updatedCount()).isEqualTo(1);
+        assertThat(changedAgain.updatedCount()).isEqualTo(1);
+        assertThat(fixture.store.changes).extracting(AcquisitionChange::changeType)
+            .containsExactly(ChangeType.ADDED, ChangeType.UPDATED, ChangeType.UPDATED);
+        assertThat(fixture.store.changes).filteredOn(change ->
+                change.changeType() == ChangeType.UPDATED)
+            .extracting(AcquisitionChange::currentFingerprint)
+            .doesNotHaveDuplicates();
+        assertThat(fixture.processor.calls).isEqualTo(3);
+    }
+
+    @Test
+    void successfulListingsDeactivateAMissingAnnouncementOnlyAfterTwoSeparatedMisses() {
+        MutableClock clock = new MutableClock(NOW);
+        Fixture fixture = new Fixture(sourceWithListingAbsenceDeactivation(), clock);
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.discoverer.pages.put("<html>list", List.of(
+            new DiscoveredLink(SECOND_DETAIL, "2026年第二份公开招聘公告")));
+
+        clock.advance(Duration.ofHours(7));
+        SourceCrawlRun firstMiss = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        clock.advance(Duration.ofHours(7));
+        SourceCrawlRun secondMiss = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(firstMiss.deactivatedCount()).isZero();
+        assertThat(secondMiss.deactivatedCount()).isEqualTo(1);
+        assertThat(fixture.store.documents.get(DETAIL).state())
+            .isEqualTo(AcquiredDocument.DocumentState.DEACTIVATED);
+        assertThat(fixture.store.changes).filteredOn(change ->
+            change.changeType() == ChangeType.DEACTIVATED).singleElement().satisfies(change ->
+                assertThat(change.jobDeltaSummary())
+                    .containsEntry("reason", "MISSING_FROM_SUCCESSFUL_LISTING")
+                    .containsEntry("consecutiveMisses", 2));
+    }
+
+    @Test
+    void truncatedListingsNeverDeactivateAnnouncementsMissingBeyondThePageLimit() {
+        MutableClock clock = new MutableClock(NOW);
+        Fixture fixture = new Fixture(sourceWithListingAbsenceDeactivation(), clock);
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.discoverer.pages.put("<html>list", List.of(
+            new DiscoveredLink(SECOND_DETAIL, "2026年第二份公开招聘公告")));
+        fixture.reader.incrementalTraversalComplete = false;
+
+        clock.advance(Duration.ofHours(7));
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        clock.advance(Duration.ofHours(7));
+        SourceCrawlRun secondTruncatedRun = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(secondTruncatedRun.deactivatedCount()).isZero();
+        assertThat(fixture.store.documents.get(DETAIL).state())
+            .isEqualTo(AcquiredDocument.DocumentState.ACTIVE);
+        assertThat(fixture.store.changes).noneMatch(change ->
+            change.changeType() == ChangeType.DEACTIVATED);
     }
 
     @Test
@@ -695,6 +765,17 @@ class AcquisitionServiceTest {
             value.createdAt(), value.updatedAt());
     }
 
+    private static RecruitmentSource sourceWithListingAbsenceDeactivation() {
+        RecruitmentSource value = source();
+        Map<String, Object> configuration = new LinkedHashMap<>(value.configuration());
+        configuration.put("listingAbsenceDeactivationEnabled", true);
+        return new RecruitmentSource(value.id(), value.code(), value.name(), value.baseUri(), value.entryUri(),
+            value.sourceType(), value.region(), value.crawlMode(), value.enabled(), value.cronExpression(),
+            value.timeZone(), value.minimumRequestInterval(), configuration, value.lastSuccessAt(),
+            value.lastFailureAt(), value.nextDueAt(), value.consecutiveFailureCount(),
+            value.createdAt(), value.updatedAt());
+    }
+
     private static RecruitmentSource sourceWithoutJcmsConfiguration() {
         RecruitmentSource value = source();
         Map<String, Object> configuration = new LinkedHashMap<>(value.configuration());
@@ -768,6 +849,7 @@ class AcquisitionServiceTest {
         private final FakeFetcher fetcher;
         private final FakeDiscoverer discoverer;
         private final List<AcquisitionHttpPorts.ListingQuery> queries = new ArrayList<>();
+        boolean incrementalTraversalComplete = true;
 
         private FakeListingReader(FakeFetcher fetcher, FakeDiscoverer discoverer) {
             this.fetcher = fetcher;
@@ -782,7 +864,7 @@ class AcquisitionServiceTest {
                     "<html>list</html>".getBytes(StandardCharsets.UTF_8)).stream()
                     .map(link -> new YearDiscoveredLink(link, year(link)))
                     .toList();
-                return new ListingResult(links, Map.of());
+                return new ListingResult(links, Map.of(), Map.of(), incrementalTraversalComplete);
             }
             if (fetcher.historicalListingStatus != 200) {
                 throw new AcquisitionHttpPorts.FetchFailedException(
