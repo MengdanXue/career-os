@@ -166,6 +166,25 @@ class OfficialSourceLiveSmokeTest {
     }
 
     @Test
+    void shangchengOfficialLifecycleColumnClosesAt112RowsAndPreservesThe2025Gap() {
+        var source = multiEntrySource(multiEntryDefinition("HZ_SHANGCHENG_GOV"));
+        var result = new ConfigurableSourceListingReader(fetcher, discoverer)
+            .read(source, new ListingQuery(Set.of(2024, 2025, 2026, 2027), true));
+        var entry = result.evidenceByEntry().get("establishment-and-lifecycle")
+            .evidenceByYear().get(2026);
+
+        assertThat(entry.pageCount()).isEqualTo(8);
+        assertThat(entry.rawCount()).isEqualTo(112);
+        assertThat(entry.stopReason()).isEqualTo("REPORTED_TOTAL_REACHED");
+        assertThat(result.evidenceByYear().get(2024).traversalComplete()).isTrue();
+        assertThat(result.evidenceByYear().get(2025).traversalComplete()).isFalse();
+        assertThat(result.evidenceByYear().get(2025).stopReason())
+            .isEqualTo("KNOWN_OFFICIAL_ARCHIVE_GAP");
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+        assertThat(result.links()).isNotEmpty();
+    }
+
+    @Test
     void xixiLiveListingPreservesLinksDatesAndIncrementalYearClassification() {
         var source = multiEntrySource(multiEntryDefinition("HZ_XIXI_HOSPITAL"));
         var entry = ListingEntryContract.from(source).stream()

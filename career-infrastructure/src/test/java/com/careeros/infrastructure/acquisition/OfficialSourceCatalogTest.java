@@ -118,6 +118,32 @@ class OfficialSourceCatalogTest {
     }
 
     @Test
+    void catalogPublishesShangchengRecruitmentLifecycleWithTheVerified2025Gap() {
+        var shangcheng = OfficialSourceCatalog.load().sources().stream()
+            .filter(source -> source.code().equals("HZ_SHANGCHENG_GOV"))
+            .findFirst().orElseThrow();
+
+        assertThat(shangcheng.enabled()).isTrue();
+        assertThat(shangcheng.strategy())
+            .isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.JCMS_LISTING);
+        assertThat(shangcheng.historicalYears()).containsExactly(2024, 2025, 2026, 2027);
+        assertThat(shangcheng.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("code", "establishment-and-lifecycle")
+                .containsEntry("role", "PRIMARY")
+                .containsEntry("mode", "STATIC_SUFFIX_TEMPLATE")
+                .containsEntry("knownArchiveGapYears", List.of(2025))
+                .containsEntry("completenessRequired", true)
+                .containsEntry("historicalMaxPages", 10)
+                .containsEntry("incrementalListingMaxPages", 2)
+                .containsEntry("reportedTotalRegex", "count:\\s*\\\\\"(\\d+)\\\\\"")
+                .containsEntry("reportedCurrentPageRegex", "pageNo:\\s*\\\\\"(\\d+)\\\\\"");
+            assertThat(entry.get("pageUriTemplate").toString())
+                .contains("pageId=1229554150", "pageNo%22%3A{page}");
+        });
+    }
+
+    @Test
     void catalogPublishesFirstHospitalAsAnExactAuthorityMultiEntrySource() {
         var hospital = OfficialSourceCatalog.load().sources().stream()
             .filter(source -> source.code().equals("HZ_FIRST_HOSPITAL"))
