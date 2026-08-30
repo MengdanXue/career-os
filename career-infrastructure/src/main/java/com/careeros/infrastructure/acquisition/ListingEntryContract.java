@@ -37,7 +37,9 @@ public record ListingEntryContract(
         LINKED_PAGE,
         QUERY_PAGE,
         JSON_API,
+        JSON_HTML_FRAGMENTS,
         EMBEDDED_DATA,
+        JS_OBJECT_ARRAY,
         CAMPAIGN_STATE,
         FIXED_EVIDENCE
     }

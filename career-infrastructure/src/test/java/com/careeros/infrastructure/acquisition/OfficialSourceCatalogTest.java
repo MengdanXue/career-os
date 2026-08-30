@@ -131,9 +131,22 @@ class OfficialSourceCatalogTest {
 
         var tonglu = catalog.sources().stream()
             .filter(source -> source.code().equals("HZ_TONGLU_GOV")).findFirst().orElseThrow();
-        assertThat(tonglu.enabled()).isFalse();
-        assertThat(tonglu.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.UNSUPPORTED);
-        assertThat(tonglu.listingEntries()).isEmpty();
+        assertThat(tonglu.enabled()).isTrue();
+        assertThat(tonglu.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.STATIC_HTML);
+        assertThat(tonglu.allowedHosts())
+            .contains("search.zj.gov.cn", "www.tonglu.gov.cn", "zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn");
+        assertThat(tonglu.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "JSON_HTML_FRAGMENTS")
+                .containsEntry("httpMethod", "POST")
+                .containsEntry("paginationLocation", "BODY")
+                .containsEntry("fragmentRedirectQueryParameter", "url")
+                .containsEntry("fragmentUpgradeHttpHosts", List.of("www.tonglu.gov.cn"))
+                .containsEntry("knownArchiveGapYears", List.of(2024, 2025))
+                .containsEntry("completenessRequired", false);
+            assertThat(entry.get("requestBodyTemplate").toString())
+                .contains("{page}", "{pageSize}", "websiteid=330122000000000");
+        });
     }
 
     @Test
@@ -198,6 +211,50 @@ class OfficialSourceCatalogTest {
                 .containsEntry("knownArchiveGapYears", List.of(2024, 2025));
             assertThat(entry.get("requestBodyTemplate").toString())
                 .contains("招聘", "{page}", "{pageSize}");
+        });
+    }
+
+    @Test
+    void catalogPublishesWestlakeEngineeringInlineRecruitmentDataset() {
+        var source = OfficialSourceCatalog.load().sources().stream()
+            .filter(candidate -> candidate.code().equals("WESTLAKE_RESEARCH"))
+            .findFirst().orElseThrow();
+
+        assertThat(source.enabled()).isTrue();
+        assertThat(source.strategy()).isEqualTo(OfficialSourceCatalog.DiscoveryStrategy.STATIC_HTML);
+        assertThat(source.allowedHosts()).contains("engineering.westlake.edu.cn");
+        assertThat(source.listingEntries()).singleElement().satisfies(entry -> {
+            assertThat(entry)
+                .containsEntry("entryUri", "https://engineering.westlake.edu.cn/Recuitment/")
+                .containsEntry("mode", "JS_OBJECT_ARRAY")
+                .containsEntry("embeddedArrayMarker", "talentList")
+                .containsEntry("jsonUrlField", "url")
+                .containsEntry("jsonPublishedDateField", "date")
+                .containsEntry("completenessRequired", false);
+            assertThat(entry.get("titleExcludeRegex").toString())
+                .contains("博士后", "教授", "教师", "行政助理");
+        });
+    }
+
+    @Test
+    void catalogPublishesUcasArchiveAsAuditedPartialOfficialHttpEvidence() {
+        var source = OfficialSourceCatalog.load().sources().stream()
+            .filter(candidate -> candidate.code().equals("UCAS_HANGZHOU"))
+            .findFirst().orElseThrow();
+
+        assertThat(source.enabled()).isTrue();
+        assertThat(source.officialRootUrl()).isEqualTo("https://hias.ucas.ac.cn/");
+        assertThat(source.attachmentSelector())
+            .isEqualTo("a.__career_os_no_attachment__[href]");
+        assertThat(source.listingEntries()).hasSize(2).allSatisfy(entry -> {
+            assertThat(entry)
+                .containsEntry("mode", "LINKED_PAGE")
+                .containsEntry("transportPolicy", "AUDITED_HTTP_READ_ONLY")
+                .containsEntry("exactAuthorities", List.of("hias.ucas.ac.cn:80"))
+                .containsEntry("completenessRequired", false);
+            assertThat(entry.get("entryUri").toString()).startsWith("http://hias.ucas.ac.cn/rczp/");
+            assertThat(entry.get("allowedPathPrefixes").toString())
+                .contains("/rczp/", "/info/105");
         });
     }
 

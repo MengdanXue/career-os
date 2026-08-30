@@ -390,9 +390,41 @@ sources:
     name: 桐庐县政府招聘
     routeCode: PUBLIC_TECH
     officialRootUrl: https://www.tonglu.gov.cn/
-    strategy: UNSUPPORTED
+    strategy: STATIC_HTML
     historicalYears: [2024, 2025, 2026, 2027]
-    enabled: false
+    enabled: true
+    allowedHosts: [search.zj.gov.cn, www.tonglu.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+    allowedPathPrefixes: [/jsearchfront/, /col/, /api-gateway/, /]
+    attachmentSelector: 'a[href]'
+    listingEntries:
+      - code: official-search-recruitment-lifecycle
+        entryUri: https://search.zj.gov.cn/jsearchfront/interfaces/cateSearch.do
+        role: PRIMARY
+        mode: JSON_HTML_FRAGMENTS
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025]
+        completenessRequired: false
+        historicalMaxPages: 5
+        historicalPageSize: 100
+        incrementalListingMaxPages: 1
+        pageParameter: p
+        pageSizeParameter: pg
+        paginationLocation: BODY
+        httpMethod: POST
+        requestHeaders: {Content-Type: application/x-www-form-urlencoded}
+        requestBodyTemplate: 'websiteid=330122000000000&searchid=&pg={pageSize}&p={page}&tpl=1569&cateid=377&fbjg=&word=%E6%A1%90%E5%BA%90%E5%8E%BF%E4%BA%8B%E4%B8%9A%E5%8D%95%E4%BD%8D&q=%E6%A1%90%E5%BA%90%E5%8E%BF%E4%BA%8B%E4%B8%9A%E5%8D%95%E4%BD%8D&sortType=2&checkError=1&pos=title%2Ccontent%2Ckeyword'
+        jsonItemsPath: result
+        jsonTotalPath: total
+        fragmentLinkSelector: '.comprehensiveItem .titleWrapper > a[href]'
+        fragmentTitleSelector: '.comprehensiveItem .titleWrapper > a[href]'
+        fragmentPublishedDateSelector: '.comprehensiveItem .sourceTime span:last-child'
+        fragmentRedirectQueryParameter: url
+        fragmentUpgradeHttpHosts: [www.tonglu.gov.cn]
+        allowedHosts: [search.zj.gov.cn, www.tonglu.gov.cn, zjjcmspublicnew.oss-cn-hangzhou-zwynet-d01-a.internet.cloud.zj.gov.cn]
+        allowedPathPrefixes: [/jsearchfront/, /col/, /api-gateway/, /]
+        articleUrlRegex: '^https://www\.tonglu\.gov\.cn/col/col[0-9]+/art/[0-9]{4}/art_[a-f0-9]{32}\.html$'
+        titleIncludeRegex: '(?:20\d{2}年)?桐庐县.*(?:事业单位|机关事业单位).*(?:公开招聘|招聘高学历|紧缺实用人才|人才引进|笔试|资格复审|面试|成绩|体检|考察|拟聘用|公示|递补|核减|取消|放弃)'
+        titleExcludeRegex: '教师|教育系统|医疗卫生系统|医共体.*(?:医生|护士|卫生)|社区工作者|村干部|专职网格员|辅警|劳务派遣|编外|临时|见习|实习|招聘会|培训'
   - code: HZ_CHUNAN_GOV
     name: 淳安县政府招聘
     routeCode: PUBLIC_TECH
@@ -684,9 +716,55 @@ sources:
     name: 国科大杭州高等研究院招聘
     routeCode: RESEARCH_SUPPORT
     officialRootUrl: https://hias.ucas.ac.cn/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    attachmentSelector: 'a.__career_os_no_attachment__[href]'
+    listingEntries:
+      - code: research-and-professional
+        entryUri: http://hias.ucas.ac.cn/rczp/kyryzp.htm
+        role: PRIMARY
+        mode: LINKED_PAGE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025]
+        completenessRequired: false
+        historicalMaxPages: 10
+        incrementalListingMaxPages: 1
+        nextPageSelector: '.p_next a[href]'
+        transportPolicy: AUDITED_HTTP_READ_ONLY
+        allowedHosts: [hias.ucas.ac.cn]
+        exactAuthorities: ['hias.ucas.ac.cn:80']
+        allowedPathPrefixes: [/rczp/, /info/1057/]
+        listingItemSelector: 'table.table tbody tr'
+        itemLinkSelector: 'td:first-child a[href]'
+        itemTitleSelector: 'td:first-child a[href]'
+        itemPublishedDateSelector: 'td:last-child'
+        linkSelector: 'td:first-child a[href]'
+        articleUrlRegex: '^http://hias\.ucas\.ac\.cn/info/1057/[0-9]+\.htm$'
+        titleIncludeRegex: '招聘|专业技术|实验技术|工程|信息|软件|数据|平台|支撑|拟聘|公示|复审|考核|成绩|体检'
+        titleExcludeRegex: '博士后|领军人才|青年人才|教师'
+      - code: management-support-and-lifecycle
+        entryUri: http://hias.ucas.ac.cn/rczp/glzcryzp.htm
+        role: LIFECYCLE
+        mode: LINKED_PAGE
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        knownArchiveGapYears: [2024, 2025]
+        completenessRequired: false
+        historicalMaxPages: 10
+        incrementalListingMaxPages: 1
+        nextPageSelector: '.p_next a[href]'
+        transportPolicy: AUDITED_HTTP_READ_ONLY
+        allowedHosts: [hias.ucas.ac.cn]
+        exactAuthorities: ['hias.ucas.ac.cn:80']
+        allowedPathPrefixes: [/rczp/, /info/1058/]
+        listingItemSelector: 'table.table tbody tr'
+        itemLinkSelector: 'td:first-child a[href]'
+        itemTitleSelector: 'td:first-child a[href]'
+        itemPublishedDateSelector: 'td:last-child'
+        linkSelector: 'td:first-child a[href]'
+        articleUrlRegex: '^http://hias\.ucas\.ac\.cn/info/1058/[0-9]+\.htm$'
+        titleIncludeRegex: '招聘|管理支撑|专业技术|实验技术|工程|信息|软件|数据|平台|支撑|资格|复审|考试|考核|面试|成绩|体检|公示|拟聘|递补'
+        titleExcludeRegex: '招聘会|培训|讲座'
   - code: CAS_HANGZHOU_MEDICINE
     name: 中国科学院杭州医学研究所招聘
     routeCode: RESEARCH_SUPPORT
@@ -723,9 +801,27 @@ sources:
     name: 西湖大学科研技术岗位
     routeCode: RESEARCH_SUPPORT
     officialRootUrl: https://www.westlake.edu.cn/
-    strategy: UNSUPPORTED
-    historicalYears: [2024, 2025, 2026]
-    enabled: false
+    strategy: STATIC_HTML
+    historicalYears: [2024, 2025, 2026, 2027]
+    enabled: true
+    allowedHosts: [www.westlake.edu.cn, engineering.westlake.edu.cn]
+    allowedPathPrefixes: [/, /Recuitment/]
+    listingEntries:
+      - code: engineering-research-and-technical
+        entryUri: https://engineering.westlake.edu.cn/Recuitment/
+        role: PRIMARY
+        mode: JS_OBJECT_ARRAY
+        recruitmentYears: [2024, 2025, 2026, 2027]
+        completenessRequired: false
+        embeddedArrayMarker: talentList
+        jsonUrlField: url
+        jsonTitleField: title
+        jsonPublishedDateField: date
+        allowedHosts: [engineering.westlake.edu.cn]
+        allowedPathPrefixes: [/Recuitment/]
+        articleUrlRegex: '^https://engineering\.westlake\.edu\.cn/Recuitment/[0-9]{6}/t[0-9]{8}_[0-9]+\.shtml$'
+        titleIncludeRegex: '招聘|工程师|技术员|科研助理|研究助理'
+        titleExcludeRegex: '博士后|教授|教师|学术人才|行政助理|综合行政|招生|实习|访问学生'
   - code: HZ_DATA_GROUP
     name: 杭州数据集团招聘
     routeCode: GOVERNMENT_SOE_DIGITAL

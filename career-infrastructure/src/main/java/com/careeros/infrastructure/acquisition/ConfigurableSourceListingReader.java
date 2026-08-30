@@ -17,7 +17,10 @@ import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.RecruitmentLifecycle;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -38,6 +41,12 @@ import org.jsoup.Jsoup;
 
 public final class ConfigurableSourceListingReader implements SourceListingReader {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JAVASCRIPT_OBJECTS = JsonMapper.builder()
+        .enable(JsonReadFeature.ALLOW_JAVA_COMMENTS)
+        .enable(JsonReadFeature.ALLOW_SINGLE_QUOTES)
+        .enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES)
+        .enable(JsonReadFeature.ALLOW_TRAILING_COMMA)
+        .build();
     private static final Pattern YEAR = Pattern.compile("(?:^|[/\\s（(])(20\\d{2})(?:[/\\s年）)]|$)");
     private static final Pattern URL_DATE = Pattern.compile("/(20\\d{2})/(\\d{1,2})/(\\d{1,2})/");
     private static final Pattern LISTING_TOTAL = Pattern.compile("\\bcount\\s*=\\s*\"(\\d+)\"");
@@ -118,8 +127,9 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             case LINKED_PAGE -> readLinkedEntry(source, entry, query);
             case QUERY_PAGE -> readNumberedHtmlEntry(source, entry, query, page ->
                 queryPageUri(entry.entryUri(), required(entry.configuration(), "pageParameter"), page));
-            case JSON_API -> readJsonEntry(source, entry, query);
+            case JSON_API, JSON_HTML_FRAGMENTS -> readJsonEntry(source, entry, query);
             case EMBEDDED_DATA -> readEmbeddedEntry(source, entry, query);
+            case JS_OBJECT_ARRAY -> readJavascriptObjectArrayEntry(source, entry, query);
             case CAMPAIGN_STATE -> readCampaignEntry(source, entry, query);
             case FIXED_EVIDENCE -> readFixedEntry(source, entry, query);
         };
@@ -279,8 +289,11 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
             if (!fingerprints.add(sha256(fetched.content())) && rawDistinct.size() < total) {
                 throw new FetchFailedException("JSON_API repeated a non-terminal page");
             }
-            List<DiscoveredLink> raw = jsonLinks(entry, fetched.finalUri(), root,
-                required(entry.configuration(), "jsonItemsPath"));
+            List<DiscoveredLink> raw = entry.mode() == ListingEntryContract.Mode.JSON_HTML_FRAGMENTS
+                ? jsonHtmlFragmentLinks(entry, fetched.finalUri(), root,
+                    required(entry.configuration(), "jsonItemsPath"))
+                : jsonLinks(entry, fetched.finalUri(), root,
+                    required(entry.configuration(), "jsonItemsPath"));
             int before = rawDistinct.size();
             raw.forEach(link -> rawDistinct.putIfAbsent(link.uri(), link));
             addApplicableLinks(query, accepted, filterConfigured(entry, raw));
@@ -324,6 +337,34 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         addApplicableLinks(query, accepted, filterConfigured(entry, raw));
         return completed(query, List.copyOf(accepted.values()), 1, raw.size(),
             "EMBEDDED_DATA_PARSED", "entry=" + entry.code() + "; configured embedded dataset");
+    }
+
+    private ListingResult readJavascriptObjectArrayEntry(
+        RecruitmentSource source, ListingEntryContract entry, ListingQuery query
+    ) {
+        FetchedDocument fetched = fetch(source, entry, entry.entryUri());
+        String marker = required(entry.configuration(), "embeddedArrayMarker");
+        String array = javascriptArray(
+            new String(fetched.content(), StandardCharsets.UTF_8), marker, entry.code());
+        JsonNode items;
+        try {
+            items = JAVASCRIPT_OBJECTS.readTree(array);
+        } catch (Exception invalid) {
+            throw new FetchFailedException(
+                "JS_OBJECT_ARRAY entry " + entry.code() + " contains malformed object data", invalid);
+        }
+        if (!items.isArray()) {
+            throw new FetchFailedException(
+                "JS_OBJECT_ARRAY entry " + entry.code() + " did not expose an array");
+        }
+        var root = JSON.createObjectNode();
+        root.set("items", items);
+        List<DiscoveredLink> raw = jsonLinks(entry, fetched.finalUri(), root, "items");
+        LinkedHashMap<URI, YearDiscoveredLink> accepted = new LinkedHashMap<>();
+        addApplicableLinks(query, accepted, filterConfigured(entry, raw));
+        return completed(query, List.copyOf(accepted.values()), 1, raw.size(),
+            "JAVASCRIPT_ARRAY_PARSED",
+            "entry=" + entry.code() + "; complete official inline JavaScript dataset");
     }
 
     private ListingResult readLinkedEntry(
@@ -737,7 +778,8 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
 
     private static void requireOfficial(ListingEntryContract entry, URI uri) {
         if (!entry.readContract().authorizesTarget(uri)) {
-            throw new IllegalArgumentException("Listing URI must use its configured official read contract");
+            throw new IllegalArgumentException(
+                "Listing URI must use its configured official read contract: " + uri);
         }
     }
 
@@ -832,6 +874,78 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         } catch (Exception invalid) {
             throw new FetchFailedException(description + " returned malformed JSON", invalid);
         }
+    }
+
+    private static String javascriptArray(String document, String marker, String entryCode) {
+        if (!marker.matches("[A-Za-z_$][A-Za-z0-9_$]{0,63}")) {
+            throw new IllegalArgumentException("embeddedArrayMarker is invalid");
+        }
+        String syntax = javascriptSyntaxMask(document);
+        Matcher markerMatch = Pattern.compile(
+            "(?<![A-Za-z0-9_$])" + Pattern.quote(marker) + "\\s*:\\s*\\[")
+            .matcher(syntax);
+        if (!markerMatch.find()) {
+            throw new FetchFailedException(
+                "JS_OBJECT_ARRAY entry " + entryCode + " is missing marker " + marker);
+        }
+        int start = markerMatch.end() - 1;
+        if (markerMatch.find()) {
+            throw new FetchFailedException(
+                "JS_OBJECT_ARRAY entry " + entryCode + " exposed multiple marker arrays");
+        }
+        int depth = 0;
+        for (int index = start; index < syntax.length(); index++) {
+            char value = syntax.charAt(index);
+            if (value == '[') depth++;
+            else if (value == ']' && --depth == 0) {
+                return document.substring(start, index + 1);
+            }
+        }
+        throw new FetchFailedException(
+            "JS_OBJECT_ARRAY entry " + entryCode + " exposed an unterminated array");
+    }
+
+    private static String javascriptSyntaxMask(String document) {
+        char[] syntax = document.toCharArray();
+        char quote = 0;
+        boolean escaped = false;
+        boolean lineComment = false;
+        boolean blockComment = false;
+        for (int index = 0; index < syntax.length; index++) {
+            char value = syntax[index];
+            char next = index + 1 < syntax.length ? syntax[index + 1] : 0;
+            if (lineComment) {
+                if (value == '\r' || value == '\n') lineComment = false;
+                else syntax[index] = ' ';
+                continue;
+            }
+            if (blockComment) {
+                syntax[index] = ' ';
+                if (value == '*' && next == '/') {
+                    syntax[++index] = ' ';
+                    blockComment = false;
+                }
+                continue;
+            }
+            if (quote != 0) {
+                syntax[index] = ' ';
+                if (escaped) escaped = false;
+                else if (value == '\\') escaped = true;
+                else if (value == quote) quote = 0;
+                continue;
+            }
+            if (value == '\'' || value == '"' || value == '`') {
+                syntax[index] = ' ';
+                quote = value;
+            } else if (value == '/' && next == '/') {
+                syntax[index] = syntax[++index] = ' ';
+                lineComment = true;
+            } else if (value == '/' && next == '*') {
+                syntax[index] = syntax[++index] = ' ';
+                blockComment = true;
+            }
+        }
+        return new String(syntax);
     }
 
     private static Set<URI> listingItemIdentities(ListingEntryContract entry, byte[] content) {
@@ -932,6 +1046,104 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                 uri, title, null, publishedOn, fetchUri, responseBodyJsonPath));
         }
         return List.copyOf(distinct.values());
+    }
+
+    private static List<DiscoveredLink> jsonHtmlFragmentLinks(
+        ListingEntryContract entry, URI pageUri, JsonNode root, String itemsPath
+    ) {
+        JsonNode items = jsonPath(root, itemsPath);
+        if (!items.isArray()) {
+            throw new FetchFailedException("configured JSON HTML fragment path is not an array");
+        }
+        String linkSelector = required(entry.configuration(), "fragmentLinkSelector");
+        String titleSelector = required(entry.configuration(), "fragmentTitleSelector");
+        String dateSelector = optionalText(entry.configuration(), "fragmentPublishedDateSelector");
+        String redirectParameter = optionalText(entry.configuration(), "fragmentRedirectQueryParameter");
+        if (redirectParameter != null && !redirectParameter.matches("[A-Za-z][A-Za-z0-9_-]*")) {
+            throw new IllegalArgumentException("fragmentRedirectQueryParameter is invalid");
+        }
+        LinkedHashMap<URI, DiscoveredLink> distinct = new LinkedHashMap<>();
+        for (JsonNode item : items) {
+            if (!item.isTextual() || item.asText().isBlank()) {
+                throw new FetchFailedException("JSON HTML fragment item is not nonblank text");
+            }
+            var document = Jsoup.parseBodyFragment(item.asText(), pageUri.toString());
+            var link = document.selectFirst(linkSelector);
+            var titleElement = document.selectFirst(titleSelector);
+            if (link == null || titleElement == null || link.attr("href").isBlank()
+                || titleElement.text().isBlank()) {
+                throw new FetchFailedException("JSON HTML fragment is missing its URL or title");
+            }
+            URI uri = canonical(pageUri.resolve(link.attr("href").trim()));
+            if (redirectParameter != null) {
+                uri = redirectedTarget(uri, redirectParameter);
+            }
+            uri = upgradeConfiguredHttpTarget(entry, uri);
+            requireOfficial(entry, uri);
+            LocalDate publishedOn = null;
+            if (dateSelector != null) {
+                var dateElement = document.selectFirst(dateSelector);
+                if (dateElement == null) {
+                    throw new FetchFailedException("JSON HTML fragment is missing its publication date");
+                }
+                publishedOn = parseJsonDate(dateElement.text());
+            }
+            distinct.putIfAbsent(uri, new DiscoveredLink(
+                uri, titleElement.text().trim(), null, publishedOn));
+        }
+        return List.copyOf(distinct.values());
+    }
+
+    private static URI upgradeConfiguredHttpTarget(ListingEntryContract entry, URI uri) {
+        if (!"http".equalsIgnoreCase(uri.getScheme())) return uri;
+        Set<String> hosts = configuredStrings(
+            entry.configuration().get("fragmentUpgradeHttpHosts"));
+        if (hosts.stream().noneMatch(host -> host.equalsIgnoreCase(uri.getHost()))) return uri;
+        if (uri.getPort() != -1 && uri.getPort() != 80) {
+            throw new FetchFailedException("configured HTTP upgrade target uses an unexpected port");
+        }
+        String path = uri.getRawPath() == null || uri.getRawPath().isEmpty() ? "/" : uri.getRawPath();
+        return canonical(URI.create("https://" + uri.getHost() + path
+            + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery())
+            + (uri.getRawFragment() == null ? "" : "#" + uri.getRawFragment())));
+    }
+
+    private static Set<String> configuredStrings(Object configured) {
+        if (configured == null) return Set.of();
+        if (!(configured instanceof Iterable<?> values)) {
+            throw new IllegalArgumentException("configured value must be an array");
+        }
+        Set<String> result = new LinkedHashSet<>();
+        values.forEach(value -> result.add(String.valueOf(value)));
+        return Set.copyOf(result);
+    }
+
+    private static URI redirectedTarget(URI redirect, String parameter) {
+        String rawQuery = redirect.getRawQuery();
+        if (rawQuery == null) {
+            throw new FetchFailedException("configured redirect link has no query parameters");
+        }
+        List<String> matches = new ArrayList<>();
+        for (String part : rawQuery.split("&")) {
+            String[] pair = part.split("=", 2);
+            if (URLDecoder.decode(pair[0], StandardCharsets.UTF_8).equals(parameter)) {
+                matches.add(pair.length == 2
+                    ? URLDecoder.decode(pair[1], StandardCharsets.UTF_8) : "");
+            }
+        }
+        if (matches.size() != 1 || matches.getFirst().isBlank()) {
+            throw new FetchFailedException(
+                "configured redirect query parameter must occur exactly once");
+        }
+        try {
+            URI target = canonical(URI.create(matches.getFirst()));
+            if (!target.isAbsolute() || target.getHost() == null || target.getUserInfo() != null) {
+                throw new IllegalArgumentException("redirect target is not an absolute safe URI");
+            }
+            return target;
+        } catch (IllegalArgumentException invalid) {
+            throw new FetchFailedException("configured redirect target URI is invalid", invalid);
+        }
     }
 
     private static LocalDate parseJsonDate(String raw) {

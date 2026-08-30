@@ -480,7 +480,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(66);
+        assertThat(result.migrationsExecuted).isEqualTo(69);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -548,6 +548,7 @@ class MigrationIntegrationTest {
               var universitySources = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code in ('ZJUT_RECRUITMENT','HZNU_RECRUITMENT') and source.enabled and jsonb_array_length(source.configuration -> 'listingEntries') >= 1 and target.connection_status='PARTIAL'");
               var finalP0DistrictSources = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code in ('HZ_BINJIANG_GOV','HZ_LINPING_GOV') and source.enabled and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2024,2025,2026]'::jsonb and target.connection_status='PARTIAL'");
               var fixedEvidenceDistrictSources = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code in ('HZ_TONGLU_GOV','HZ_CHUNAN_GOV') and source.enabled and source.configuration -> 'listingEntries' -> 0 ->> 'mode'='FIXED_EVIDENCE' and not (source.configuration -> 'listingEntries' -> 0 ->> 'completenessRequired')::boolean and target.connection_status='PARTIAL'");
+              var tongluSearchSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_TONGLU_GOV' and source.enabled and source.configuration -> 'listingEntries' -> 0 ->> 'mode'='JSON_HTML_FRAGMENTS' and source.configuration -> 'listingEntries' -> 0 ->> 'httpMethod'='POST' and source.configuration -> 'listingEntries' -> 0 ->> 'fragmentRedirectQueryParameter'='url' and target.connection_status='PARTIAL'");
               var childrensHospitalSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='HZ_CHILDRENS_HOSPITAL' and source.enabled and source.entry_uri='https://rs.hzch.org/apply/getMore.action?pageNumber=1' and source.configuration -> 'listingEntries' -> 0 ->> 'mode'='CAMPAIGN_STATE' and not (source.configuration -> 'listingEntries' -> 0 ->> 'completenessRequired')::boolean and target.connection_status='PARTIAL'");
               var hangzhouMedicineSource = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code='CAS_HANGZHOU_MEDICINE' and source.enabled and source.configuration ->> 'scriptAttachmentVariable'='appLinkStr' and source.configuration -> 'listingEntries' -> 0 ->> 'mode'='LINKED_PAGE' and target.priority_tier='P0' and target.connection_status='PARTIAL'");
               var governmentSoeSources = connection.prepareStatement("select count(*) from recruitment_source source join target_source_catalog target on target.recruitment_source_id=source.id where source.code in ('HZ_CAPITAL_GROUP','HZ_METRO_GROUP') and source.enabled and source.configuration -> 'listingEntries' -> 0 ->> 'mode'='JSON_API' and source.configuration -> 'listingEntries' -> 0 -> 'knownArchiveGapYears' @> '[2024,2025]'::jsonb and target.priority_tier='P0' and target.connection_status='PARTIAL'");
@@ -631,6 +632,7 @@ class MigrationIntegrationTest {
             try (var rows = universitySources.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
             try (var rows = finalP0DistrictSources.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
             try (var rows = fixedEvidenceDistrictSources.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+            try (var rows = tongluSearchSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = childrensHospitalSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = hangzhouMedicineSource.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
             try (var rows = governmentSoeSources.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
@@ -654,7 +656,7 @@ class MigrationIntegrationTest {
                 assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("EXPECTED");
                 assertThat(rows.next()).isFalse();
             }
-            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(69); }
+            try (var rows = coverageRows.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(78); }
             try (var rows = educationFactConstraint.executeQuery()) {
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString(1)).contains("EDUCATION_RECORDS", "GENDER", "POLITICAL_AFFILIATION", "EMPLOYMENT_HISTORY");

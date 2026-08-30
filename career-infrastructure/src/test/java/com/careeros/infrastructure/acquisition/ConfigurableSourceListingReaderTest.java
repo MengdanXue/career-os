@@ -731,6 +731,51 @@ class ConfigurableSourceListingReaderTest {
     }
 
     @Test
+    void jsonHtmlFragmentsExtractCanonicalOfficialTargetsFromSearchRedirects() {
+        Map<String, Object> entry = baseEntry(
+            "search", "JSON_HTML_FRAGMENTS", "https://search.example/api/search");
+        entry.put("historicalMaxPages", 1);
+        entry.put("historicalPageSize", 100);
+        entry.put("pageParameter", "p");
+        entry.put("pageSizeParameter", "pg");
+        entry.put("paginationLocation", "BODY");
+        entry.put("httpMethod", "POST");
+        entry.put("requestHeaders", Map.of(
+            "Content-Type", "application/x-www-form-urlencoded"));
+        entry.put("requestBodyTemplate", "p={page}&pg={pageSize}&word=recruitment");
+        entry.put("jsonItemsPath", "result");
+        entry.put("jsonTotalPath", "total");
+        entry.put("fragmentLinkSelector", ".titleWrapper > a[href]");
+        entry.put("fragmentTitleSelector", ".titleWrapper > a[href]");
+        entry.put("fragmentPublishedDateSelector", ".sourceTime span:last-child");
+        entry.put("fragmentRedirectQueryParameter", "url");
+        entry.put("fragmentUpgradeHttpHosts", List.of("official.example"));
+        entry.put("allowedHosts", List.of("search.example", "official.example"));
+        entry.put("allowedPathPrefixes", List.of("/api/", "/visit/", "/col/"));
+        entry.put("articleUrlRegex", "^https://official\\.example/col/jobs/art/2026/art_[a-f0-9]+\\.html$");
+        byte[] json = ("{\"total\":1,\"result\":[\"<div class='comprehensiveItem'>"
+            + "<div class='titleWrapper'><a href='/visit/link.do?url=http%3A%2F%2Fofficial.example%2Fcol%2Fjobs%2Fart%2F2026%2Fart_ab12.html'>"
+            + "2026年事业单位公开招聘工作人员公告</a></div>"
+            + "<div class='sourceTime'><span>来源</span><span>时间:2026-05-27</span></div></div>\"]}")
+            .getBytes(StandardCharsets.UTF_8);
+        var fetcher = new MapFetcher(Map.of(URI.create("https://search.example/api/search"), json));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(singleEntrySource(entry), new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.links()).singleElement().satisfies(link -> {
+            assertThat(link.link().uri()).hasToString(
+                "https://official.example/col/jobs/art/2026/art_ab12.html");
+            assertThat(link.link().publishedOn()).isEqualTo(java.time.LocalDate.of(2026, 5, 27));
+        });
+        assertThat(fetcher.fetchRequests()).singleElement().satisfies(request -> {
+            assertThat(request.body()).isEqualTo("p=1&pg=100&word=recruitment");
+            assertThat(request.headers())
+                .containsEntry("content-type", "application/x-www-form-urlencoded");
+        });
+    }
+
+    @Test
     void jsonApiUsesTheConfiguredOfficialPublicationDateForYearClassification() {
         Map<String, Object> entry = baseEntry(
             "api", "JSON_API", "https://official.example/api/notices");
@@ -862,6 +907,40 @@ class ConfigurableSourceListingReaderTest {
 
         assertThat(result.links()).singleElement().satisfies(link ->
             assertThat(link.link().title()).isEqualTo("2026年招聘工程师"));
+    }
+
+    @Test
+    void jsObjectArrayExtractsOfficialJobsFromAnInlineJavascriptDataset() {
+        Map<String, Object> entry = baseEntry(
+            "jobs", "JS_OBJECT_ARRAY", "https://official.example/recruitment/");
+        entry.put("embeddedArrayMarker", "talentList");
+        entry.put("jsonUrlField", "url");
+        entry.put("jsonTitleField", "title");
+        entry.put("jsonPublishedDateField", "date");
+        entry.put("articleUrlRegex", "^https://official\\.example/recruitment/[0-9]+\\.shtml$");
+        entry.put("titleExcludeRegex", "博士后");
+        byte[] html = ("<script>// talentList: [] is a commented-out decoy ]\n"
+            + "new careers('#app', { talentList: [ // official records containing ]\n"
+            + "/* another commented bracket ] must not terminate the dataset */\n"
+            + "{title: 'AI软件工程师招聘启事', date: '2025-09-23', "
+            + "url: 'https://official.example/recruitment/59559.shtml',},\n"
+            + "{title: '博士后招聘启事', date: '2025-09-24', "
+            + "url: 'https://official.example/recruitment/59560.shtml',},\n"
+            + "]});</script>").getBytes(StandardCharsets.UTF_8);
+
+        var result = new ConfigurableSourceListingReader(
+            new MapFetcher(Map.of(URI.create("https://official.example/recruitment/"), html)),
+            new StaticHtmlSourceDiscoverer()).read(singleEntrySource(entry),
+                new ListingQuery(Set.of(2025), true));
+
+        assertThat(result.traversalComplete()).isTrue();
+        assertThat(result.links()).singleElement().satisfies(link -> {
+            assertThat(link.recruitmentYear()).isEqualTo(2025);
+            assertThat(link.link().title()).isEqualTo("AI软件工程师招聘启事");
+            assertThat(link.link().publishedOn()).isEqualTo(java.time.LocalDate.of(2025, 9, 23));
+            assertThat(link.link().uri()).hasToString(
+                "https://official.example/recruitment/59559.shtml");
+        });
     }
 
     @Test
