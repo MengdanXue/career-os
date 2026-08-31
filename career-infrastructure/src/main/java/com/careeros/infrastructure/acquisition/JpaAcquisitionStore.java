@@ -301,6 +301,7 @@ public class JpaAcquisitionStore implements AcquisitionStore {
             join acquired_document announcement
               on announcement.source_id = :sourceId
              and announcement.document_kind = 'ANNOUNCEMENT'
+             and announcement.document_state = 'ACTIVE'
              and announcement.canonical_uri = job.source_url
             where job.active = true
               and job.job_family <> 'OTHER'

@@ -44,14 +44,30 @@ class P0UniversityMigrationContractTest {
         assertPartialAndIdempotent(migration.sql(), "HZNU_RECRUITMENT");
     }
 
+    @Test
+    void v70RepairsZjutSourceIdentityToHttpsWithoutRemovingAuditedHttpEntries() throws Exception {
+        String sql = sql("/db/migration/V70__repair_zjut_https_source_identity.sql");
+
+        assertThat(sql)
+            .contains("WHERE code = 'ZJUT_RECRUITMENT'", "base_uri = 'https://www.zjut.edu.cn/'",
+                "entry_uri = 'https://www.zjut.edu.cn/'")
+            .doesNotContain("configuration =", "jsonb_set");
+    }
+
     private static Migration migration(String resource) throws Exception {
-        try (var input = P0UniversityMigrationContractTest.class.getResourceAsStream(resource)) {
-            assertThat(input).isNotNull();
-            String sql = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        String sql = sql(resource);
+        {
             var matcher = CONFIGURATION.matcher(sql);
             assertThat(matcher.find()).isTrue();
             JsonNode configuration = new ObjectMapper().readTree(matcher.group(1).replace("''", "'"));
             return new Migration(sql, configuration);
+        }
+    }
+
+    private static String sql(String resource) throws Exception {
+        try (var input = P0UniversityMigrationContractTest.class.getResourceAsStream(resource)) {
+            assertThat(input).isNotNull();
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 

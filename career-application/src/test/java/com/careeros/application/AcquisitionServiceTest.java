@@ -25,6 +25,7 @@ import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URI;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
@@ -133,6 +134,140 @@ class AcquisitionServiceTest {
         assertThat(fixture.store.changes).extracting(AcquisitionChange::changeType)
             .containsExactly(ChangeType.ADDED, ChangeType.UPDATED);
         assertThat(fixture.processor.calls).isEqualTo(2);
+    }
+
+    @Test
+    void htmlWithoutIgnoreRulesUsesTheOriginalResponseBytesForItsFingerprint() {
+        Fixture fixture = new Fixture();
+        fixture.fetcher.detail = new byte[] {
+            '<', 'h', 't', 'm', 'l', '>', (byte) 0x80, '<', '/', 'h', 't', 'm', 'l', '>'
+        };
+
+        SourceCrawlRun run = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(fixture.store.documents.get(DETAIL).contentFingerprint())
+            .isEqualTo("0ffe7cea4afb000a05aa0c8f21aba279d0161c3f5dae88640fff554b495a5a6c");
+    }
+
+    @Test
+    void contentTypeCharsetIsUsedWhenApplyingHtmlFingerprintIgnoreRules() {
+        Charset gb18030 = Charset.forName("GB18030");
+        Fixture fixture = new Fixture(sourceWithPolicies(
+            List.of("访问量：\\d+"), List.of()), Clock.fixed(NOW, ZoneOffset.UTC));
+        byte[] first = "<html>招聘公告 访问量：1269</html>".getBytes(gb18030);
+        byte[] second = "<html>招聘公告 访问量：1270</html>".getBytes(gb18030);
+        fixture.fetcher.detailMediaType = "text/html; charset=GB18030";
+        fixture.fetcher.detail = first;
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.fetcher.detail = second;
+
+        SourceCrawlRun run = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.updatedCount()).isZero();
+        assertThat(run.unchangedCount()).isEqualTo(1);
+        assertThat(fixture.artifacts.values.values()).anySatisfy(content ->
+            assertThat(content).containsExactly(second));
+    }
+
+    @Test
+    void htmlMetaCharsetIsUsedAsTheFingerprintDecodingFallback() {
+        Charset gb18030 = Charset.forName("GB18030");
+        Fixture fixture = new Fixture(sourceWithPolicies(
+            List.of("访问量：\\d+"), List.of()), Clock.fixed(NOW, ZoneOffset.UTC));
+        fixture.fetcher.detail = ("<html><head><meta charset=\"GB18030\"></head>"
+            + "<body>招聘公告 访问量：1269</body></html>").getBytes(gb18030);
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.fetcher.detail = ("<html><head><meta charset=\"GB18030\"></head>"
+            + "<body>招聘公告 访问量：1270</body></html>").getBytes(gb18030);
+
+        SourceCrawlRun run = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.updatedCount()).isZero();
+        assertThat(run.unchangedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void contentTypeCharsetIsUsedWhenMatchingConfiguredRejectionResponses() {
+        Charset gb18030 = Charset.forName("GB18030");
+        Fixture fixture = new Fixture(sourceWithPolicies(
+            List.of(), List.of("访问过于频繁")), Clock.fixed(NOW, ZoneOffset.UTC));
+        fixture.fetcher.detailMediaType = "text/html; charset=GB18030";
+        fixture.fetcher.detail = "<html>访问过于频繁，请稍后再试</html>".getBytes(gb18030);
+
+        SourceCrawlRun run = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(fixture.store.documents).isEmpty();
+        assertThat(fixture.store.importFailures).singleElement().satisfies(failure ->
+            assertThat(failure.errorCode()).isEqualTo("FetchFailedException"));
+    }
+
+    @Test
+    void invalidResponseRejectionRegexFailsConfigurationBeforeListingDiscovery() {
+        Fixture fixture = new Fixture(sourceWithPolicies(List.of(), List.of("[invalid")),
+            Clock.fixed(NOW, ZoneOffset.UTC));
+
+        SourceCrawlRun run = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(run.errorCode()).isEqualTo("SourceConfigurationException");
+        assertThat(fixture.reader.queries).isEmpty();
+        assertThat(fixture.store.documents).isEmpty();
+        assertThat(fixture.store.importFailures).singleElement().satisfies(failure -> {
+            assertThat(failure.errorCode()).isEqualTo("SourceConfigurationException");
+            assertThat(failure.safeMessage()).contains("responseRejectRegexes[0]");
+        });
+    }
+
+    @Test
+    void invalidFingerprintIgnoreRegexFailsConfigurationBeforeListingDiscovery() {
+        Fixture fixture = new Fixture(sourceWithPolicies(List.of("[invalid"), List.of()),
+            Clock.fixed(NOW, ZoneOffset.UTC));
+
+        SourceCrawlRun run = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(run.errorCode()).isEqualTo("SourceConfigurationException");
+        assertThat(fixture.reader.queries).isEmpty();
+        assertThat(fixture.store.documents).isEmpty();
+        assertThat(fixture.store.importFailures).singleElement().satisfies(failure ->
+            assertThat(failure.safeMessage()).contains("contentFingerprintIgnoreRegexes[0]"));
+    }
+
+    @Test
+    void configuredDynamicHtmlCountersDoNotCreateFalseUpdates() {
+        Fixture fixture = new Fixture(sourceWithContentPolicies(), Clock.fixed(NOW, ZoneOffset.UTC));
+        fixture.fetcher.detail = ("<html><body pageTimestamp='1788192347369'>公告正文 "
+            + "<span><i class=\"icon2\"></i>1269</span></body></html>")
+            .getBytes(StandardCharsets.UTF_8);
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        fixture.fetcher.detail = ("<html><body pageTimestamp='1788194506046'>公告正文 "
+            + "<span><i class=\"icon2\"></i>1270</span></body></html>")
+            .getBytes(StandardCharsets.UTF_8);
+
+        SourceCrawlRun second = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(second.updatedCount()).isZero();
+        assertThat(second.unchangedCount()).isEqualTo(1);
+        assertThat(fixture.store.changes).extracting(AcquisitionChange::changeType)
+            .containsExactly(ChangeType.ADDED);
+    }
+
+    @Test
+    void configuredRejectedResponseDoesNotReplacePreviouslyStoredOfficialDocument() {
+        Fixture fixture = new Fixture(sourceWithContentPolicies(), Clock.fixed(NOW, ZoneOffset.UTC));
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        String fingerprint = fixture.store.documents.get(DETAIL).contentFingerprint();
+        fixture.fetcher.detail = "<div>访问过于频繁，请稍后再试</div>".getBytes(StandardCharsets.UTF_8);
+
+        SourceCrawlRun second = fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+
+        assertThat(second.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(second.updatedCount()).isZero();
+        assertThat(fixture.store.documents.get(DETAIL).contentFingerprint()).isEqualTo(fingerprint);
+        assertThat(fixture.store.importFailures).singleElement().satisfies(failure ->
+            assertThat(failure.errorCode()).isEqualTo("FetchFailedException"));
     }
 
     @Test
@@ -675,6 +810,19 @@ class AcquisitionServiceTest {
     }
 
     @Test
+    void explicitlyFilteredSourceMayHaveAnEmptyIncrementalWindow() {
+        Fixture fixture = new Fixture(sourceAllowingEmptyIncremental(), Clock.fixed(NOW, ZoneOffset.UTC));
+        fixture.discoverer.pages.put("<html>list</html>", List.of());
+
+        SourceCrawlRun run = fixture.service.run(SOURCE_ID, RunTrigger.SCHEDULED);
+
+        assertThat(run.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(run.discoveredCount()).isZero();
+        assertThat(run.failedCount()).isZero();
+        assertThat(fixture.store.importFailures).isEmpty();
+    }
+
+    @Test
     void responseReadIoFailureIsClassifiedAsRemoteAccessFailure() {
         Fixture fixture = new Fixture();
         fixture.fetcher.listFailure = new AcquisitionHttpPorts.FetchFailedException(
@@ -769,6 +917,42 @@ class AcquisitionServiceTest {
         RecruitmentSource value = source();
         Map<String, Object> configuration = new LinkedHashMap<>(value.configuration());
         configuration.put("listingAbsenceDeactivationEnabled", true);
+        return new RecruitmentSource(value.id(), value.code(), value.name(), value.baseUri(), value.entryUri(),
+            value.sourceType(), value.region(), value.crawlMode(), value.enabled(), value.cronExpression(),
+            value.timeZone(), value.minimumRequestInterval(), configuration, value.lastSuccessAt(),
+            value.lastFailureAt(), value.nextDueAt(), value.consecutiveFailureCount(),
+            value.createdAt(), value.updatedAt());
+    }
+
+    private static RecruitmentSource sourceAllowingEmptyIncremental() {
+        RecruitmentSource value = source();
+        Map<String, Object> configuration = new LinkedHashMap<>(value.configuration());
+        configuration.put("allowEmptyIncremental", true);
+        return new RecruitmentSource(value.id(), value.code(), value.name(), value.baseUri(), value.entryUri(),
+            value.sourceType(), value.region(), value.crawlMode(), value.enabled(), value.cronExpression(),
+            value.timeZone(), value.minimumRequestInterval(), configuration, value.lastSuccessAt(),
+            value.lastFailureAt(), value.nextDueAt(), value.consecutiveFailureCount(),
+            value.createdAt(), value.updatedAt());
+    }
+
+    private static RecruitmentSource sourceWithContentPolicies() {
+        return sourceWithPolicies(List.of(
+            "<span><i class=\\\"icon2\\\"></i>\\d+</span>",
+            "pageTimestamp\\s*=\\s*['\"]\\d+['\"]"),
+            List.of("访问过于频繁，请稍后再试"));
+    }
+
+    private static RecruitmentSource sourceWithPolicies(
+        List<String> fingerprintIgnoreRegexes, List<String> responseRejectRegexes
+    ) {
+        RecruitmentSource value = source();
+        Map<String, Object> configuration = new LinkedHashMap<>(value.configuration());
+        if (!fingerprintIgnoreRegexes.isEmpty()) {
+            configuration.put("contentFingerprintIgnoreRegexes", fingerprintIgnoreRegexes);
+        }
+        if (!responseRejectRegexes.isEmpty()) {
+            configuration.put("responseRejectRegexes", responseRejectRegexes);
+        }
         return new RecruitmentSource(value.id(), value.code(), value.name(), value.baseUri(), value.entryUri(),
             value.sourceType(), value.region(), value.crawlMode(), value.enabled(), value.cronExpression(),
             value.timeZone(), value.minimumRequestInterval(), configuration, value.lastSuccessAt(),

@@ -18,16 +18,24 @@ import com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint;
 import com.careeros.domain.acquisition.SourceOnboardingCheckpoint.CheckpointStatus;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 import java.security.MessageDigest;
 import java.time.*;
 import java.util.*;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 public final class AcquisitionService {
     private static final Pattern URL_DATE = Pattern.compile("/(20\\d{2})/(\\d{1,2})/(\\d{1,2})/");
     private static final Pattern URL_ARTICLE_YEAR = Pattern.compile("/art/(20\\d{2})(?:/|$)");
     private static final Pattern TITLE_YEAR = Pattern.compile("(20\\d{2})");
+    private static final Pattern CONTENT_TYPE_CHARSET = Pattern.compile(
+        "(?i)(?:^|;)\\s*charset\\s*=\\s*[\\\"']?([^;\\s\\\"']+)");
+    private static final Pattern HTML_META_CHARSET = Pattern.compile(
+        "(?i)charset\\s*=\\s*[\\\"']?\\s*([A-Za-z0-9._:-]+)");
     private final AcquisitionStore store;
     private final SourceRunLock lock;
     private final SourceDiscoverer discoverer;
@@ -193,6 +201,7 @@ public final class AcquisitionService {
         Map<Integer, YearCounts> byYear = new LinkedHashMap<>();
         recruitmentYears.forEach(year -> byYear.put(year, new YearCounts()));
         try {
+            ContentPolicies contentPolicies = ContentPolicies.from(source);
             ListingResult listing = historicalListing(source, recruitmentYears);
             List<YearDiscoveredLink> details = listing.links();
             counts.discovered = details.size();
@@ -203,8 +212,8 @@ public final class AcquisitionService {
                 DiscoveredLink detail = annualDetail.link();
                 YearCounts yearCounts = byYear.get(annualDetail.recruitmentYear());
                 int failuresBefore = counts.failed;
-                DocumentOutcome outcome = acquire(source, runId, detail, null, DocumentKind.ANNOUNCEMENT,
-                    detail.title(), counts);
+                DocumentOutcome outcome = acquire(source, contentPolicies, runId, detail, null,
+                    DocumentKind.ANNOUNCEMENT, detail.title(), counts);
                 yearCounts.record(outcome, counts.failed - failuresBefore);
                 if (outcome.document == null) continue;
                 List<DiscoveredLink> attachmentLinks = discoverAttachments(source, detail, outcome);
@@ -212,8 +221,8 @@ public final class AcquisitionService {
                 yearCounts.discovered += attachmentLinks.size();
                 for (DiscoveredLink attachment : attachmentLinks) {
                     failuresBefore = counts.failed;
-                    DocumentOutcome attachmentOutcome = acquire(source, runId, attachment, outcome.document,
-                        DocumentKind.ATTACHMENT,
+                    DocumentOutcome attachmentOutcome = acquire(source, contentPolicies, runId, attachment,
+                        outcome.document, DocumentKind.ATTACHMENT,
                         detail.title(), counts);
                     yearCounts.record(attachmentOutcome, counts.failed - failuresBefore);
                 }
@@ -311,16 +320,21 @@ public final class AcquisitionService {
         store.saveRun(SourceCrawlRun.running(runId, source.id(), trigger, started));
         Counts counts = new Counts();
         try {
+            ContentPolicies contentPolicies = ContentPolicies.from(source);
             ListingResult incrementalListing = discoverIncremental(source);
             List<DiscoveredLink> details = incrementalListing.links().stream()
                 .map(YearDiscoveredLink::link)
                 .toList();
-            if (details.isEmpty()) {
+            boolean allowEmptyIncremental = Boolean.parseBoolean(String.valueOf(
+                source.configuration().getOrDefault("allowEmptyIncremental", false)));
+            if (details.isEmpty() && !allowEmptyIncremental) {
                 throw new FetchFailedException(
                     "Incremental listing yielded zero candidate announcements; discovery contract is unverified");
             }
-            verifyCheckpoint(source.id(), Checkpoint.CONTRACT_VERIFIED,
-                "incremental listing parsed candidates=" + details.size());
+            if (!details.isEmpty()) {
+                verifyCheckpoint(source.id(), Checkpoint.CONTRACT_VERIFIED,
+                    "incremental listing parsed candidates=" + details.size());
+            }
             counts.discovered = details.size();
             Map<Integer, YearCounts> byYear = new LinkedHashMap<>();
             for (DiscoveredLink detail : details) {
@@ -329,8 +343,8 @@ public final class AcquisitionService {
                     .orElse(null);
                 if (yearCounts != null) yearCounts.discovered++;
                 int failuresBefore = counts.failed;
-                DocumentOutcome outcome = acquire(source, runId, detail, null, DocumentKind.ANNOUNCEMENT,
-                    detail.title(), counts);
+                DocumentOutcome outcome = acquire(source, contentPolicies, runId, detail, null,
+                    DocumentKind.ANNOUNCEMENT, detail.title(), counts);
                 if (yearCounts != null) yearCounts.record(outcome, counts.failed - failuresBefore);
                 if (outcome.document == null) continue;
                 List<DiscoveredLink> attachmentLinks = discoverAttachments(source, detail, outcome);
@@ -338,8 +352,8 @@ public final class AcquisitionService {
                 if (yearCounts != null) yearCounts.discovered += attachmentLinks.size();
                 for (DiscoveredLink attachment : attachmentLinks) {
                     failuresBefore = counts.failed;
-                    DocumentOutcome attachmentOutcome = acquire(source, runId, attachment, outcome.document,
-                        DocumentKind.ATTACHMENT,
+                    DocumentOutcome attachmentOutcome = acquire(source, contentPolicies, runId, attachment,
+                        outcome.document, DocumentKind.ATTACHMENT,
                         detail.title(), counts);
                     if (yearCounts != null) {
                         yearCounts.record(attachmentOutcome, counts.failed - failuresBefore);
@@ -468,6 +482,7 @@ public final class AcquisitionService {
 
     private DocumentOutcome acquire(
         RecruitmentSource source,
+        ContentPolicies contentPolicies,
         UUID runId,
         DiscoveredLink link,
         AcquiredDocument parent,
@@ -479,6 +494,7 @@ public final class AcquisitionService {
         FetchedDocument response;
         try {
             response = fetchTimed(source, request(source, link, prior.orElse(null)));
+            validateResponsePolicies(contentPolicies, response);
         } catch (RuntimeException failure) {
             counts.failed++;
             counts.sourceFailures++;
@@ -496,7 +512,7 @@ public final class AcquisitionService {
                 "DOCUMENT_GONE", "Official document returned HTTP " + response.status());
             return new DocumentOutcome(null, response, null, false);
         }
-        FetchObservation observation = observation(response, link.uri());
+        FetchObservation observation = observation(contentPolicies, response, link.uri());
         DocumentTransition transition;
         try {
             transition = DocumentTransition.decide(prior.orElse(null), observation, clock.instant());
@@ -634,7 +650,8 @@ public final class AcquisitionService {
     }
 
     private static boolean isHtml(String mediaType) {
-        return "text/html".equals(mediaType) || "application/xhtml+xml".equals(mediaType);
+        return mediaType != null && (mediaType.startsWith("text/html")
+            || mediaType.startsWith("application/xhtml+xml"));
     }
 
     private FetchRequest request(RecruitmentSource source, DiscoveredLink link, AcquiredDocument prior) {
@@ -727,7 +744,9 @@ public final class AcquisitionService {
             counts.failed, errorCode, errorMessage);
     }
 
-    private static FetchObservation observation(FetchedDocument response, URI stableUri) {
+    private static FetchObservation observation(
+        ContentPolicies contentPolicies, FetchedDocument response, URI stableUri
+    ) {
         AcquiredDocument.TransportRisk risk = switch (response.transportRisk()) {
             case NONE -> AcquiredDocument.TransportRisk.NONE;
             case PLAINTEXT_OFFICIAL_HTTP -> AcquiredDocument.TransportRisk.PLAINTEXT_OFFICIAL_HTTP;
@@ -739,8 +758,105 @@ public final class AcquisitionService {
             FetchObservation.ObservationType.GONE, null, null, null, null, risk);
         if (response.status() != 200) return new FetchObservation(stableUri, response.status(),
             FetchObservation.ObservationType.FAILURE, null, null, null, null, risk);
-        return FetchObservation.ok(stableUri, response.status(), sha256(response.content()),
+        return FetchObservation.ok(stableUri, response.status(),
+            sha256(fingerprintContent(contentPolicies, response)),
             response.mediaType(), response.etag(), response.lastModified(), risk);
+    }
+
+    private static void validateResponsePolicies(
+        ContentPolicies contentPolicies, FetchedDocument response
+    ) {
+        if (contentPolicies.responseRejectPatterns().isEmpty()
+            || !isHtml(response.mediaType()) || response.content().length == 0) return;
+        String html = decodeHtml(response);
+        for (Pattern pattern : contentPolicies.responseRejectPatterns()) {
+            if (pattern.matcher(html).find()) {
+                throw new FetchFailedException("Official source returned a configured rejection response");
+            }
+        }
+    }
+
+    private static byte[] fingerprintContent(
+        ContentPolicies contentPolicies, FetchedDocument response
+    ) {
+        if (contentPolicies.fingerprintIgnorePatterns().isEmpty()
+            || !isHtml(response.mediaType()) || response.content().length == 0) {
+            return response.content();
+        }
+        String normalized = decodeHtml(response);
+        for (Pattern pattern : contentPolicies.fingerprintIgnorePatterns()) {
+            normalized = pattern.matcher(normalized)
+                .replaceAll("<ignored-dynamic-content>");
+        }
+        return normalized.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static List<Pattern> configuredPatterns(
+        RecruitmentSource source, String key
+    ) {
+        Object configured = source.configuration().get(key);
+        if (configured == null) return List.of();
+        if (!(configured instanceof Collection<?> values)) {
+            throw new SourceConfigurationException(key + " must be an array of regex strings");
+        }
+        List<Pattern> patterns = new ArrayList<>(values.size());
+        int index = 0;
+        for (Object value : values) {
+            if (!(value instanceof String regex) || regex.isBlank()) {
+                throw new SourceConfigurationException(
+                    key + "[" + index + "] must be a nonblank regex string");
+            }
+            try {
+                patterns.add(Pattern.compile(regex, Pattern.DOTALL));
+            } catch (PatternSyntaxException failure) {
+                throw new SourceConfigurationException(
+                    key + "[" + index + "] is invalid: " + failure.getDescription(), failure);
+            }
+            index++;
+        }
+        return List.copyOf(patterns);
+    }
+
+    private static String decodeHtml(FetchedDocument response) {
+        byte[] content = response.content();
+        return new String(content, htmlCharset(response.mediaType(), content));
+    }
+
+    private static Charset htmlCharset(String contentType, byte[] content) {
+        if (contentType != null) {
+            var matcher = CONTENT_TYPE_CHARSET.matcher(contentType);
+            if (matcher.find()) {
+                Optional<Charset> declared = supportedCharset(matcher.group(1));
+                if (declared.isPresent()) return declared.orElseThrow();
+            }
+        }
+        if (startsWith(content, 0xEF, 0xBB, 0xBF)) return StandardCharsets.UTF_8;
+        if (startsWith(content, 0xFE, 0xFF)) return StandardCharsets.UTF_16BE;
+        if (startsWith(content, 0xFF, 0xFE)) return StandardCharsets.UTF_16LE;
+        String prefix = new String(content, 0, Math.min(content.length, 8_192),
+            StandardCharsets.ISO_8859_1);
+        var meta = HTML_META_CHARSET.matcher(prefix);
+        if (meta.find()) {
+            Optional<Charset> declared = supportedCharset(meta.group(1));
+            if (declared.isPresent()) return declared.orElseThrow();
+        }
+        return StandardCharsets.UTF_8;
+    }
+
+    private static Optional<Charset> supportedCharset(String name) {
+        try {
+            return Optional.of(Charset.forName(name));
+        } catch (IllegalCharsetNameException | UnsupportedCharsetException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static boolean startsWith(byte[] value, int... prefix) {
+        if (value.length < prefix.length) return false;
+        for (int index = 0; index < prefix.length; index++) {
+            if (Byte.toUnsignedInt(value[index]) != prefix[index]) return false;
+        }
+        return true;
     }
 
     private static String listingMetadataFingerprint(DiscoveredLink link) {
@@ -851,6 +967,20 @@ public final class AcquisitionService {
     private record DocumentOutcome(
         AcquiredDocument document, FetchedDocument response, ProcessingResult processing, boolean parsed
     ) {}
+    private record ContentPolicies(
+        List<Pattern> responseRejectPatterns,
+        List<Pattern> fingerprintIgnorePatterns
+    ) {
+        private static ContentPolicies from(RecruitmentSource source) {
+            return new ContentPolicies(
+                configuredPatterns(source, "responseRejectRegexes"),
+                configuredPatterns(source, "contentFingerprintIgnoreRegexes"));
+        }
+    }
+    private static final class SourceConfigurationException extends IllegalArgumentException {
+        private SourceConfigurationException(String message) { super(message); }
+        private SourceConfigurationException(String message, Throwable cause) { super(message, cause); }
+    }
     private static final class YearCounts {
         int discovered, fetched, parsed, targetJobs, failed;
         void record(DocumentOutcome outcome, int newFailures) {

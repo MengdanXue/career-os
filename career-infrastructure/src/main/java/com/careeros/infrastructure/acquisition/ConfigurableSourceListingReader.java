@@ -68,11 +68,12 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         }
         String mode = String.valueOf(source.configuration().get("historicalPaginationMode"));
         if (!query.historical()) {
-            if (!"JCMS_PARAM_JSON".equals(mode)) {
-                throw new IllegalArgumentException(
-                    "Bounded incremental traversal currently requires JCMS_PARAM_JSON");
-            }
-            return readIncrementalJcms(source);
+            return switch (mode) {
+                case "JCMS_PARAM_JSON" -> readIncrementalJcms(source);
+                case "STATIC_PAGE_SUFFIX" -> readIncrementalStaticSuffix(source);
+                default -> throw new IllegalArgumentException(
+                    "Unsupported bounded incremental pagination mode: " + mode);
+            };
         }
         return switch (mode) {
             case "STATIC_PAGE_SUFFIX" -> readStaticSuffix(source, query);
@@ -559,6 +560,24 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         return new ListingResult(List.copyOf(accepted.values()), Map.of(), Map.of(), complete);
     }
 
+    private ListingResult readIncrementalStaticSuffix(RecruitmentSource source) {
+        int maxPages = positive(source.configuration(), "incrementalListingMaxPages");
+        LinkedHashMap<URI, YearDiscoveredLink> accepted = new LinkedHashMap<>();
+        Set<String> pageFingerprints = new HashSet<>();
+        for (int page = 1; page <= maxPages; page++) {
+            FetchedDocument fetched = fetch(source, staticPageUri(source.entryUri(), page));
+            if (!pageFingerprints.add(sha256(fetched.content()))) {
+                throw new FetchFailedException("Incremental listing repeated a non-terminal page");
+            }
+            for (DiscoveredLink link : canonicalDistinct(
+                discoverer.discover(source, fetched.finalUri(), fetched.content()))) {
+                recruitmentYear(link).ifPresent(year -> accepted.putIfAbsent(
+                    link.uri(), new YearDiscoveredLink(link, year)));
+            }
+        }
+        return new ListingResult(List.copyOf(accepted.values()), Map.of(), Map.of(), false);
+    }
+
     private ListingResult readLinkedPages(RecruitmentSource source, ListingQuery query) {
         int maxPages = positive(source.configuration(), "historicalMaxPages");
         String nextPageSelector = required(source.configuration(), "nextPageSelector");
@@ -640,9 +659,17 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
         LinkedHashMap<URI, DiscoveredLink> rawDistinct = new LinkedHashMap<>();
         LinkedHashMap<URI, YearDiscoveredLink> accepted = new LinkedHashMap<>();
         Set<String> pageFingerprints = new HashSet<>();
+        boolean reconcileByItems = configuredBoolean(
+            source.configuration(), "reconcileReportedTotalByListingItems", false);
+        Set<URI> listedItemIdentities = new LinkedHashSet<>();
         Integer total = null;
         for (int page = 1; page <= maxPages; page++) {
             FetchedDocument fetched = fetch(source, jcmsPageUri(source, page, pageSize));
+            int listedBefore = listedItemIdentities.size();
+            if (reconcileByItems) {
+                listedItemIdentities.addAll(listingItemIdentities(
+                    source.configuration(), source.entryUri(), source.code(), fetched.content()));
+            }
             int reported = listingTotal(fetched.content());
             if (total == null) total = reported;
             else if (!total.equals(reported)) {
@@ -661,12 +688,17 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
                 recruitmentYear(link).filter(query.recruitmentYears()::contains)
                     .ifPresent(year -> accepted.putIfAbsent(link.uri(), new YearDiscoveredLink(link, year)));
             }
-            if (page > 1 && rawDistinct.size() == before && before < total) {
+            int reconciledCount = reconcileByItems ? listedItemIdentities.size() : rawDistinct.size();
+            boolean listingAdvanced = reconcileByItems
+                ? listedItemIdentities.size() > listedBefore : rawDistinct.size() > before;
+            if (page > 1 && !listingAdvanced && reconciledCount < total) {
                 throw new FetchFailedException("Historical listing page did not add any new entry");
             }
             if ((long) page * pageSize >= total) {
-                if (rawDistinct.size() != total) {
-                    throw new FetchFailedException("Historical listing unique entry count did not match reported total");
+                if (reconciledCount != total) {
+                    throw new FetchFailedException(reconcileByItems
+                        ? "Historical listing item count did not match reported total"
+                        : "Historical listing unique entry count did not match reported total");
                 }
                 String basis = "official listing total=" + total + "; traversed pages=" + page
                     + "; pageSize=" + pageSize;
@@ -949,26 +981,33 @@ public final class ConfigurableSourceListingReader implements SourceListingReade
     }
 
     private static Set<URI> listingItemIdentities(ListingEntryContract entry, byte[] content) {
+        return listingItemIdentities(
+            entry.configuration(), entry.entryUri(), entry.code(), content);
+    }
+
+    private static Set<URI> listingItemIdentities(
+        Map<String, Object> configuration, URI entryUri, String label, byte[] content
+    ) {
         String payload = new String(content, StandardCharsets.UTF_8);
         if (payload.stripLeading().startsWith("{")) {
             JsonNode root = json(content, "listing item counter");
             String html = root.path("data").path("html").asText();
             if (!html.isBlank()) payload = html;
         }
-        var document = Jsoup.parse(payload, entry.entryUri().toString());
-        var items = document.select(required(entry.configuration(), "listingItemSelector"));
-        String linkSelector = required(entry.configuration(), "itemLinkSelector");
+        var document = Jsoup.parse(payload, entryUri.toString());
+        var items = document.select(required(configuration, "listingItemSelector"));
+        String linkSelector = required(configuration, "itemLinkSelector");
         Set<URI> identities = new LinkedHashSet<>();
         for (var item : items) {
             var link = item.selectFirst(linkSelector);
             if (link == null || link.attr("href").isBlank()) {
-                throw new FetchFailedException("Listing entry " + entry.code()
+                throw new FetchFailedException("Listing entry " + label
                     + " cannot derive a stable identity for an official listing item");
             }
             try {
-                identities.add(canonical(entry.entryUri().resolve(link.attr("href"))));
+                identities.add(canonical(entryUri.resolve(link.attr("href"))));
             } catch (IllegalArgumentException invalid) {
-                throw new FetchFailedException("Listing entry " + entry.code()
+                throw new FetchFailedException("Listing entry " + label
                     + " exposed an invalid listing item URI", invalid);
             }
         }

@@ -105,6 +105,16 @@ class SourceConnectionProjectorTest {
         assertThat(recording.updatedStatus).isEqualTo(FAILED);
     }
 
+    @Test
+    void meaningfulPartialRunDoesNotProjectTheWholeSourceAsFailed() {
+        var recording = new RecordingStore(source("HDU_RECRUITMENT", 3), List.of(),
+            Optional.of(run(RunStatus.PARTIALLY_SUCCEEDED)), List.of());
+
+        new SourceConnectionProjector(recording.proxy(), Duration.ofDays(2)).refresh(SOURCE_ID, NOW);
+
+        assertThat(recording.updatedStatus).isEqualTo(PARTIAL);
+    }
+
     private static SourceYearCoverage coverage(int year, CoverageStatus status) {
         boolean complete = status == CoverageStatus.COMPLETE || status == CoverageStatus.NO_TARGET_RECORDS;
         return new SourceYearCoverage(SOURCE_ID, year, status, 1, 1, 1,

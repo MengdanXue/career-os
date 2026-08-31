@@ -104,7 +104,7 @@ try {
 
     if ($Rebuild -or (Test-ApplicationBuildRequired)) {
         $maven = Resolve-Maven
-        & $maven -DskipTests package
+        & $maven -DskipTests clean package
         if ($LASTEXITCODE -ne 0) { throw 'Career OS 构建失败。' }
     }
 

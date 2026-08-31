@@ -31,7 +31,8 @@ public final class SourceConnectionProjector {
             .toList();
         boolean completeYears = annual.size() == 3
             && annual.stream().allMatch(SourceYearCoverage::supportsAbsenceConclusion);
-        boolean freshSuccess = store.findLatestRun(sourceId)
+        var latestRun = store.findLatestRun(sourceId);
+        boolean freshSuccess = latestRun
             .filter(run -> run.status() == RunStatus.SUCCEEDED)
             .map(run -> run.completedAt() != null && !run.completedAt().isBefore(now.minus(freshness)))
             .orElse(false);
@@ -46,7 +47,10 @@ public final class SourceConnectionProjector {
                 .isBefore(verified.get(Checkpoint.BACKFILL_COMPLETE));
         ConnectionStatus status;
         if (!source.enabled()) status = ConnectionStatus.NOT_CONNECTED;
-        else if (source.consecutiveFailureCount() >= 3) status = ConnectionStatus.FAILED;
+        else if (source.consecutiveFailureCount() >= 3
+            && latestRun.map(run -> run.status() == RunStatus.FAILED).orElse(true)) {
+            status = ConnectionStatus.FAILED;
+        }
         else if (completeYears && freshSuccess && lifecycleVerified) status = ConnectionStatus.CONNECTED;
         else status = ConnectionStatus.PARTIAL;
         store.updateTargetSourceStatus(source.code(), status, source.id(), now);

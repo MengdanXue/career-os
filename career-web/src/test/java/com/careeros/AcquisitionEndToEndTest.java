@@ -88,7 +88,7 @@ class AcquisitionEndToEndTest {
         JsonNode first = response(mvc.perform(post("/api/acquisition/sources/{sourceId}/runs", sourceId)), json, 202);
         JsonNode second = response(mvc.perform(post("/api/acquisition/sources/{sourceId}/runs", sourceId)), json, 202);
 
-        assertThat(first.path("addedCount").asInt()).isEqualTo(2);
+        assertThat(first.path("addedCount").asInt()).as(first.toPrettyString()).isEqualTo(2);
         assertThat(second.path("unchangedCount").asInt()).isEqualTo(2);
         assertThat(response(mvc.perform(get("/api/acquisition/changes").param("sourceId", sourceId)), json, 200)
             .path("items")).hasSize(2);
@@ -192,7 +192,9 @@ class AcquisitionEndToEndTest {
                     new byte[] {0x50, 0x4b, 0x03, 0x04, 1, 2, 3}, null, null);
             }
             return new FetchedDocument(request.uri(), 200, "text/html",
-                "<html><body>list</body></html>".getBytes(StandardCharsets.UTF_8), null, null);
+                ("<html><body>count=\"1\"<ul><li><a href=\"" + DETAIL
+                    + "\">2026 年事业单位招聘公告</a></li></ul></body></html>")
+                    .getBytes(StandardCharsets.UTF_8), null, null);
         }
     }
 

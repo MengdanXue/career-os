@@ -576,6 +576,32 @@ class ConfigurableSourceListingReaderTest {
     }
 
     @Test
+    void legacyJcmsCanReconcileOfficialTotalByListingItemsIncludingExternalShortcuts() {
+        RecruitmentSource base = qiantangSource();
+        Map<String, Object> configuration = new LinkedHashMap<>(base.configuration());
+        configuration.put("historicalPageSize", 20);
+        configuration.put("reconcileReportedTotalByListingItems", true);
+        configuration.put("listingItemSelector", "li");
+        configuration.put("itemLinkSelector", "a[href]");
+        RecruitmentSource source = copyWithConfiguration(base, configuration);
+        URI first = jcmsUri(source, 1, 20);
+        String html = "<div count=\"2\"><ul>"
+            + "<li><a href='/col/col1657687/art/2026/art_a111.html'>2026年招聘公告</a></li>"
+            + "<li><a href='https://hrss.hangzhou.gov.cn/jobs'>杭州市事业单位招聘</a></li>"
+            + "</ul></div>";
+        byte[] payload = ("{\"data\":{\"html\":\""
+            + html.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}}")
+            .getBytes(StandardCharsets.UTF_8);
+
+        var result = new ConfigurableSourceListingReader(
+            new MapFetcher(Map.of(first, payload)), new StaticHtmlSourceDiscoverer())
+            .read(source, new ListingQuery(Set.of(2026), true));
+
+        assertThat(result.links()).hasSize(1);
+        assertThat(result.evidenceByYear().get(2026).traversalComplete()).isTrue();
+    }
+
+    @Test
     void multiEntryJcmsSerializesStructuredSearchAsANestedJsonStringAcrossPages() throws Exception {
         Map<String, Object> entry = baseEntry(
             "jcms", "JCMS_PARAM_JSON", "https://official.example/column/index.html");
@@ -1141,6 +1167,23 @@ class ConfigurableSourceListingReaderTest {
         assertThat(fetcher.requests()).containsExactly(first, second);
     }
 
+    @Test
+    void boundedIncrementalStaticSuffixTraversalReadsOnlyConfiguredLeadingPages() {
+        URI first = URI.create("https://renshi.hdu.edu.cn/rczp/list.htm");
+        URI second = URI.create("https://renshi.hdu.edu.cn/rczp/list2.htm");
+        var fetcher = new MapFetcher(Map.of(
+            first, page("/2026/0313/c13762a290230/page.htm", "2026年公开招聘工作人员公告"),
+            second, page("/2025/0319/c13762a280001/page.htm", "2025年公开招聘工作人员公告")
+        ));
+
+        var result = new ConfigurableSourceListingReader(fetcher, new StaticHtmlSourceDiscoverer())
+            .read(source(), new ListingQuery(Set.of(), false));
+
+        assertThat(result.links()).extracting(link -> link.recruitmentYear())
+            .containsExactly(2026, 2025);
+        assertThat(fetcher.requests()).containsExactly(first, second);
+    }
+
     private static RecruitmentSource source() {
         Instant now = Instant.parse("2026-08-24T12:00:00Z");
         return new RecruitmentSource(
@@ -1154,6 +1197,7 @@ class ConfigurableSourceListingReaderTest {
                 "adapterType", "STATIC_HTML",
                 "historicalPaginationMode", "STATIC_PAGE_SUFFIX",
                 "historicalMaxPages", 20,
+                "incrementalListingMaxPages", 2,
                 "articleUrlRegex", "^https://renshi\\.hdu\\.edu\\.cn/[0-9]{4}/[0-9]{4}/c[0-9]+a[0-9]+/page\\.htm$",
                 "linkSelector", "a[href]",
                 "titleIncludeRegex", "招聘|招考|选聘|引进",
@@ -1203,6 +1247,16 @@ class ConfigurableSourceListingReaderTest {
                 Map.entry("titleIncludeRegex", "招聘|招考|选聘|引进|雇员"),
                 Map.entry("titleExcludeRegex", "招聘会|培训|讲座")
             ), null, null, now, 0, now, now);
+    }
+
+    private static RecruitmentSource copyWithConfiguration(
+        RecruitmentSource value, Map<String, Object> configuration
+    ) {
+        return new RecruitmentSource(value.id(), value.code(), value.name(), value.baseUri(), value.entryUri(),
+            value.sourceType(), value.region(), value.crawlMode(), value.enabled(), value.cronExpression(),
+            value.timeZone(), value.minimumRequestInterval(), configuration, value.lastSuccessAt(),
+            value.lastFailureAt(), value.nextDueAt(), value.consecutiveFailureCount(),
+            value.createdAt(), value.updatedAt());
     }
 
     private static RecruitmentSource multiEntrySource(boolean lifecycleRequired) {

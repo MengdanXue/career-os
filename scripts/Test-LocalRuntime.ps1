@@ -7,6 +7,11 @@ $composeFile = Join-Path $projectRoot 'compose.yaml'
 $startScript = Join-Path $PSScriptRoot 'start-career-os.ps1'
 $stopScript = Join-Path $PSScriptRoot 'stop-career-os.ps1'
 
+$startScriptText = Get-Content -LiteralPath $startScript -Raw -Encoding UTF8
+if ($startScriptText -notmatch '& \$maven -DskipTests clean package') {
+    throw '启动脚本的重建必须先 clean，避免已删除的 Flyway 迁移残留在 JAR 中。'
+}
+
 Push-Location $projectRoot
 try {
     docker compose -f $composeFile config --quiet
@@ -28,4 +33,3 @@ try {
 } finally {
     Pop-Location
 }
-

@@ -79,7 +79,7 @@ class JdbcCareerPlanQueryAdapterTest {
         });
         assertThat(data.targetSources()).hasSizeGreaterThanOrEqualTo(20);
         assertThat(data.targetSources()).anyMatch(source -> source.routeCode().equals("RESEARCH_SUPPORT")
-            && source.connectionStatus().name().equals("NOT_CONNECTED"));
+            && source.connectionStatus().name().equals("PARTIAL"));
         assertThat(data.targetSources()).filteredOn(source -> Set.of(
                 "ZJ_HRSS_INSTITUTION", "HZ_HRSS_INSTITUTION").contains(source.code()))
             .allMatch(source -> !source.connectionStatus().name().equals("CONNECTED"));
