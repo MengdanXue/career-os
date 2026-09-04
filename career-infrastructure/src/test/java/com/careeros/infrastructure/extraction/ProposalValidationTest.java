@@ -25,6 +25,47 @@ class ProposalValidationTest {
             .doesNotThrowAnyException();
     }
 
+    /** 历史载荷必须仍能校验通过，否则升版本会让库里已有的 ReviewItem 读不出来。 */
+    @Test
+    void previousSchemaVersionStillValidates() {
+        assertThatCode(() -> validator.validateJson(payload("1.0.0", "ESTABLISHMENT")))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void currentSchemaVersionAcceptsTheWidenedEmploymentTypes() {
+        for (String employment : List.of("AUTHORIZED_HEADCOUNT", "SCHOOL_HIRED", "STATE_OWNED_REGULAR")) {
+            assertThatCode(() -> validator.validateJson(payload("1.1.0", employment)))
+                .doesNotThrowAnyException();
+        }
+    }
+
+    /** 版本之间必须真的隔离：1.1.0 才有的取值不能悄悄在 1.0.0 下通过。 */
+    @Test
+    void widenedEmploymentTypesAreRejectedUnderThePreviousVersion() {
+        assertThatThrownBy(() -> validator.validateJson(payload("1.0.0", "STATE_OWNED_REGULAR")))
+            .isInstanceOf(ExtractionExceptions.InvalidProposalException.class)
+            .hasMessageContaining("employmentType");
+    }
+
+    @Test
+    void unknownSchemaVersionIsRejectedWithItsOwnReason() {
+        assertThatThrownBy(() -> validator.validateJson(payload("9.9.9", "ESTABLISHMENT")))
+            .isInstanceOf(ExtractionExceptions.InvalidProposalException.class)
+            .hasMessageContaining("Unsupported proposal schemaVersion 9.9.9");
+    }
+
+    @Test
+    void payloadWithoutSchemaVersionIsRejected() {
+        assertThatThrownBy(() -> validator.validateJson("{\"source\":{}}"))
+            .isInstanceOf(ExtractionExceptions.InvalidProposalException.class)
+            .hasMessageContaining("schemaVersion");
+    }
+
+    private static String payload(String schemaVersion, String employmentType) {
+        return ProposalFixtures.json(schemaVersion, employmentType);
+    }
+
     @Test
     void missingRequiredFieldIsRejectedBeforeDeserialization() {
         String invalid = """

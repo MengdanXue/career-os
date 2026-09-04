@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schema/recruitment-extraction-proposal/1.1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "organization", "recruitmentEvent", "jobs", "warnings", "confidence", "completeSnapshot"],
+  "properties": {
+    "schemaVersion": { "const": "1.1.0" },
+    "source": { "$ref": "#/$defs/source" },
+    "organization": { "$ref": "#/$defs/organization" },
+    "recruitmentEvent": { "$ref": "#/$defs/event" },
+    "jobs": { "type": "array", "items": { "$ref": "#/$defs/job" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "completeSnapshot": { "type": "boolean" }
+  },
+  "$defs": {
+    "factStatus": { "type": "string", "enum": ["EXPLICIT", "INTERPRETED", "UNKNOWN"] },
+    "evidenceIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "uniqueItems": true },
+    "interpretation": { "type": ["string", "null"] },
+    "factString": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "factStatus", "confidence", "evidenceFragmentIds", "interpretation"],
+      "properties": {
+        "value": { "type": ["string", "null"] },
+        "factStatus": { "$ref": "#/$defs/factStatus" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidenceFragmentIds": { "$ref": "#/$defs/evidenceIds" },
+        "interpretation": { "$ref": "#/$defs/interpretation" }
+      }
+    },
+    "factInteger": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "factStatus", "confidence", "evidenceFragmentIds", "interpretation"],
+      "properties": {
+        "value": { "type": ["integer", "null"] },
+        "factStatus": { "$ref": "#/$defs/factStatus" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidenceFragmentIds": { "$ref": "#/$defs/evidenceIds" },
+        "interpretation": { "$ref": "#/$defs/interpretation" }
+      }
+    },
+    "factDate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "factStatus", "confidence", "evidenceFragmentIds", "interpretation"],
+      "properties": {
+        "value": { "type": ["string", "null"], "format": "date" },
+        "factStatus": { "$ref": "#/$defs/factStatus" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidenceFragmentIds": { "$ref": "#/$defs/evidenceIds" },
+        "interpretation": { "$ref": "#/$defs/interpretation" }
+      }
+    },
+    "factIntegerSet": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "factStatus", "confidence", "evidenceFragmentIds", "interpretation"],
+      "properties": {
+        "value": { "oneOf": [{ "type": "null" }, { "type": "array", "items": { "type": "integer" }, "uniqueItems": true }] },
+        "factStatus": { "$ref": "#/$defs/factStatus" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidenceFragmentIds": { "$ref": "#/$defs/evidenceIds" },
+        "interpretation": { "$ref": "#/$defs/interpretation" }
+      }
+    },
+    "factOrganizationType": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "factStatus", "confidence", "evidenceFragmentIds", "interpretation"],
+      "properties": {
+        "value": { "type": ["string", "null"], "enum": ["GOVERNMENT", "PUBLIC_INSTITUTION", "STATE_OWNED_ENTERPRISE", "UNIVERSITY", "HOSPITAL", "RESEARCH_INSTITUTE", "OTHER", "UNKNOWN", null] },
+        "factStatus": { "$ref": "#/$defs/factStatus" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidenceFragmentIds": { "$ref": "#/$defs/evidenceIds" },
+        "interpretation": { "$ref": "#/$defs/interpretation" }
+      }
+    },
+    "factEmploymentType": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "factStatus", "confidence", "evidenceFragmentIds", "interpretation"],
+      "properties": {
+        "value": { "type": ["string", "null"], "enum": ["ESTABLISHMENT", "AUTHORIZED_HEADCOUNT", "SCHOOL_HIRED", "STATE_OWNED_REGULAR", "PERSONNEL_AGENCY", "LABOR_DISPATCH", "CONTRACT", "PROJECT_BASED", "UNKNOWN", null] },
+        "factStatus": { "$ref": "#/$defs/factStatus" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidenceFragmentIds": { "$ref": "#/$defs/evidenceIds" },
+        "interpretation": { "$ref": "#/$defs/interpretation" }
+      }
+    },
+    "factEducation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "factStatus", "confidence", "evidenceFragmentIds", "interpretation"],
+      "properties": {
+        "value": { "type": ["string", "null"], "enum": ["UNKNOWN", "HIGH_SCHOOL", "ASSOCIATE", "BACHELOR", "MASTER", "DOCTORATE", null] },
+        "factStatus": { "$ref": "#/$defs/factStatus" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidenceFragmentIds": { "$ref": "#/$defs/evidenceIds" },
+        "interpretation": { "$ref": "#/$defs/interpretation" }
+      }
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidenceId", "sourceUrl", "sourceTitle"],
+      "properties": {
+        "evidenceId": { "type": "string", "format": "uuid" },
+        "sourceUrl": { "type": "string", "minLength": 1 },
+        "sourceTitle": { "type": "string", "minLength": 1 }
+      }
+    },
+    "organization": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "organizationType"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "organizationType": { "$ref": "#/$defs/factOrganizationType" }
+      }
+    },
+    "event": {
+      "type": "object", "additionalProperties": false,
+      "required": ["title", "recruitmentYear", "eventType", "publishedOn", "applicationStartsOn", "applicationEndsOn"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "recruitmentYear": { "type": "integer", "minimum": 2000, "maximum": 2100 },
+        "eventType": { "type": "string", "enum": ["PUBLIC_INSTITUTION", "STATE_OWNED_ENTERPRISE", "UNIVERSITY", "HOSPITAL", "GOVERNMENT_PURCHASED_SERVICE", "OTHER"] },
+        "publishedOn": { "$ref": "#/$defs/factDate" },
+        "applicationStartsOn": { "$ref": "#/$defs/factDate" },
+        "applicationEndsOn": { "$ref": "#/$defs/factDate" }
+      }
+    },
+    "job": {
+      "type": "object", "additionalProperties": false,
+      "required": ["title", "externalJobCode", "headcount", "employmentType", "location", "minimumEducation", "degree", "majorText", "maximumAge", "acceptedGraduationYears", "minimumExperienceYears", "jobFamily", "duties"],
+      "properties": {
+        "title": { "$ref": "#/$defs/factString" },
+        "externalJobCode": { "type": ["string", "null"] },
+        "headcount": { "$ref": "#/$defs/factInteger" },
+        "employmentType": { "$ref": "#/$defs/factEmploymentType" },
+        "location": { "type": ["string", "null"] },
+        "minimumEducation": { "$ref": "#/$defs/factEducation" },
+        "degree": { "$ref": "#/$defs/factString" },
+        "majorText": { "$ref": "#/$defs/factString" },
+        "maximumAge": { "$ref": "#/$defs/factInteger" },
+        "acceptedGraduationYears": { "$ref": "#/$defs/factIntegerSet" },
+        "minimumExperienceYears": { "$ref": "#/$defs/factInteger" },
+        "jobFamily": { "type": "string", "enum": ["SOFTWARE", "DATA", "AI", "CYBERSECURITY", "INFORMATION_SYSTEMS", "DIGITALIZATION", "IT_OPERATIONS", "RESEARCH", "PRODUCT", "OTHER"] },
+        "duties": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

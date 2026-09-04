@@ -20,6 +20,24 @@ final class ProposalFixtures {
         return proposalWithEvidence(FRAGMENT_ID);
     }
 
+    /**
+     * 按指定 schema 版本与用工性质生成原始 JSON。走 JSON 而不是领域记录，才能构造出
+     * 领域层本身就拒绝的版本（比如未知版本），用来验证校验器自己的版本判断。
+     */
+    static String json(String schemaVersion, String employmentType) {
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
+                .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+            var root = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.valueToTree(validProposal());
+            root.put("schemaVersion", schemaVersion);
+            ((com.fasterxml.jackson.databind.node.ObjectNode) root.withArray("jobs").get(0).get("employmentType"))
+                .put("value", employmentType);
+            return mapper.writeValueAsString(root);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not build proposal JSON fixture", exception);
+        }
+    }
+
     static RecruitmentExtractionProposal proposalWithEvidence(UUID fragmentId) {
         var source = new RecruitmentExtractionProposal.SourceProposal(
             EVIDENCE_ID, "https://example.gov.cn/notice/1", "2026年公开招聘公告");

@@ -40,6 +40,20 @@ Base path：`/api/v1`
 
 用工身份缺失时不会被提升为 T1；`evidenceSufficient=false` 表示该结论只是待核验初判。
 
+`EmploymentType` 覆盖 §5 要求区分的七类身份：
+
+| 取值 | 含义 | 默认落池 |
+| --- | --- | --- |
+| `ESTABLISHMENT` | 事业编制 | T1（单位类型一致时） |
+| `AUTHORIZED_HEADCOUNT` | 员额／报备员额 | T2 |
+| `SCHOOL_HIRED` | 校聘 | T2 |
+| `STATE_OWNED_REGULAR` | 国企正式 | T3（单位为国企时） |
+| `PERSONNEL_AGENCY` | 人事代理 | 公共机构 T2，否则排除 |
+| `CONTRACT` | 合同制／编外 | 公共机构 T2，否则排除 |
+| `LABOR_DISPATCH` | 劳务派遣 | 排除 |
+| `PROJECT_BASED` | 项目聘用 | 排除 |
+| `UNKNOWN` | 未知 | 按单位性质降级，绝不进 T1 |
+
 ## Excel 增量导入
 
 `POST /imports/excel`，内容类型为 `multipart/form-data`。

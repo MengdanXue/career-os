@@ -21,11 +21,20 @@ public record RecruitmentExtractionProposal(
     double confidence,
     boolean completeSnapshot
 ) {
-    public static final String SCHEMA_VERSION = "1.0.0";
+    /** 新载荷一律按当前版本写入。 */
+    public static final String SCHEMA_VERSION = "1.1.0";
+
+    /**
+     * 可读回的历史版本。schemaVersion 进了 input_fingerprint，升版本意味着重新抽取；
+     * 但已经落库的复核载荷必须仍能读出来，否则历史 ReviewItem 会在反序列化时炸掉。
+     * 所以写只用 {@link #SCHEMA_VERSION}，读放宽到这一组。
+     */
+    public static final Set<String> SUPPORTED_SCHEMA_VERSIONS = Set.of("1.0.0", "1.1.0");
 
     public RecruitmentExtractionProposal {
-        if (!SCHEMA_VERSION.equals(schemaVersion)) {
-            throw new IllegalArgumentException("schemaVersion must be " + SCHEMA_VERSION);
+        if (!SUPPORTED_SCHEMA_VERSIONS.contains(schemaVersion)) {
+            throw new IllegalArgumentException(
+                "schemaVersion must be one of " + SUPPORTED_SCHEMA_VERSIONS + " but was " + schemaVersion);
         }
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(organization, "organization");

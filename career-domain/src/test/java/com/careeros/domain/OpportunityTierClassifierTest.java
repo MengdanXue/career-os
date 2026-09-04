@@ -33,6 +33,43 @@ class OpportunityTierClassifierTest {
         assertThat(result.evidenceSufficient()).isFalse();
     }
 
+    /** §3 T2：员额/报备员额与校聘是正式岗位，但都不是事业编，必须单独核验。 */
+    @Test void authorizedHeadcountAndSchoolHiredNeverReachT1() {
+        for (EmploymentType employment : List.of(EmploymentType.AUTHORIZED_HEADCOUNT, EmploymentType.SCHOOL_HIRED)) {
+            var result = classify(employment, OrganizationType.UNIVERSITY);
+            assertThat(result.tier()).isEqualTo(OpportunityTier.T2_IDENTITY_REVIEW);
+            assertThat(result.evidenceSufficient()).isTrue();
+            assertThat(result.reason()).contains("不等同于事业编");
+        }
+    }
+
+    @Test void stateOwnedRegularAtStateOwnedEnterpriseIsT3() {
+        var result = classify(EmploymentType.STATE_OWNED_REGULAR, OrganizationType.STATE_OWNED_ENTERPRISE);
+        assertThat(result.tier()).isEqualTo(OpportunityTier.T3_STABLE_SOE_BACKUP);
+        assertThat(result.reason()).contains("不得标成事业编");
+    }
+
+    @Test void stateOwnedRegularAtOtherOrganizationFallsToIdentityReview() {
+        var result = classify(EmploymentType.STATE_OWNED_REGULAR, OrganizationType.PUBLIC_INSTITUTION);
+        assertThat(result.tier()).isEqualTo(OpportunityTier.T2_IDENTITY_REVIEW);
+        assertThat(result.evidenceSufficient()).isFalse();
+    }
+
+    /** §5 的七类身份都要能落到一个明确的池，不能有漏网的组合。 */
+    @Test void everyEmploymentTypeIsClassified() {
+        for (EmploymentType employment : EmploymentType.values()) {
+            for (OrganizationType organizationType : OrganizationType.values()) {
+                var result = classify(employment, organizationType);
+                assertThat(result.tier()).isNotNull();
+                assertThat(result.reason()).isNotBlank();
+                if (result.tier() == OpportunityTier.T1_ESTABLISHMENT_TARGET) {
+                    assertThat(employment).isEqualTo(EmploymentType.ESTABLISHMENT);
+                    assertThat(result.evidenceSufficient()).isTrue();
+                }
+            }
+        }
+    }
+
     @Test void defaultExclusionsAreExcludedRegardlessOfOrganization() {
         assertThat(classify(EmploymentType.LABOR_DISPATCH, OrganizationType.PUBLIC_INSTITUTION).tier())
             .isEqualTo(OpportunityTier.EXCLUDED);

@@ -13,9 +13,8 @@ import java.util.Set;
  * <p>分层只读取已落库的用工性质与单位性质，不做文本推断——公告没写清楚就进 T2 等人工核验，
  * 而不是猜一个身份。§3 明确要求国企岗位"不得标成事业编"，因此国企只会落到 T3。
  *
- * <p>已知局限：{@link EmploymentType} 目前没有"员额/报备员额"和"校聘"两类（§5 要求区分），
- * 这类岗位现在会以 {@code UNKNOWN} 身份落入 T2 待核验。这是安全方向——它们不会被误标成
- * 事业编——但在枚举补齐前，T2 里会混着两种不同性质的岗位。
+ * <p>§5 要求区分的七类用工身份现已全部可表达：事业编进 T1，员额/报备员额与校聘进 T2，
+ * 国企正式进 T3，劳务派遣与项目聘用排除，身份未知按单位性质降级处理。
  */
 public final class OpportunityTierClassifier {
     public static final String VERSION = "phase2-tier-v1";
@@ -38,6 +37,19 @@ public final class OpportunityTierClassifier {
 
             case PROJECT_BASED -> result(job, OpportunityTier.EXCLUDED, employment, organizationType, true,
                 "项目聘用属于 §3 默认排除的短期项目岗");
+
+            // §3 T2：员额/报备员额与校聘都不等同于事业编，单独进核验池。
+            case AUTHORIZED_HEADCOUNT -> result(job, OpportunityTier.T2_IDENTITY_REVIEW, employment, organizationType, true,
+                "员额或报备员额不等同于事业编，进入 T2 核验池");
+
+            case SCHOOL_HIRED -> result(job, OpportunityTier.T2_IDENTITY_REVIEW, employment, organizationType, true,
+                "校聘正式岗不等同于事业编，进入 T2 核验池");
+
+            case STATE_OWNED_REGULAR -> organizationType == OrganizationType.STATE_OWNED_ENTERPRISE
+                ? result(job, OpportunityTier.T3_STABLE_SOE_BACKUP, employment, organizationType, true,
+                    "国企正式技术岗，进入稳定国企备选池；§3 要求不得标成事业编")
+                : result(job, OpportunityTier.T2_IDENTITY_REVIEW, employment, organizationType, false,
+                    "岗位写明国企正式，但单位类型为 " + organizationType + " 与之不一致，需要人工复核来源");
 
             case ESTABLISHMENT -> publicOrganization
                 ? result(job, OpportunityTier.T1_ESTABLISHMENT_TARGET, employment, organizationType, true,
