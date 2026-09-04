@@ -21,6 +21,25 @@ Base path：`/api/v1`
 
 重复评估同一 Candidate/Job 会更新原 Assessment 和 Opportunity，不产生重复记录。
 
+响应同时返回 `assessment`（§6.1 硬判定）、`opportunity` 和 `tier`（§3 分池）。两者互相独立：
+资格结论不因所在池而改变，分池也不因资格而改变。
+
+```json
+{"tier":{"tier":"T1_ESTABLISHMENT_TARGET","employmentType":"ESTABLISHMENT",
+         "organizationType":"HOSPITAL","evidenceSufficient":true,
+         "reason":"用工身份明确为事业编制且单位类型一致，进入 T1 主攻池"}}
+```
+
+分池规则：
+
+- `T1_ESTABLISHMENT_TARGET`：公告明确事业编制，且单位类型与之一致。
+- `T2_IDENTITY_REVIEW`：公共机构的非事业编岗位，或用工身份缺失／与单位类型矛盾，需逐岗人工核验。
+- `T3_STABLE_SOE_BACKUP`：国有企业岗位。可作稳定备选，但**不得标成事业编**。
+- `EXCLUDED`：劳务派遣、项目聘用，以及非公共机构的合同制／编外岗位。
+- `UNKNOWN`：单位性质与用工身份都不足以进入任一池。
+
+用工身份缺失时不会被提升为 T1；`evidenceSufficient=false` 表示该结论只是待核验初判。
+
 ## Excel 增量导入
 
 `POST /imports/excel`，内容类型为 `multipart/form-data`。

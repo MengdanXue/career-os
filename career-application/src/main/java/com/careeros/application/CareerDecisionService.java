@@ -8,12 +8,14 @@ import java.util.UUID;
 public final class CareerDecisionService {
     private final RepositoryPorts.CandidateProfiles candidates;
     private final RepositoryPorts.JobPostings jobs;
+    private final RepositoryPorts.Organizations organizations;
     private final RepositoryPorts.EligibilityAssessments assessments;
     private final RepositoryPorts.Opportunities opportunities;
     private final EligibilityEvaluator evaluator;
+    private final OpportunityTierClassifier tierClassifier;
 
-    public CareerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator) {
-        this.candidates=candidates; this.jobs=jobs; this.assessments=assessments; this.opportunities=opportunities; this.evaluator=evaluator;
+    public CareerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.Organizations organizations, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator, OpportunityTierClassifier tierClassifier) {
+        this.candidates=candidates; this.jobs=jobs; this.organizations=organizations; this.assessments=assessments; this.opportunities=opportunities; this.evaluator=evaluator; this.tierClassifier=tierClassifier;
     }
 
     public DecisionResult assess(UUID candidateId, UUID jobId, Instant now) {
@@ -25,7 +27,8 @@ public final class CareerDecisionService {
         int score=score(candidate,job,assessment.status());
         var existingOpportunity=opportunities.findAll().stream().filter(value->value.candidateProfileId().equals(candidateId)&&value.jobPostingId().equals(jobId)).findFirst();
         var opportunity=opportunities.save(existingOpportunity.map(value->new Opportunity(value.id(),candidate.id(),job.id(),assessment.id(),value.status(),score,explainScore(assessment.status(),score),value.createdAt(),now)).orElseGet(()->new Opportunity(UUID.randomUUID(),candidate.id(),job.id(),assessment.id(),OpportunityStatus.NEW,score,explainScore(assessment.status(),score),now,now)));
-        return new DecisionResult(assessment,opportunity);
+        var organization=organizations.findById(job.organizationId()).orElseThrow(() -> new IllegalArgumentException("Organization not found: "+job.organizationId()));
+        return new DecisionResult(assessment,opportunity,tierClassifier.classify(job,organization));
     }
 
     int score(CandidateProfile candidate, JobPosting job, EligibilityStatus status) {
@@ -44,5 +47,6 @@ public final class CareerDecisionService {
         return Math.min(score,100);
     }
     private String explainScore(EligibilityStatus status,int score) { return "hardEligibility="+status+", basicMatchScore="+score; }
-    public record DecisionResult(EligibilityAssessment assessment, Opportunity opportunity) {}
+    /** 资格与分层是两个独立结论：§6.1 的硬判定不因所在池而改变，§3 的分池也不因资格而改变。 */
+    public record DecisionResult(EligibilityAssessment assessment, Opportunity opportunity, OpportunityTierAssessment tier) {}
 }

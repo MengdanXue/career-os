@@ -12,6 +12,8 @@ public final class DomainEnums {
     /** 产品需求 §6.1：资格是硬判定，不是分数。禁止引入 LIKELY_* 之类的程度值。 */
     public enum EligibilityStatus { ELIGIBLE, INELIGIBLE, CONDITIONAL, NEEDS_CONFIRMATION, CONFLICTING_EVIDENCE }
     public enum CriterionStatus { PASS, FAIL, CONDITIONAL, UNKNOWN, NOT_APPLICABLE }
+    /** 产品需求 §3：不同用工性质必须分池，不能只给一个"半体制"标签。 */
+    public enum OpportunityTier { T1_ESTABLISHMENT_TARGET, T2_IDENTITY_REVIEW, T3_STABLE_SOE_BACKUP, EXCLUDED, UNKNOWN }
     public enum EvidenceType { OFFICIAL_NOTICE, OFFICIAL_ATTACHMENT, ORGANIZATION_PAGE, POLICY, MANUAL_NOTE }
     public enum OpportunityStatus { NEW, REVIEWING, SHORTLISTED, APPLIED, CLOSED, REJECTED, ARCHIVED }
     public enum ExtractionSourceType { HTML, PDF }
