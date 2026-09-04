@@ -553,11 +553,15 @@ excluded_job_types
 
 ```text
 ELIGIBLE
-LIKELY_ELIGIBLE
-UNCERTAIN
-LIKELY_INELIGIBLE
 INELIGIBLE
+CONDITIONAL
+NEEDS_CONFIRMATION
+CONFLICTING_EVIDENCE
 ```
+
+> 本节原先列出 `LIKELY_ELIGIBLE` / `UNCERTAIN` / `LIKELY_INELIGIBLE`。与
+> [产品需求基线](product-requirements.md) §6.1「资格不是分数」冲突，已按基线统一为上述五值。
+> 逐条规则单独使用 `PASS / FAIL / CONDITIONAL / UNKNOWN / NOT_APPLICABLE`。
 
 字段：
 
@@ -1185,7 +1189,7 @@ Agent 主要负责“非结构化理解和决策辅助”。
 
 ```json
 {
-  "status": "LIKELY_ELIGIBLE",
+  "status": "CONDITIONAL",
   "blockingReasons": [],
   "uncertainties": [
     "需确认境外学历认定口径"

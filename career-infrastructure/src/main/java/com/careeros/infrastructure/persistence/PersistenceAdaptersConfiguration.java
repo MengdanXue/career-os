@@ -84,8 +84,34 @@ public class PersistenceAdaptersConfiguration {
     private JpaModels.EvidenceEntity toEvidenceEntity(Evidence value) { var e=new JpaModels.EvidenceEntity(); e.id=value.id(); e.sourceArtifactId=value.sourceArtifactId(); e.evidenceType=value.type(); e.sourceUrl=value.sourceUrl(); e.sourceTitle=value.sourceTitle(); e.excerpt=value.excerpt(); e.contentHash=value.contentHash(); e.capturedAt=value.capturedAt(); return e; }
     private Evidence toEvidence(JpaModels.EvidenceEntity e) { return new Evidence(e.id,e.sourceArtifactId,e.evidenceType,e.sourceUrl,e.sourceTitle,e.excerpt,e.contentHash,e.capturedAt); }
 
-    private JpaModels.EligibilityAssessmentEntity toAssessmentEntity(EligibilityAssessment value) { var e=new JpaModels.EligibilityAssessmentEntity(); e.id=value.id(); e.candidateProfileId=value.candidateProfileId(); e.jobPostingId=value.jobPostingId(); e.status=value.status(); value.ruleResults().forEach((key,result)->e.ruleResults.put(key.name(),Map.of("status",result.status().name(),"explanation",result.explanation()))); e.evidenceIds=new ArrayList<>(value.evidenceIds()); e.evaluatorVersion=value.evaluatorVersion(); e.assessedAt=value.assessedAt(); return e; }
-    private EligibilityAssessment toAssessment(JpaModels.EligibilityAssessmentEntity e) { var results=new EnumMap<RuleType,RuleResult>(RuleType.class); e.ruleResults.forEach((key,value)->results.put(RuleType.valueOf(key),new RuleResult(EligibilityStatus.valueOf(value.get("status")),value.get("explanation")))); return new EligibilityAssessment(e.id,e.candidateProfileId,e.jobPostingId,e.status,results,e.evidenceIds,e.evaluatorVersion,e.assessedAt); }
+    private JpaModels.EligibilityAssessmentEntity toAssessmentEntity(EligibilityAssessment value) {
+        var e=new JpaModels.EligibilityAssessmentEntity();
+        e.id=value.id(); e.candidateProfileId=value.candidateProfileId(); e.jobPostingId=value.jobPostingId(); e.status=value.status();
+        value.ruleResults().forEach((key,result)->e.ruleResults.put(key.name(),ruleResultColumns(result)));
+        e.requiredConfirmations=new ArrayList<>(value.requiredConfirmations());
+        e.evidenceIds=new ArrayList<>(value.evidenceIds()); e.evaluatorVersion=value.evaluatorVersion(); e.assessedAt=value.assessedAt();
+        return e;
+    }
+
+    /** RuleResult 的 requirement/candidateFact/evidenceId 都可空，JSONB 里省略而不是写 null 字符串。 */
+    private static Map<String,String> ruleResultColumns(RuleResult result) {
+        var columns=new LinkedHashMap<String,String>();
+        columns.put("status",result.status().name());
+        columns.put("reason",result.reason());
+        if (result.requirement()!=null) columns.put("requirement",result.requirement());
+        if (result.candidateFact()!=null) columns.put("candidateFact",result.candidateFact());
+        if (result.evidenceId()!=null) columns.put("evidenceId",result.evidenceId().toString());
+        return columns;
+    }
+
+    private EligibilityAssessment toAssessment(JpaModels.EligibilityAssessmentEntity e) {
+        var results=new EnumMap<RuleType,RuleResult>(RuleType.class);
+        e.ruleResults.forEach((key,value)->results.put(RuleType.valueOf(key),new RuleResult(
+            CriterionStatus.valueOf(value.get("status")), value.get("requirement"), value.get("candidateFact"),
+            value.get("reason"), value.get("evidenceId")==null?null:UUID.fromString(value.get("evidenceId")))));
+        return new EligibilityAssessment(e.id,e.candidateProfileId,e.jobPostingId,e.status,results,
+            e.requiredConfirmations,e.evidenceIds,e.evaluatorVersion,e.assessedAt);
+    }
 
     private JpaModels.OpportunityEntity toOpportunityEntity(Opportunity value) { var e=new JpaModels.OpportunityEntity(); e.id=value.id(); e.candidateProfileId=value.candidateProfileId(); e.jobPostingId=value.jobPostingId(); e.eligibilityAssessmentId=value.eligibilityAssessmentId(); e.status=value.status(); e.matchScore=value.matchScore(); e.decisionNote=value.decisionNote(); e.createdAt=value.createdAt(); e.updatedAt=value.updatedAt(); return e; }
     private Opportunity toOpportunity(JpaModels.OpportunityEntity e) { return new Opportunity(e.id,e.candidateProfileId,e.jobPostingId,e.eligibilityAssessmentId,e.status,e.matchScore,e.decisionNote,e.createdAt,e.updatedAt); }
