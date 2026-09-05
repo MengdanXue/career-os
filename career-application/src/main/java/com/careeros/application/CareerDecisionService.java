@@ -14,9 +14,10 @@ public final class CareerDecisionService {
     private final EligibilityEvaluator evaluator;
     private final OpportunityTierClassifier tierClassifier;
     private final OpportunityScorer scorer;
+    private final OpportunityHistoryService history;
 
-    public CareerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.Organizations organizations, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator, OpportunityTierClassifier tierClassifier, OpportunityScorer scorer) {
-        this.candidates=candidates; this.jobs=jobs; this.organizations=organizations; this.assessments=assessments; this.opportunities=opportunities; this.evaluator=evaluator; this.tierClassifier=tierClassifier; this.scorer=scorer;
+    public CareerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.Organizations organizations, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator, OpportunityTierClassifier tierClassifier, OpportunityScorer scorer, OpportunityHistoryService history) {
+        this.candidates=candidates; this.jobs=jobs; this.organizations=organizations; this.assessments=assessments; this.opportunities=opportunities; this.evaluator=evaluator; this.tierClassifier=tierClassifier; this.scorer=scorer; this.history=history;
     }
 
     public DecisionResult assess(UUID candidateId, UUID jobId, Instant now) {
@@ -27,7 +28,8 @@ public final class CareerDecisionService {
         var assessment=assessments.save(existingAssessment.map(value->new EligibilityAssessment(value.id(),candidateId,jobId,evaluated.status(),evaluated.ruleResults(),evaluated.requiredConfirmations(),evaluated.evidenceIds(),evaluated.evaluatorVersion(),now)).orElse(evaluated));
         var organization=organizations.findById(job.organizationId()).orElseThrow(() -> new IllegalArgumentException("Organization not found: "+job.organizationId()));
         var tier=tierClassifier.classify(job,organization);
-        var scorecard=scorer.score(candidate,job,organization,assessment,tier);
+        var forecast=history.forecastFor(jobId,now.atZone(java.time.ZoneOffset.UTC).getYear()+1).orElse(null);
+        var scorecard=scorer.score(candidate,job,organization,assessment,tier,forecast);
         var existingOpportunity=opportunities.findAll().stream().filter(value->value.candidateProfileId().equals(candidateId)&&value.jobPostingId().equals(jobId)).findFirst();
         var opportunity=opportunities.save(existingOpportunity.map(value->new Opportunity(value.id(),candidate.id(),job.id(),assessment.id(),value.status(),scorecard,scorecard.gradeRationale(),value.createdAt(),now)).orElseGet(()->new Opportunity(UUID.randomUUID(),candidate.id(),job.id(),assessment.id(),OpportunityStatus.NEW,scorecard,scorecard.gradeRationale(),now,now)));
         return new DecisionResult(assessment,opportunity,tier);

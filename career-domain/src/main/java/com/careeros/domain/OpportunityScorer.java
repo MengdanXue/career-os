@@ -16,11 +16,10 @@ import java.util.Objects;
  * 产品需求 §6.2 的多维评分。六个维度分别算、分别存，**不做加权求和**——
  * 策略等级由资格结论与分池结论按规则推导，分数只用于在同一等级内区分优先级。
  *
- * <p>§6.2 要求的六个输入里，"已知竞争数据"（CompetitionObservation）与"历史重复"
- * （OpportunityHistory / Forecast）两类实体尚未建模，考试形式与报名时间窗口也还不在
- * {@link JobPosting} 上。因此 {@code FUTURE} 与 {@code PREPARATION_COST} 恒为
- * INSUFFICIENT_DATA，{@code CHANCE} 只能给出估计——这些缺口如实写在各自的 rationale 里，
- * 而不是用默认分掩盖。
+ * <p>§6.2 要求的六个输入里，"已知竞争数据"（CompetitionObservation）尚未建模，考试形式与报名
+ * 时间窗口也还不在 {@link JobPosting} 上。因此 {@code PREPARATION_COST} 恒为 INSUFFICIENT_DATA，
+ * {@code CHANCE} 只能给出估计。{@code FUTURE} 依赖 {@link OpportunityForecast}——未回填跨年度
+ * 历史时同样是 INSUFFICIENT_DATA。这些缺口如实写在各自的 rationale 里，而不是用默认分掩盖。
  */
 public final class OpportunityScorer {
     public static final String VERSION = "phase2-scorecard-v1";
@@ -35,6 +34,18 @@ public final class OpportunityScorer {
         EligibilityAssessment assessment,
         OpportunityTierAssessment tier
     ) {
+        return score(candidate, job, organization, assessment, tier, null);
+    }
+
+    /** @param forecast 跨年度再现信号，未回填历史时传 null——此时 FUTURE 维度保持"数据不足"。 */
+    public OpportunityScorecard score(
+        CandidateProfile candidate,
+        JobPosting job,
+        Organization organization,
+        EligibilityAssessment assessment,
+        OpportunityTierAssessment tier,
+        OpportunityForecast forecast
+    ) {
         Objects.requireNonNull(candidate, "candidate");
         Objects.requireNonNull(job, "job");
         Objects.requireNonNull(organization, "organization");
@@ -47,13 +58,28 @@ public final class OpportunityScorer {
         dimensions.put(ScoreDimension.CHANCE, chance(job));
         dimensions.put(ScoreDimension.STABILITY, stability(job, tier));
         dimensions.put(ScoreDimension.GROWTH, growth(job));
-        dimensions.put(ScoreDimension.FUTURE, DimensionScore.insufficient(
-            "缺少跨年度招聘历史与单位持续需求记录，无法评估 2027 再现信号"));
+        dimensions.put(ScoreDimension.FUTURE, future(forecast));
         dimensions.put(ScoreDimension.PREPARATION_COST, DimensionScore.insufficient(
             "岗位模型尚未包含考试形式、专业测试与报名时间窗口，无法估算准备成本"));
 
         Grade grade = grade(assessment.status(), tier, fit);
         return new OpportunityScorecard(job.id(), dimensions, grade.value(), grade.rationale(), VERSION);
+    }
+
+    /**
+     * 再现信号转成分值。§11 禁止给出概率，因此这里只是把可观测的模式排个序，
+     * 并把观测窗口原样带进 rationale——读者要能看出结论建立在多长的历史上。
+     */
+    static DimensionScore future(OpportunityForecast forecast) {
+        if (forecast == null) {
+            return DimensionScore.insufficient("尚未回填跨年度招聘历史，无法评估再现信号");
+        }
+        return switch (forecast.signal()) {
+            case INSUFFICIENT_HISTORY -> DimensionScore.insufficient(forecast.rationale());
+            case RECURRING_ANNUAL -> DimensionScore.estimated(85, forecast.rationale());
+            case INTERMITTENT -> DimensionScore.estimated(50, forecast.rationale());
+            case SINGLE_OCCURRENCE -> DimensionScore.estimated(20, forecast.rationale());
+        };
     }
 
     /**

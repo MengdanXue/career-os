@@ -22,10 +22,11 @@ class CareerMvpController {
     private final RepositoryPorts.CandidateProfiles candidates;
     private final RepositoryPorts.Opportunities opportunities;
     private final CareerDecisionService decisions;
+    private final com.careeros.application.OpportunityHistoryService history;
     private final OfficialExcelImportService excelImports;
 
-    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CareerDecisionService decisions, OfficialExcelImportService excelImports) {
-        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.decisions=decisions; this.excelImports=excelImports;
+    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CareerDecisionService decisions, com.careeros.application.OpportunityHistoryService history, OfficialExcelImportService excelImports) {
+        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.decisions=decisions; this.history=history; this.excelImports=excelImports;
     }
 
     @GetMapping("/organizations") List<Organization> organizations() { return organizations.findAll(); }
@@ -54,6 +55,8 @@ class CareerMvpController {
 
     @PostMapping("/eligibility-assessments") CareerDecisionService.DecisionResult assess(@RequestBody AssessmentRequest request) { return decisions.assess(request.candidateId(),request.jobId(),Instant.now()); }
     @GetMapping("/opportunities") List<Opportunity> opportunities() { return opportunities.findAll(); }
+    @GetMapping("/job-lineages") List<com.careeros.domain.JobFamilyLineage> jobLineages() { return history.lineages(); }
+    @GetMapping("/watchlist") List<com.careeros.domain.OpportunityForecast> watchlist(@RequestParam(name="targetYear",defaultValue="2027") int targetYear) { return history.watchlist(targetYear); }
     @PatchMapping("/opportunities/{id}/status") Opportunity updateOpportunityStatus(@PathVariable UUID id,@RequestBody OpportunityStatusRequest request) {
         var current=required(opportunities.findById(id),"Opportunity",id);
         return opportunities.save(new Opportunity(current.id(),current.candidateProfileId(),current.jobPostingId(),current.eligibilityAssessmentId(),request.status(),current.scorecard(),request.decisionNote()==null?current.decisionNote():request.decisionNote(),current.createdAt(),Instant.now()));

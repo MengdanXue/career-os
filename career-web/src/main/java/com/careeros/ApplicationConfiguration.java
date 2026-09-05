@@ -3,6 +3,8 @@ package com.careeros;
 import com.careeros.application.*;
 import com.careeros.application.ExtractionPorts.*;
 import com.careeros.domain.EligibilityEvaluator;
+import com.careeros.domain.JobLineageBuilder;
+import com.careeros.domain.OpportunityForecaster;
 import com.careeros.domain.OpportunityScorer;
 import com.careeros.domain.OpportunityTierClassifier;
 import com.careeros.domain.ReviewPolicy;
@@ -21,7 +23,10 @@ class ApplicationConfiguration {
     @Bean EligibilityEvaluator eligibilityEvaluator() { return new EligibilityEvaluator(); }
     @Bean OpportunityTierClassifier opportunityTierClassifier() { return new OpportunityTierClassifier(); }
     @Bean OpportunityScorer opportunityScorer() { return new OpportunityScorer(); }
-    @Bean CareerDecisionService careerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.Organizations organizations, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator, OpportunityTierClassifier tierClassifier, OpportunityScorer scorer) { return new CareerDecisionService(candidates,jobs,organizations,assessments,opportunities,evaluator,tierClassifier,scorer); }
+    @Bean JobLineageBuilder jobLineageBuilder() { return new JobLineageBuilder(); }
+    @Bean OpportunityForecaster opportunityForecaster() { return new OpportunityForecaster(); }
+    @Bean OpportunityHistoryService opportunityHistoryService(RepositoryPorts.JobPostings jobs, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.Organizations organizations, JobLineageBuilder lineageBuilder, OpportunityForecaster forecaster) { return new OpportunityHistoryService(jobs,events,organizations,lineageBuilder,forecaster); }
+    @Bean CareerDecisionService careerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.Organizations organizations, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator, OpportunityTierClassifier tierClassifier, OpportunityScorer scorer, OpportunityHistoryService history) { return new CareerDecisionService(candidates,jobs,organizations,assessments,opportunities,evaluator,tierClassifier,scorer,history); }
     @Bean ArtifactStore artifactStore(@Value("${career-os.artifacts.root:${user.dir}/var/artifacts}") String root) { return new FileSystemArtifactStore(Path.of(root)); }
     @Bean DocumentParser documentParser() { return new MediaTypeDocumentParser(List.of(new JsoupDocumentParser(),new PdfBoxDocumentParser())); }
     @Bean DocumentEnrichmentPort documentEnrichment() { return new NoOpDocumentEnrichment(); }

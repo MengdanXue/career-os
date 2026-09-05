@@ -75,6 +75,36 @@ Base path：`/api/v1`
 | `EXPERIENCE` | `MINIMUM_EXPERIENCE_YEARS` |
 | `PROFESSIONAL_TITLE` | 抽取模型暂无此字段，挂公告级 |
 
+### 跨年度岗位族与关注清单
+
+| 用途 | 端点 |
+| --- | --- |
+| 岗位族（跨年度出现记录） | `GET /job-lineages` |
+| 目标年度关注清单 | `GET /watchlist?targetYear=2027` |
+
+岗位族由 `job_posting` 与 `recruitment_event` 推导，不单独建表。归并键是
+`单位名 + 技术族 + 岗位名称`（归一化后哈希），**刻意保守**：岗位名称实质改变就分成两族。
+归并不足只会让信号偏弱，归并过度会凭空造出"连续招聘"的假趋势。
+
+```json
+{"signal":"RECURRING_ANNUAL","targetYear":2027,
+ "observedYears":[2025,2026],"observationWindowStartYear":2025,"observationWindowEndYear":2026,
+ "rationale":"观测窗口 2025–2026（2 年）内于 2025、2026 连续出现，2027 年再现的可能性值得关注"}
+```
+
+| 信号 | 含义 |
+| --- | --- |
+| `RECURRING_ANNUAL` | 观测窗口内逐年连续出现 |
+| `INTERMITTENT` | 出现过多次但有断档 |
+| `SINGLE_OCCURRENCE` | 窗口内只出现过一次 |
+| `INSUFFICIENT_HISTORY` | 观测窗口不足 2 年，判断不了再现规律 |
+
+**没有概率字段。** §11 把"没有历史样本支撑的精确上岸概率"列为非目标，因此只给可观测的
+模式加依据。观测窗口取全部已落库数据的年度范围——只导入了一年数据时，所有族都是
+`INSUFFICIENT_HISTORY`，而不会被读成"没有再现规律"。
+
+该信号同时喂给评分的 `FUTURE` 维度；没有历史时该维度仍为 `INSUFFICIENT_DATA`。
+
 ### 多维评分与策略等级
 
 `opportunity.scorecard` 按 §6.2 分别给出六个维度，**没有总分字段**——单一匹配分是该节
