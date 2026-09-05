@@ -4,6 +4,7 @@ import com.careeros.domain.DomainEnums.*;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -93,15 +94,36 @@ class EligibilityEvaluatorTest {
             .isEqualTo(EligibilityStatus.ELIGIBLE);
     }
 
-    @Test void everyRuleResultCarriesItsSourceEvidence() {
-        UUID evidenceId = UUID.randomUUID();
+    /** §10.6：资格结论必须指向公告里的具体片段，而不是整份公告。 */
+    @Test void eachRuleCitesItsOwnEvidenceFragment() {
+        UUID announcement = UUID.randomUUID();
+        UUID educationFragment = UUID.randomUUID();
+        UUID majorFragment = UUID.randomUUID();
+        UUID ageFragment = UUID.randomUUID();
         var job = new JobPosting(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "TEST", "测试岗位", JobFamily.SOFTWARE,
             EmploymentType.ESTABLISHMENT, "杭州", 1, EducationLevel.MASTER, Set.of("计算机科学与技术"), Set.of(), 40,
-            LocalDate.of(2025, 8, 31), null, Set.of(), "", "https://example.test/official", List.of(evidenceId));
+            LocalDate.of(2025, 8, 31), null, Set.of(), "", "https://example.test/official", List.of(announcement),
+            Map.of(JobField.MINIMUM_EDUCATION, List.of(educationFragment),
+                   JobField.MAJOR_TEXT, List.of(majorFragment),
+                   JobField.MAXIMUM_AGE, List.of(ageFragment)));
+
         var result = evaluate(hangzhouCandidate(), job);
-        assertThat(result.ruleResults().get(RuleType.EDUCATION).evidenceId()).isEqualTo(evidenceId);
+        assertThat(result.ruleResults().get(RuleType.EDUCATION).evidenceIds()).containsExactly(educationFragment);
+        assertThat(result.ruleResults().get(RuleType.EXACT_MAJOR).evidenceIds()).containsExactly(majorFragment);
+        assertThat(result.ruleResults().get(RuleType.AGE).evidenceIds()).containsExactly(ageFragment);
         assertThat(result.ruleResults().get(RuleType.EDUCATION).requirement()).contains("MASTER");
-        assertThat(result.ruleResults().get(RuleType.EXACT_MAJOR).candidateFact()).contains("计算机科学与技术");
+    }
+
+    /** 没有片段级证据的字段回落到公告级，而不是变成"无证据"。 */
+    @Test void rulesWithoutFragmentEvidenceFallBackToTheAnnouncement() {
+        UUID announcement = UUID.randomUUID();
+        var job = new JobPosting(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "TEST", "测试岗位", JobFamily.SOFTWARE,
+            EmploymentType.ESTABLISHMENT, "杭州", 1, EducationLevel.MASTER, Set.of("计算机科学与技术"), Set.of(), 40,
+            LocalDate.of(2025, 8, 31), null, Set.of(), "", "https://example.test/official", List.of(announcement), Map.of());
+
+        var result = evaluate(hangzhouCandidate(), job);
+        assertThat(result.ruleResults().get(RuleType.EDUCATION).evidenceIds()).containsExactly(announcement);
+        assertThat(job.evidenceFor(JobField.MINIMUM_EDUCATION)).containsExactly(announcement);
     }
 
     private EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) { return evaluator.evaluate(candidate, job, NOW); }
@@ -117,6 +139,6 @@ class EligibilityEvaluatorTest {
     }
 
     private JobPosting job(Integer maxAge, LocalDate referenceDate, EducationLevel education, Set<String> majors, Set<Integer> graduationYears, Integer experience) {
-        return new JobPosting(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "TEST", "测试岗位", JobFamily.SOFTWARE, EmploymentType.ESTABLISHMENT, "杭州", 1, education, majors, graduationYears, maxAge, referenceDate, experience, Set.of(), "", "https://example.test/official", List.of());
+        return new JobPosting(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "TEST", "测试岗位", JobFamily.SOFTWARE, EmploymentType.ESTABLISHMENT, "杭州", 1, education, majors, graduationYears, maxAge, referenceDate, experience, Set.of(), "", "https://example.test/official", List.of(), Map.of());
     }
 }

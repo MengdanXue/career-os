@@ -2,6 +2,7 @@ package com.careeros.domain;
 
 import com.careeros.domain.DomainEnums.CriterionStatus;
 import com.careeros.domain.DomainEnums.EducationLevel;
+import com.careeros.domain.DomainEnums.JobField;
 import com.careeros.domain.DomainEnums.EligibilityStatus;
 import com.careeros.domain.DomainEnums.RuleType;
 import com.careeros.domain.EligibilityAssessment.RuleResult;
@@ -31,14 +32,14 @@ public final class EligibilityEvaluator {
     }
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job, Instant now) {
-        UUID evidenceId = job.evidenceIds().isEmpty() ? null : job.evidenceIds().getFirst();
         var results = new EnumMap<RuleType, RuleResult>(RuleType.class);
-        results.put(RuleType.AGE, evaluateAge(candidate, job, evidenceId));
-        results.put(RuleType.EDUCATION, evaluateEducation(candidate, job, evidenceId));
-        results.put(RuleType.EXACT_MAJOR, evaluateMajor(candidate, job, evidenceId));
-        results.put(RuleType.GRADUATE_YEAR, evaluateGraduation(candidate, job, evidenceId));
-        results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, job, evidenceId));
-        results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, job, evidenceId));
+        results.put(RuleType.AGE, evaluateAge(candidate, job, job.evidenceFor(JobField.MAXIMUM_AGE)));
+        results.put(RuleType.EDUCATION, evaluateEducation(candidate, job, job.evidenceFor(JobField.MINIMUM_EDUCATION)));
+        results.put(RuleType.EXACT_MAJOR, evaluateMajor(candidate, job, job.evidenceFor(JobField.MAJOR_TEXT)));
+        results.put(RuleType.GRADUATE_YEAR, evaluateGraduation(candidate, job, job.evidenceFor(JobField.ACCEPTED_GRADUATION_YEARS)));
+        results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, job, job.evidenceFor(JobField.MINIMUM_EXPERIENCE_YEARS)));
+        // 职称要求目前不在抽取模型里，只能挂公告级证据。
+        results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, job, job.evidenceIds()));
         return new EligibilityAssessment(
             UUID.randomUUID(), candidate.id(), job.id(), aggregate(results.values()),
             results, requiredConfirmations(results), job.evidenceIds(), VERSION, now);
@@ -72,86 +73,86 @@ public final class EligibilityEvaluator {
             .toList();
     }
 
-    RuleResult evaluateAge(CandidateProfile candidate, JobPosting job, UUID evidenceId) {
-        if (job.maximumAge() == null) return notApplicable("岗位未设置最高年龄", evidenceId);
+    RuleResult evaluateAge(CandidateProfile candidate, JobPosting job, List<UUID> evidenceIds) {
+        if (job.maximumAge() == null) return notApplicable("岗位未设置最高年龄", evidenceIds);
         String requirement = "不超过 " + job.maximumAge() + " 周岁";
         if (job.ageReferenceDate() == null) {
-            return unknown(requirement, birthText(candidate), "岗位有年龄上限，但缺少年龄计算基准日", evidenceId);
+            return unknown(requirement, birthText(candidate), "岗位有年龄上限，但缺少年龄计算基准日", evidenceIds);
         }
         int youngest = Period.between(candidate.birthDate().latest(), job.ageReferenceDate()).getYears();
         int oldest = Period.between(candidate.birthDate().earliest(), job.ageReferenceDate()).getYears();
-        if (oldest <= job.maximumAge()) return pass(requirement, birthText(candidate), "基准日年龄不超过上限", evidenceId);
-        if (youngest > job.maximumAge()) return fail(requirement, birthText(candidate), "基准日年龄超过上限", evidenceId);
+        if (oldest <= job.maximumAge()) return pass(requirement, birthText(candidate), "基准日年龄不超过上限", evidenceIds);
+        if (youngest > job.maximumAge()) return fail(requirement, birthText(candidate), "基准日年龄超过上限", evidenceIds);
         return unknown(requirement, birthText(candidate),
-            "出生日期仅精确到月份，处于年龄边界，无法唯一判定", evidenceId);
+            "出生日期仅精确到月份，处于年龄边界，无法唯一判定", evidenceIds);
     }
 
-    RuleResult evaluateEducation(CandidateProfile candidate, JobPosting job, UUID evidenceId) {
+    RuleResult evaluateEducation(CandidateProfile candidate, JobPosting job, List<UUID> evidenceIds) {
         String candidateFact = candidate.highestEducation().name();
         if (job.minimumEducation() == EducationLevel.UNKNOWN) {
-            return unknown(null, candidateFact, "岗位最低学历信息缺失，不能视为无要求", evidenceId);
+            return unknown(null, candidateFact, "岗位最低学历信息缺失，不能视为无要求", evidenceIds);
         }
         String requirement = "最低学历 " + job.minimumEducation();
         if (candidate.highestEducation() == EducationLevel.UNKNOWN) {
-            return unknown(requirement, null, "候选人学历信息缺失", evidenceId);
+            return unknown(requirement, null, "候选人学历信息缺失", evidenceIds);
         }
         return rank(candidate.highestEducation()) >= rank(job.minimumEducation())
-            ? pass(requirement, candidateFact, "学历满足最低要求", evidenceId)
-            : fail(requirement, candidateFact, "学历低于 " + job.minimumEducation(), evidenceId);
+            ? pass(requirement, candidateFact, "学历满足最低要求", evidenceIds)
+            : fail(requirement, candidateFact, "学历低于 " + job.minimumEducation(), evidenceIds);
     }
 
-    RuleResult evaluateMajor(CandidateProfile candidate, JobPosting job, UUID evidenceId) {
-        if (job.exactMajors().isEmpty()) return notApplicable("岗位未限定精确专业目录", evidenceId);
+    RuleResult evaluateMajor(CandidateProfile candidate, JobPosting job, List<UUID> evidenceIds) {
+        if (job.exactMajors().isEmpty()) return notApplicable("岗位未限定精确专业目录", evidenceIds);
         String requirement = String.join("、", job.exactMajors());
-        if (candidate.majors().isEmpty()) return unknown(requirement, null, "候选人专业信息缺失", evidenceId);
+        if (candidate.majors().isEmpty()) return unknown(requirement, null, "候选人专业信息缺失", evidenceIds);
         String candidateFact = String.join("、", candidate.majors());
         Set<String> allowed = job.exactMajors().stream().map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
         if (candidate.majors().stream().map(EligibilityEvaluator::normalize).anyMatch(allowed::contains)) {
-            return pass(requirement, candidateFact, "专业名称与允许目录精确匹配", evidenceId);
+            return pass(requirement, candidateFact, "专业名称与允许目录精确匹配", evidenceIds);
         }
         boolean taxonomyNeedsReview = job.exactMajors().stream()
             .anyMatch(value -> value.contains("门类") || value.endsWith("类") || value.contains("相关专业"));
         return taxonomyNeedsReview
             ? conditional(requirement, candidateFact,
-                "岗位使用专业门类或宽泛目录，需要权威专业分类表或招录单位确认等同性", evidenceId)
-            : fail(requirement, candidateFact, "专业名称不在岗位允许目录中", evidenceId);
+                "岗位使用专业门类或宽泛目录，需要权威专业分类表或招录单位确认等同性", evidenceIds)
+            : fail(requirement, candidateFact, "专业名称不在岗位允许目录中", evidenceIds);
     }
 
-    RuleResult evaluateGraduation(CandidateProfile candidate, JobPosting job, UUID evidenceId) {
-        if (job.acceptedGraduationYears().isEmpty()) return notApplicable("岗位无毕业届别限制", evidenceId);
+    RuleResult evaluateGraduation(CandidateProfile candidate, JobPosting job, List<UUID> evidenceIds) {
+        if (job.acceptedGraduationYears().isEmpty()) return notApplicable("岗位无毕业届别限制", evidenceIds);
         String requirement = job.acceptedGraduationYears().stream().sorted()
             .map(String::valueOf).collect(Collectors.joining("、"));
-        if (candidate.graduationYear() == null) return unknown(requirement, null, "候选人毕业年份缺失", evidenceId);
+        if (candidate.graduationYear() == null) return unknown(requirement, null, "候选人毕业年份缺失", evidenceIds);
         String candidateFact = String.valueOf(candidate.graduationYear());
         return job.acceptedGraduationYears().contains(candidate.graduationYear())
-            ? pass(requirement, candidateFact, "毕业年份满足应届范围", evidenceId)
-            : fail(requirement, candidateFact, "毕业年份不在允许范围内", evidenceId);
+            ? pass(requirement, candidateFact, "毕业年份满足应届范围", evidenceIds)
+            : fail(requirement, candidateFact, "毕业年份不在允许范围内", evidenceIds);
     }
 
-    RuleResult evaluateExperience(CandidateProfile candidate, JobPosting job, UUID evidenceId) {
+    RuleResult evaluateExperience(CandidateProfile candidate, JobPosting job, List<UUID> evidenceIds) {
         if (job.minimumExperienceYears() == null || job.minimumExperienceYears() == 0) {
-            return notApplicable("岗位无最低工作年限要求", evidenceId);
+            return notApplicable("岗位无最低工作年限要求", evidenceIds);
         }
         String requirement = "不少于 " + job.minimumExperienceYears() + " 年";
-        if (candidate.experienceYears() == null) return unknown(requirement, null, "候选人工作年限缺失", evidenceId);
+        if (candidate.experienceYears() == null) return unknown(requirement, null, "候选人工作年限缺失", evidenceIds);
         String candidateFact = candidate.experienceYears() + " 年";
         return candidate.experienceYears() >= job.minimumExperienceYears()
-            ? pass(requirement, candidateFact, "工作年限满足要求", evidenceId)
-            : fail(requirement, candidateFact, "工作年限不足", evidenceId);
+            ? pass(requirement, candidateFact, "工作年限满足要求", evidenceIds)
+            : fail(requirement, candidateFact, "工作年限不足", evidenceIds);
     }
 
-    RuleResult evaluateProfessionalTitle(CandidateProfile candidate, JobPosting job, UUID evidenceId) {
-        if (job.requiredProfessionalTitles().isEmpty()) return notApplicable("岗位无职称要求", evidenceId);
+    RuleResult evaluateProfessionalTitle(CandidateProfile candidate, JobPosting job, List<UUID> evidenceIds) {
+        if (job.requiredProfessionalTitles().isEmpty()) return notApplicable("岗位无职称要求", evidenceIds);
         String requirement = String.join("、", job.requiredProfessionalTitles());
         if (candidate.professionalTitles().isEmpty()) {
-            return fail(requirement, null, "缺少岗位要求的职称", evidenceId);
+            return fail(requirement, null, "缺少岗位要求的职称", evidenceIds);
         }
         String candidateFact = String.join("、", candidate.professionalTitles());
         Set<String> candidateTitles = candidate.professionalTitles().stream()
             .map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
         return job.requiredProfessionalTitles().stream().map(EligibilityEvaluator::normalize).anyMatch(candidateTitles::contains)
-            ? pass(requirement, candidateFact, "职称满足要求", evidenceId)
-            : fail(requirement, candidateFact, "职称不满足要求", evidenceId);
+            ? pass(requirement, candidateFact, "职称满足要求", evidenceIds)
+            : fail(requirement, candidateFact, "职称不满足要求", evidenceIds);
     }
 
     private static String birthText(CandidateProfile candidate) {
@@ -167,19 +168,19 @@ public final class EligibilityEvaluator {
         return value.trim().toLowerCase(Locale.ROOT).replaceAll("[\\s·（）()_-]", "");
     }
 
-    private static RuleResult pass(String requirement, String fact, String reason, UUID evidenceId) {
-        return new RuleResult(CriterionStatus.PASS, requirement, fact, reason, evidenceId);
+    private static RuleResult pass(String requirement, String fact, String reason, List<UUID> evidenceIds) {
+        return new RuleResult(CriterionStatus.PASS, requirement, fact, reason, evidenceIds);
     }
-    private static RuleResult fail(String requirement, String fact, String reason, UUID evidenceId) {
-        return new RuleResult(CriterionStatus.FAIL, requirement, fact, reason, evidenceId);
+    private static RuleResult fail(String requirement, String fact, String reason, List<UUID> evidenceIds) {
+        return new RuleResult(CriterionStatus.FAIL, requirement, fact, reason, evidenceIds);
     }
-    private static RuleResult conditional(String requirement, String fact, String reason, UUID evidenceId) {
-        return new RuleResult(CriterionStatus.CONDITIONAL, requirement, fact, reason, evidenceId);
+    private static RuleResult conditional(String requirement, String fact, String reason, List<UUID> evidenceIds) {
+        return new RuleResult(CriterionStatus.CONDITIONAL, requirement, fact, reason, evidenceIds);
     }
-    private static RuleResult unknown(String requirement, String fact, String reason, UUID evidenceId) {
-        return new RuleResult(CriterionStatus.UNKNOWN, requirement, fact, reason, evidenceId);
+    private static RuleResult unknown(String requirement, String fact, String reason, List<UUID> evidenceIds) {
+        return new RuleResult(CriterionStatus.UNKNOWN, requirement, fact, reason, evidenceIds);
     }
-    private static RuleResult notApplicable(String reason, UUID evidenceId) {
-        return new RuleResult(CriterionStatus.NOT_APPLICABLE, null, null, reason, evidenceId);
+    private static RuleResult notApplicable(String reason, List<UUID> evidenceIds) {
+        return new RuleResult(CriterionStatus.NOT_APPLICABLE, null, null, reason, evidenceIds);
     }
 }

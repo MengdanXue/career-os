@@ -2,6 +2,7 @@ package com.careeros.domain;
 
 import com.careeros.domain.DomainEnums.*;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -126,6 +127,6 @@ class OpportunityTierClassifierTest {
     private JobPosting job(EmploymentType employment, List<UUID> evidenceIds) {
         return new JobPosting(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "TEST", "测试岗位",
             JobFamily.SOFTWARE, employment, "杭州", 1, EducationLevel.MASTER, Set.of(), Set.of(),
-            null, null, null, Set.of(), "", "https://example.test/official", evidenceIds);
+            null, null, null, Set.of(), "", "https://example.test/official", evidenceIds, Map.of());
     }
 }

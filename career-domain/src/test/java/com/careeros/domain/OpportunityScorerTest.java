@@ -5,6 +5,7 @@ import com.careeros.domain.OpportunityScorecard.DimensionScore;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -148,7 +149,7 @@ class OpportunityScorerTest {
             Set.of(EmploymentType.ESTABLISHMENT), "test-v1");
         var job = new JobPosting(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "TEST", "测试岗位",
             family, employment, "杭州", 2, EducationLevel.MASTER, Set.of("计算机科学与技术"), Set.of(),
-            40, LocalDate.of(2026, 1, 1), null, Set.of(), "系统建设", "https://example.test/official", List.of());
+            40, LocalDate.of(2026, 1, 1), null, Set.of(), "系统建设", "https://example.test/official", List.of(), Map.of());
         var organization = new Organization(UUID.randomUUID(), "测试单位", organizationType, null, "浙江", "杭州", null, null, null);
         var assessment = evaluator.evaluate(candidate, job, NOW);
         return scorer.score(candidate, job, organization, assessment, classifier.classify(job, organization));

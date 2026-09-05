@@ -72,8 +72,10 @@ public class PersistenceAdaptersConfiguration {
     private JpaModels.OrganizationEntity toOrganizationEntity(Organization value) { var e=new JpaModels.OrganizationEntity(); e.id=value.id(); e.name=value.name(); e.organizationType=value.organizationType(); e.administrativeLevel=value.administrativeLevel(); e.province=value.province(); e.city=value.city(); e.district=value.district(); e.parentOrganizationId=value.parentOrganizationId(); e.officialWebsite=value.officialWebsite(); return e; }
     private Organization toOrganization(JpaModels.OrganizationEntity e) { return new Organization(e.id,e.name,e.organizationType,e.administrativeLevel,e.province,e.city,e.district,e.parentOrganizationId,e.officialWebsite); }
 
-    private JpaModels.JobPostingEntity toJobEntity(JobPosting value) { var e=new JpaModels.JobPostingEntity(); e.id=value.id(); e.recruitmentEventId=value.recruitmentEventId(); e.organizationId=value.organizationId(); e.externalJobCode=value.externalJobCode(); e.title=value.title(); e.jobFamily=value.jobFamily(); e.employmentType=value.employmentType(); e.location=value.location(); e.headcount=value.headcount(); e.minimumEducation=value.minimumEducation(); e.exactMajors=new LinkedHashSet<>(value.exactMajors()); e.acceptedGraduationYears=new LinkedHashSet<>(value.acceptedGraduationYears()); e.maximumAge=value.maximumAge(); e.ageReferenceDate=value.ageReferenceDate(); e.minimumExperienceYears=value.minimumExperienceYears(); e.requiredProfessionalTitles=new LinkedHashSet<>(value.requiredProfessionalTitles()); e.duties=value.duties(); e.sourceUrl=value.sourceUrl(); e.evidenceIds=new ArrayList<>(value.evidenceIds()); e.active=true; return e; }
-    private JobPosting toJob(JpaModels.JobPostingEntity e) { return new JobPosting(e.id,e.recruitmentEventId,e.organizationId,e.externalJobCode,e.title,e.jobFamily,e.employmentType,e.location,e.headcount,e.minimumEducation,e.exactMajors,e.acceptedGraduationYears,e.maximumAge,e.ageReferenceDate,e.minimumExperienceYears,e.requiredProfessionalTitles,e.duties,e.sourceUrl,e.evidenceIds); }
+    private JpaModels.JobPostingEntity toJobEntity(JobPosting value) { var e=new JpaModels.JobPostingEntity(); e.id=value.id(); e.recruitmentEventId=value.recruitmentEventId(); e.organizationId=value.organizationId(); e.externalJobCode=value.externalJobCode(); e.title=value.title(); e.jobFamily=value.jobFamily(); e.employmentType=value.employmentType(); e.location=value.location(); e.headcount=value.headcount(); e.minimumEducation=value.minimumEducation(); e.exactMajors=new LinkedHashSet<>(value.exactMajors()); e.acceptedGraduationYears=new LinkedHashSet<>(value.acceptedGraduationYears()); e.maximumAge=value.maximumAge(); e.ageReferenceDate=value.ageReferenceDate(); e.minimumExperienceYears=value.minimumExperienceYears(); e.requiredProfessionalTitles=new LinkedHashSet<>(value.requiredProfessionalTitles()); e.duties=value.duties(); e.sourceUrl=value.sourceUrl(); e.evidenceIds=new ArrayList<>(value.evidenceIds()); value.fieldEvidence().forEach((field,ids)->e.fieldEvidence.put(field.name(),new ArrayList<>(ids))); e.active=true; return e; }
+    private JobPosting toJob(JpaModels.JobPostingEntity e) { return new JobPosting(e.id,e.recruitmentEventId,e.organizationId,e.externalJobCode,e.title,e.jobFamily,e.employmentType,e.location,e.headcount,e.minimumEducation,e.exactMajors,e.acceptedGraduationYears,e.maximumAge,e.ageReferenceDate,e.minimumExperienceYears,e.requiredProfessionalTitles,e.duties,e.sourceUrl,e.evidenceIds,toFieldEvidence(e.fieldEvidence)); }
+
+    private static Map<JobField,List<UUID>> toFieldEvidence(Map<String,List<UUID>> stored) { var result=new EnumMap<JobField,List<UUID>>(JobField.class); stored.forEach((key,ids)->result.put(JobField.valueOf(key),List.copyOf(ids))); return result; }
 
     private JpaModels.CandidateProfileEntity toCandidateEntity(CandidateProfile value) { var e=new JpaModels.CandidateProfileEntity(); e.id=value.id(); e.displayName=value.displayName(); e.birthYear=value.birthDate().year(); e.birthMonth=value.birthDate().month(); e.birthDay=value.birthDate().day(); e.highestEducation=value.highestEducation(); e.majors=new LinkedHashSet<>(value.majors()); e.graduationYear=value.graduationYear(); e.experienceYears=value.experienceYears(); e.professionalTitles=new LinkedHashSet<>(value.professionalTitles()); e.preferredLocations=new ArrayList<>(value.preferredLocations()); e.acceptedEmploymentTypes=new LinkedHashSet<>(value.acceptedEmploymentTypes()); e.profileVersion=value.profileVersion(); return e; }
     private CandidateProfile toCandidate(JpaModels.CandidateProfileEntity e) { return new CandidateProfile(e.id,e.displayName,new PartialDate(e.birthYear,e.birthMonth,e.birthDay),e.highestEducation,e.majors,e.graduationYear,e.experienceYears,e.professionalTitles,e.preferredLocations,e.acceptedEmploymentTypes,e.profileVersion); }
@@ -100,15 +102,17 @@ public class PersistenceAdaptersConfiguration {
         columns.put("reason",result.reason());
         if (result.requirement()!=null) columns.put("requirement",result.requirement());
         if (result.candidateFact()!=null) columns.put("candidateFact",result.candidateFact());
-        if (result.evidenceId()!=null) columns.put("evidenceId",result.evidenceId().toString());
+        if (!result.evidenceIds().isEmpty()) columns.put("evidenceIds",result.evidenceIds().stream().map(UUID::toString).collect(java.util.stream.Collectors.joining(",")));
         return columns;
     }
+
+    private static List<UUID> parseEvidenceIds(String stored) { return stored==null||stored.isBlank()?List.of():java.util.Arrays.stream(stored.split(",")).map(UUID::fromString).toList(); }
 
     private EligibilityAssessment toAssessment(JpaModels.EligibilityAssessmentEntity e) {
         var results=new EnumMap<RuleType,RuleResult>(RuleType.class);
         e.ruleResults.forEach((key,value)->results.put(RuleType.valueOf(key),new RuleResult(
             CriterionStatus.valueOf(value.get("status")), value.get("requirement"), value.get("candidateFact"),
-            value.get("reason"), value.get("evidenceId")==null?null:UUID.fromString(value.get("evidenceId")))));
+            value.get("reason"), parseEvidenceIds(value.get("evidenceIds")))));
         return new EligibilityAssessment(e.id,e.candidateProfileId,e.jobPostingId,e.status,results,
             e.requiredConfirmations,e.evidenceIds,e.evaluatorVersion,e.assessedAt);
     }

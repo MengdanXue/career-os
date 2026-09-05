@@ -34,19 +34,20 @@ public record EligibilityAssessment(
 
     /**
      * 单条硬条件的判定。{@code requirement} 保留公告侧的要求原文，{@code candidateFact} 保留候选人侧
-     * 被拿来比对的事实，两者都可能为空（规则不适用或事实缺失）。{@code evidenceId} 让每条结论都能
-     * 单独回溯到来源，而不是只挂在整份公告上。
+     * 被拿来比对的事实，两者都可能为空（规则不适用或事实缺失）。{@code evidenceIds} 指向支撑这条
+     * 结论的证据片段——抽取阶段记下的片段级 ID，没有片段级证据时回落到公告级。
      */
     public record RuleResult(
         CriterionStatus status,
         String requirement,
         String candidateFact,
         String reason,
-        UUID evidenceId
+        List<UUID> evidenceIds
     ) {
         public RuleResult {
             Objects.requireNonNull(status, "status");
             if (reason == null || reason.isBlank()) throw new IllegalArgumentException("reason is required");
+            evidenceIds = evidenceIds == null ? List.of() : List.copyOf(evidenceIds);
         }
     }
 }

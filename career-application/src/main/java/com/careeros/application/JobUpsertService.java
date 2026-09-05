@@ -3,6 +3,8 @@ package com.careeros.application;
 import com.careeros.domain.DomainEnums.EducationLevel;
 import com.careeros.domain.DomainEnums.EmploymentType;
 import com.careeros.domain.DomainEnums.JobFamily;
+import com.careeros.domain.DomainEnums.JobField;
+import java.util.Map;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
@@ -33,7 +35,8 @@ public interface JobUpsertService {
         Set<String> requiredProfessionalTitles,
         String duties,
         String sourceUrl,
-        List<UUID> evidenceIds
+        List<UUID> evidenceIds,
+        Map<JobField, List<UUID>> fieldEvidence
     ) {
         public NormalizedJob {
             Objects.requireNonNull(recruitmentEventId, "recruitmentEventId");
@@ -49,6 +52,7 @@ public interface JobUpsertService {
             requiredProfessionalTitles = requiredProfessionalTitles == null ? Set.of() : Set.copyOf(requiredProfessionalTitles);
             requireText(sourceUrl, "sourceUrl");
             evidenceIds = evidenceIds == null ? List.of() : List.copyOf(evidenceIds);
+            fieldEvidence = fieldEvidence == null ? Map.of() : Map.copyOf(fieldEvidence);
         }
     }
 

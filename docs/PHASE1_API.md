@@ -54,6 +54,27 @@ Base path：`/api/v1`
 | `PROJECT_BASED` | 项目聘用 | 排除 |
 | `UNKNOWN` | 未知 | 按单位性质降级，绝不进 T1 |
 
+### 逐字段证据
+
+`jobPosting.fieldEvidence` 保留抽取阶段每个 `ExtractedFact` 记下的证据片段 ID，按字段索引：
+
+```json
+{"fieldEvidence":{"MINIMUM_EDUCATION":["<fragment-uuid>"],"MAXIMUM_AGE":["<fragment-uuid>"]}}
+```
+
+资格判定的每条 `ruleResults[*].evidenceIds` 由此指向公告里的**具体片段**而非整份公告。
+没有片段级证据的字段（例如 Excel 导入的行、或抽取时为 UNKNOWN 的字段）回落到公告级
+`evidenceIds`，不会变成"无证据"。
+
+| 规则 | 取证字段 |
+| --- | --- |
+| `AGE` | `MAXIMUM_AGE` |
+| `EDUCATION` | `MINIMUM_EDUCATION` |
+| `EXACT_MAJOR` | `MAJOR_TEXT` |
+| `GRADUATE_YEAR` | `ACCEPTED_GRADUATION_YEARS` |
+| `EXPERIENCE` | `MINIMUM_EXPERIENCE_YEARS` |
+| `PROFESSIONAL_TITLE` | 抽取模型暂无此字段，挂公告级 |
+
 ### 多维评分与策略等级
 
 `opportunity.scorecard` 按 §6.2 分别给出六个维度，**没有总分字段**——单一匹配分是该节

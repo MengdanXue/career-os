@@ -57,7 +57,8 @@ public class OfficialExcelImportService {
                             event.id,organization.id,organizationName,emptyToNull(code),title,jobFamily(title,duties),
                             employmentType(employmentText),location,Math.max(1,integer(headcountText,1)),education(educationText),
                             splitMajors(majorText),graduationYears(applicantText),ageLimit(ageText),command.ageReferenceDate(),
-                            experienceYears(experienceText),new LinkedHashSet<>(),duties,command.sourceUrl(),List.of());
+                            experienceYears(experienceText),new LinkedHashSet<>(),duties,command.sourceUrl(),List.of(),
+                            java.util.Map.of()); // Excel 行没有片段级定位，逐字段证据留空
                         String stableKey=upserts.stableKey(normalized);
                         if(!seen.add(stableKey)) throw new IllegalArgumentException("同一文件出现重复稳定岗位键");
                         normalizedJobs.add(normalized);

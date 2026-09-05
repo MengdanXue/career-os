@@ -7,6 +7,10 @@ import com.careeros.application.ExtractionExceptions;
 import com.careeros.application.ExtractionPorts.VerifiedProposalWriter;
 import com.careeros.application.JobUpsertService;
 import com.careeros.domain.ExtractedFact;
+import com.careeros.domain.DomainEnums.JobField;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import com.careeros.domain.RecruitmentExtractionProposal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -174,10 +178,34 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                 splitMajors(valueOr(job.majorText(), null)), valueOr(job.acceptedGraduationYears(), Set.of()),
                 valueOr(job.maximumAge(), null), valueOr(proposal.recruitmentEvent().applicationEndsOn(), null),
                 valueOr(job.minimumExperienceYears(), null), Set.of(), job.duties(), proposal.source().sourceUrl(),
-                evidenceIds))
+                evidenceIds, fieldEvidence(job)))
             .toList();
         return upsert(new JobUpsertBatch(
             event.id, proposal.source().sourceUrl(), normalized, false, List.of()));
+    }
+
+    /**
+     * 把抽取阶段每个 {@link ExtractedFact} 记下的证据片段 ID 带进岗位模型。此前归一化只保留公告级
+     * evidenceIds，片段级定位在这一步丢失，资格结论便无法指向公告里的具体一句话。
+     */
+    private static Map<JobField, List<UUID>> fieldEvidence(RecruitmentExtractionProposal.JobProposal job) {
+        var evidence = new EnumMap<JobField, List<UUID>>(JobField.class);
+        putFragments(evidence, JobField.TITLE, job.title());
+        putFragments(evidence, JobField.HEADCOUNT, job.headcount());
+        putFragments(evidence, JobField.EMPLOYMENT_TYPE, job.employmentType());
+        putFragments(evidence, JobField.MINIMUM_EDUCATION, job.minimumEducation());
+        putFragments(evidence, JobField.DEGREE, job.degree());
+        putFragments(evidence, JobField.MAJOR_TEXT, job.majorText());
+        putFragments(evidence, JobField.MAXIMUM_AGE, job.maximumAge());
+        putFragments(evidence, JobField.ACCEPTED_GRADUATION_YEARS, job.acceptedGraduationYears());
+        putFragments(evidence, JobField.MINIMUM_EXPERIENCE_YEARS, job.minimumExperienceYears());
+        return evidence;
+    }
+
+    private static void putFragments(Map<JobField, List<UUID>> target, JobField field, ExtractedFact<?> fact) {
+        if (fact != null && !fact.evidenceFragmentIds().isEmpty()) {
+            target.put(field, List.copyOf(fact.evidenceFragmentIds()));
+        }
     }
 
     private JpaModels.OrganizationEntity createOrganization(RecruitmentExtractionProposal proposal) {
@@ -249,6 +277,8 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         target.duties = source.duties();
         target.sourceUrl = source.sourceUrl();
         target.evidenceIds = new ArrayList<>(source.evidenceIds());
+        target.fieldEvidence = new LinkedHashMap<>();
+        source.fieldEvidence().forEach((field, ids) -> target.fieldEvidence.put(field.name(), new ArrayList<>(ids)));
     }
 
     private static void rejectInterpretedFacts(RecruitmentExtractionProposal proposal) {

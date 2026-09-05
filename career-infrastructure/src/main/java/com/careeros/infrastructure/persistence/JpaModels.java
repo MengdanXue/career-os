@@ -62,6 +62,7 @@ public final class JpaModels {
         String duties;
         @Column(name = "source_url", nullable = false) String sourceUrl;
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "evidence_ids", columnDefinition = "jsonb", nullable = false) List<UUID> evidenceIds = new ArrayList<>();
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "field_evidence", columnDefinition = "jsonb", nullable = false) Map<String, List<UUID>> fieldEvidence = new LinkedHashMap<>();
         @Column(name = "stable_job_key", unique = true) String stableJobKey;
         @Column(name = "content_fingerprint", length = 64) String contentFingerprint;
         @Column(nullable = false) boolean active = true;

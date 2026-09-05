@@ -40,5 +40,13 @@ public final class DomainEnums {
         CONFLICTING_SOURCES, PARSER_FAILURE, LOW_TEXT_QUALITY,
         SCHEMA_INVALID, RESTRICTIVE_FACT_FROM_LLM
     }
+    /**
+     * 岗位上可以逐字段追溯到证据片段的硬条件字段。产品需求 §10.6 要求"每个资格结论、
+     * 用工身份和关键推荐都有可定位证据"——公告级证据不够，必须落到片段。
+     */
+    public enum JobField {
+        TITLE, HEADCOUNT, EMPLOYMENT_TYPE, MINIMUM_EDUCATION, DEGREE, MAJOR_TEXT,
+        MAXIMUM_AGE, ACCEPTED_GRADUATION_YEARS, MINIMUM_EXPERIENCE_YEARS
+    }
     public enum LocatorType { HTML, PDF }
 }

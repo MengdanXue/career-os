@@ -12,6 +12,7 @@ import com.careeros.application.JobUpsertService.NormalizedJob;
 import com.careeros.application.ExtractionExceptions;
 import com.careeros.domain.ExtractedFact;
 import com.careeros.domain.RecruitmentExtractionProposal;
+import com.careeros.domain.DomainEnums.JobField;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -67,7 +68,7 @@ class DefaultJobUpsertServiceTest {
             excel.headcount(), excel.minimumEducation(), excel.exactMajors(),
             excel.acceptedGraduationYears(), excel.maximumAge(), excel.ageReferenceDate(),
             excel.minimumExperienceYears(), excel.requiredProfessionalTitles(), excel.duties(),
-            excel.sourceUrl(), excel.evidenceIds());
+            excel.sourceUrl(), excel.evidenceIds(), excel.fieldEvidence());
 
         String expected = sha256(excel.sourceUrl() + "|杭州市测试信息中心|a01");
         assertThat(service.stableKey(excel)).isEqualTo(expected);
@@ -110,6 +111,27 @@ class DefaultJobUpsertServiceTest {
         assertThat(first.inserted()).isEqualTo(1);
         assertThat(repeat.unchanged()).isEqualTo(1);
         assertThat(stored).containsKey(service.stableKey(job(2)));
+    }
+
+    /**
+     * §10.6：抽取阶段每个 ExtractedFact 记下的片段 ID 必须一路带到岗位上。归一化曾在这里
+     * 丢掉片段级定位，导致资格结论只能挂公告级证据。
+     */
+    @Test
+    void verifiedProposalCarriesPerFieldEvidenceIntoTheStoredJob() {
+        stubExistingOrganizationAndEvent();
+        UUID fragmentId = UUID.fromString("30000000-0000-0000-0000-000000000004");
+
+        service.write(proposal(), job(2).evidenceIds());
+
+        var storedJob = stored.get(service.stableKey(job(2)));
+        assertThat(storedJob.fieldEvidence)
+            .containsEntry(JobField.MINIMUM_EDUCATION.name(), List.of(fragmentId))
+            .containsEntry(JobField.EMPLOYMENT_TYPE.name(), List.of(fragmentId))
+            .containsEntry(JobField.MAJOR_TEXT.name(), List.of(fragmentId))
+            .containsEntry(JobField.MAXIMUM_AGE.name(), List.of(fragmentId));
+        // degree 在这份提案里是 unknown，没有片段，不应凭空出现
+        assertThat(storedJob.fieldEvidence).doesNotContainKey(JobField.DEGREE.name());
     }
 
     @Test
@@ -189,7 +211,7 @@ class DefaultJobUpsertServiceTest {
             EducationLevel.BACHELOR, new LinkedHashSet<>(Set.of("计算机科学与技术")),
             new LinkedHashSet<>(Set.of(2026)), 35, LocalDate.of(2026, 8, 20), 2,
             new LinkedHashSet<>(), "系统建设与运维", "https://example.gov.cn/notices/2026-1",
-            List.of(UUID.fromString("30000000-0000-0000-0000-000000000003")));
+            List.of(UUID.fromString("30000000-0000-0000-0000-000000000003")), Map.of());
     }
 
     private static RecruitmentExtractionProposal proposal() {
