@@ -54,6 +54,43 @@ Base path：`/api/v1`
 | `PROJECT_BASED` | 项目聘用 | 排除 |
 | `UNKNOWN` | 未知 | 按单位性质降级，绝不进 T1 |
 
+### 多维评分与策略等级
+
+`opportunity.scorecard` 按 §6.2 分别给出六个维度，**没有总分字段**——单一匹配分是该节
+明令禁止的。维度之上只输出一个由规则推导的 `strategyGrade`。
+
+```json
+{"scorecard":{
+  "strategyGrade":"MUST_TRACK",
+  "gradeRationale":"事业编岗位且岗位内容匹配度达标，列入主攻",
+  "dimensions":{
+    "FIT":{"value":100,"basis":"ESTIMATED","rationale":"专业精确命中岗位目录；…"},
+    "STABILITY":{"value":95,"basis":"ESTIMATED","rationale":"用工身份 ESTABLISHMENT…"},
+    "FUTURE":{"basis":"INSUFFICIENT_DATA","rationale":"缺少跨年度招聘历史…"}
+  }}}
+```
+
+- `basis` 为 `MEASURED`／`ESTIMATED`／`INSUFFICIENT_DATA`。§6.2 要求估计值自报为估计。
+- `INSUFFICIENT_DATA` 的维度**不带 value**，应显示为"数据不足"而非 0 分。
+- `PREPARATION_COST` 是成本：值越高代表准备成本越高，方向与其余五维相反。
+- 当前 `FUTURE` 与 `PREPARATION_COST` 恒为数据不足——跨年度历史、竞争观测、考试形式
+  与报名窗口尚未建模。
+
+`strategyGrade` 由规则推导，不是分数阈值加权，顺序 fail-closed：
+
+| 条件 | 等级 |
+| --- | --- |
+| 资格 `INELIGIBLE` 或 `CONFLICTING_EVIDENCE` | `REJECT` |
+| 分池 `EXCLUDED` | `REJECT` |
+| 资格 `NEEDS_CONFIRMATION` 或 `CONDITIONAL` | `VERIFY_FIRST` |
+| 分池证据不足或 `UNKNOWN` | `VERIFY_FIRST` |
+| 资格通过 + T1 + `FIT` ≥ 60 | `MUST_TRACK` |
+| 资格通过 + T1 且 `FIT` < 60 | `APPLY` |
+| 资格通过 + T2 | `APPLY` |
+| 资格通过 + T3 | `BACKUP` |
+
+分池好不会自动升级：T1 但匹配度不达标仍是 `APPLY`。
+
 ## Excel 增量导入
 
 `POST /imports/excel`，内容类型为 `multipart/form-data`。

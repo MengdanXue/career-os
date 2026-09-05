@@ -3,6 +3,7 @@ package com.careeros;
 import com.careeros.application.*;
 import com.careeros.application.ExtractionPorts.*;
 import com.careeros.domain.EligibilityEvaluator;
+import com.careeros.domain.OpportunityScorer;
 import com.careeros.domain.OpportunityTierClassifier;
 import com.careeros.domain.ReviewPolicy;
 import com.careeros.infrastructure.artifact.FileSystemArtifactStore;
@@ -19,7 +20,8 @@ class ApplicationConfiguration {
     @Bean Clock clock() { return Clock.systemUTC(); }
     @Bean EligibilityEvaluator eligibilityEvaluator() { return new EligibilityEvaluator(); }
     @Bean OpportunityTierClassifier opportunityTierClassifier() { return new OpportunityTierClassifier(); }
-    @Bean CareerDecisionService careerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.Organizations organizations, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator, OpportunityTierClassifier tierClassifier) { return new CareerDecisionService(candidates,jobs,organizations,assessments,opportunities,evaluator,tierClassifier); }
+    @Bean OpportunityScorer opportunityScorer() { return new OpportunityScorer(); }
+    @Bean CareerDecisionService careerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.Organizations organizations, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator, OpportunityTierClassifier tierClassifier, OpportunityScorer scorer) { return new CareerDecisionService(candidates,jobs,organizations,assessments,opportunities,evaluator,tierClassifier,scorer); }
     @Bean ArtifactStore artifactStore(@Value("${career-os.artifacts.root:${user.dir}/var/artifacts}") String root) { return new FileSystemArtifactStore(Path.of(root)); }
     @Bean DocumentParser documentParser() { return new MediaTypeDocumentParser(List.of(new JsoupDocumentParser(),new PdfBoxDocumentParser())); }
     @Bean DocumentEnrichmentPort documentEnrichment() { return new NoOpDocumentEnrichment(); }

@@ -258,7 +258,12 @@ class CareerOsApplicationTest {
             """.formatted(event,organization))).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("id").asText();
         mvc.perform(post("/api/v1/eligibility-assessments").contentType(MediaType.APPLICATION_JSON).content("""
             {"candidateId":"01992f09-0000-7000-8000-000000000001","jobId":"%s"}
-            """.formatted(job))).andExpect(status().isOk()).andExpect(jsonPath("$.assessment.status").value("ELIGIBLE")).andExpect(jsonPath("$.opportunity.matchScore").value(100));
+            """.formatted(job))).andExpect(status().isOk()).andExpect(jsonPath("$.assessment.status").value("ELIGIBLE"))
+            .andExpect(jsonPath("$.tier.tier").value("T1_ESTABLISHMENT_TARGET"))
+            .andExpect(jsonPath("$.opportunity.scorecard.strategyGrade").value("MUST_TRACK"))
+            .andExpect(jsonPath("$.opportunity.scorecard.dimensions.FUTURE.basis").value("INSUFFICIENT_DATA"))
+            .andExpect(jsonPath("$.opportunity.scorecard.dimensions.FUTURE.value").doesNotExist())
+            .andExpect(jsonPath("$.opportunity.scorecard.dimensions.STABILITY.value").isNumber());
         mvc.perform(post("/api/v1/eligibility-assessments").contentType(MediaType.APPLICATION_JSON).content("""
             {"candidateId":"01992f09-0000-7000-8000-000000000001","jobId":"%s"}
             """.formatted(job))).andExpect(status().isOk());

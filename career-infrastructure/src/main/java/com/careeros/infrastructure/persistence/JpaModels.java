@@ -130,7 +130,8 @@ public final class JpaModels {
         @Column(name = "job_posting_id", nullable = false) UUID jobPostingId;
         @Column(name = "eligibility_assessment_id") UUID eligibilityAssessmentId;
         @Enumerated(EnumType.STRING) @Column(nullable = false) OpportunityStatus status;
-        @Column(name = "match_score", nullable = false) int matchScore;
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "scorecard", columnDefinition = "jsonb", nullable = false) Map<String, Object> scorecard = new LinkedHashMap<>();
+        @Enumerated(EnumType.STRING) @Column(name = "strategy_grade", nullable = false) StrategyGrade strategyGrade;
         @Column(name = "decision_note") String decisionNote;
         @Column(name = "created_at", nullable = false) Instant createdAt = Instant.now();
         @Column(name = "updated_at", nullable = false) Instant updatedAt = Instant.now();

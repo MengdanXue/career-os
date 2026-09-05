@@ -113,6 +113,23 @@ public class PersistenceAdaptersConfiguration {
             e.requiredConfirmations,e.evidenceIds,e.evaluatorVersion,e.assessedAt);
     }
 
-    private JpaModels.OpportunityEntity toOpportunityEntity(Opportunity value) { var e=new JpaModels.OpportunityEntity(); e.id=value.id(); e.candidateProfileId=value.candidateProfileId(); e.jobPostingId=value.jobPostingId(); e.eligibilityAssessmentId=value.eligibilityAssessmentId(); e.status=value.status(); e.matchScore=value.matchScore(); e.decisionNote=value.decisionNote(); e.createdAt=value.createdAt(); e.updatedAt=value.updatedAt(); return e; }
-    private Opportunity toOpportunity(JpaModels.OpportunityEntity e) { return new Opportunity(e.id,e.candidateProfileId,e.jobPostingId,e.eligibilityAssessmentId,e.status,e.matchScore,e.decisionNote,e.createdAt,e.updatedAt); }
+    /** 六维评分作为一个整体存进 JSONB：拆成列会让新增维度变成一次 schema 迁移。 */
+    private static final com.fasterxml.jackson.databind.ObjectMapper SCORECARD_JSON =
+        new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+
+    private JpaModels.OpportunityEntity toOpportunityEntity(Opportunity value) {
+        var e=new JpaModels.OpportunityEntity();
+        e.id=value.id(); e.candidateProfileId=value.candidateProfileId(); e.jobPostingId=value.jobPostingId();
+        e.eligibilityAssessmentId=value.eligibilityAssessmentId(); e.status=value.status();
+        e.scorecard=SCORECARD_JSON.convertValue(value.scorecard(), new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {});
+        e.strategyGrade=value.scorecard().strategyGrade();
+        e.decisionNote=value.decisionNote(); e.createdAt=value.createdAt(); e.updatedAt=value.updatedAt();
+        return e;
+    }
+
+    private Opportunity toOpportunity(JpaModels.OpportunityEntity e) {
+        return new Opportunity(e.id,e.candidateProfileId,e.jobPostingId,e.eligibilityAssessmentId,e.status,
+            SCORECARD_JSON.convertValue(e.scorecard, OpportunityScorecard.class),
+            e.decisionNote,e.createdAt,e.updatedAt);
+    }
 }

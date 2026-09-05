@@ -56,7 +56,7 @@ class CareerMvpController {
     @GetMapping("/opportunities") List<Opportunity> opportunities() { return opportunities.findAll(); }
     @PatchMapping("/opportunities/{id}/status") Opportunity updateOpportunityStatus(@PathVariable UUID id,@RequestBody OpportunityStatusRequest request) {
         var current=required(opportunities.findById(id),"Opportunity",id);
-        return opportunities.save(new Opportunity(current.id(),current.candidateProfileId(),current.jobPostingId(),current.eligibilityAssessmentId(),request.status(),current.matchScore(),request.decisionNote()==null?current.decisionNote():request.decisionNote(),current.createdAt(),Instant.now()));
+        return opportunities.save(new Opportunity(current.id(),current.candidateProfileId(),current.jobPostingId(),current.eligibilityAssessmentId(),request.status(),current.scorecard(),request.decisionNote()==null?current.decisionNote():request.decisionNote(),current.createdAt(),Instant.now()));
     }
 
     @PostMapping(value="/imports/excel",consumes="multipart/form-data")

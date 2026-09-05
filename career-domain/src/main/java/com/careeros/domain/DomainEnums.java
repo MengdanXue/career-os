@@ -21,6 +21,12 @@ public final class DomainEnums {
     public enum CriterionStatus { PASS, FAIL, CONDITIONAL, UNKNOWN, NOT_APPLICABLE }
     /** 产品需求 §3：不同用工性质必须分池，不能只给一个"半体制"标签。 */
     public enum OpportunityTier { T1_ESTABLISHMENT_TARGET, T2_IDENTITY_REVIEW, T3_STABLE_SOE_BACKUP, EXCLUDED, UNKNOWN }
+    /** 产品需求 §6.2 的六个维度，分别计算、分别呈现，禁止合成一个匹配分。 */
+    public enum ScoreDimension { FIT, CHANCE, STABILITY, GROWTH, FUTURE, PREPARATION_COST }
+    /** 每一维的分数是怎么来的。§6.2 要求估计值必须自报为估计，且数据不足时不得编分。 */
+    public enum ScoreBasis { MEASURED, ESTIMATED, INSUFFICIENT_DATA }
+    /** §6.2：六维之上只输出策略等级，由规则推导而非阈值加权。 */
+    public enum StrategyGrade { MUST_TRACK, APPLY, VERIFY_FIRST, BACKUP, REJECT }
     public enum EvidenceType { OFFICIAL_NOTICE, OFFICIAL_ATTACHMENT, ORGANIZATION_PAGE, POLICY, MANUAL_NOTE }
     public enum OpportunityStatus { NEW, REVIEWING, SHORTLISTED, APPLIED, CLOSED, REJECTED, ARCHIVED }
     public enum ExtractionSourceType { HTML, PDF }
