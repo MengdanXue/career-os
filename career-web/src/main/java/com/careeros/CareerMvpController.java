@@ -24,9 +24,10 @@ class CareerMvpController {
     private final CareerDecisionService decisions;
     private final com.careeros.application.OpportunityHistoryService history;
     private final OfficialExcelImportService excelImports;
+    private final com.careeros.application.DailyDigestService digests;
 
-    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CareerDecisionService decisions, com.careeros.application.OpportunityHistoryService history, OfficialExcelImportService excelImports) {
-        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.decisions=decisions; this.history=history; this.excelImports=excelImports;
+    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CareerDecisionService decisions, com.careeros.application.OpportunityHistoryService history, OfficialExcelImportService excelImports, com.careeros.application.DailyDigestService digests) {
+        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.decisions=decisions; this.history=history; this.excelImports=excelImports; this.digests=digests;
     }
 
     @GetMapping("/organizations") List<Organization> organizations() { return organizations.findAll(); }
@@ -63,7 +64,7 @@ class CareerMvpController {
     }
 
     @PostMapping(value="/imports/excel",consumes="multipart/form-data")
-    OfficialExcelImportService.ImportResult importExcel(
+    ImportWithDigest importExcel(
         @RequestPart("file") MultipartFile file,
         @RequestParam String announcementTitle,
         @RequestParam String sourceUrl,
@@ -74,7 +75,8 @@ class CareerMvpController {
         @RequestParam(defaultValue="PUBLIC_INSTITUTION") EventType eventType,
         @RequestParam(required=false) String defaultOrganizationName
     ) throws Exception {
-        return excelImports.importWorkbook(file.getInputStream(),new OfficialExcelImportService.ImportCommand(announcementTitle,sourceUrl,recruitmentYear,publishedOn,ageReferenceDate,defaultLocation,eventType,defaultOrganizationName));
+        var result=excelImports.importWorkbook(file.getInputStream(),new OfficialExcelImportService.ImportCommand(announcementTitle,sourceUrl,recruitmentYear,publishedOn,ageReferenceDate,defaultLocation,eventType,defaultOrganizationName));
+        return new ImportWithDigest(result,digests.digestFor(result.upsert(),LocalDate.now()));
     }
 
     private void validateReferences(JobRequest request) { required(events.findById(request.recruitmentEventId()),"RecruitmentEvent",request.recruitmentEventId()); required(organizations.findById(request.organizationId()),"Organization",request.organizationId()); }
@@ -94,4 +96,6 @@ class CareerMvpController {
     }
     record AssessmentRequest(UUID candidateId,UUID jobId) {}
     record OpportunityStatusRequest(OpportunityStatus status,String decisionNote) {}
+    /** 导入结果与当天摘要一起返回：§8 要求采集之后立刻只报值得关注的变化。 */
+    record ImportWithDigest(OfficialExcelImportService.ImportResult result,com.careeros.domain.DailyDigest digest) {}
 }

@@ -70,7 +70,7 @@ public class OfficialExcelImportService {
         var result=upserts.upsert(new JobUpsertBatch(
             event.id,command.sourceUrl(),normalizedJobs,true,
             errors.stream().map(error->error.sheet()+":"+error.row()+":"+error.message()).toList()));
-        return new ImportResult(event.id,result.inserted(),result.updated(),result.unchanged(),result.deactivated(),List.copyOf(errors));
+        return new ImportResult(event.id,result.inserted(),result.updated(),result.unchanged(),result.deactivated(),List.copyOf(errors),result);
     }
 
     private JpaModels.RecruitmentEventEntity createEvent(ImportCommand c){var e=new JpaModels.RecruitmentEventEntity();e.id=UUID.randomUUID();e.title=c.announcementTitle();e.recruitmentYear=c.recruitmentYear();e.eventType=c.eventType();e.publishedOn=c.publishedOn();e.sourceUrl=c.sourceUrl();e.defaultEmploymentType=EmploymentType.UNKNOWN;e.evidenceIds=new ArrayList<>();return events.save(e);}
@@ -98,5 +98,6 @@ public class OfficialExcelImportService {
         public ImportCommand{if(blank(announcementTitle)||blank(sourceUrl))throw new IllegalArgumentException("announcementTitle and sourceUrl are required");if(eventType==null)eventType=EventType.PUBLIC_INSTITUTION;}
     }
     public record RowError(String sheet,int row,String message){}
-    public record ImportResult(UUID recruitmentEventId,int inserted,int updated,int unchanged,int deactivated,List<RowError> errors){}
+    /** 带上逐岗变化，调用方才能据此生成每日摘要；只有计数的话摘要无从知道"哪几条"变了。 */
+    public record ImportResult(UUID recruitmentEventId,int inserted,int updated,int unchanged,int deactivated,List<RowError> errors,JobUpsertService.JobUpsertResult upsert){}
 }

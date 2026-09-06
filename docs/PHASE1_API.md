@@ -75,6 +75,33 @@ Base path：`/api/v1`
 | `EXPERIENCE` | `MINIMUM_EXPERIENCE_YEARS` |
 | `PROFESSIONAL_TITLE` | 抽取模型暂无此字段，挂公告级 |
 
+### 每日变化摘要
+
+Excel 增量导入的响应现在带上当天摘要：`{"result":{…},"digest":{…}}`。
+
+```json
+{"digest":{"reportDate":"2026-09-06","deadlineWindowDays":7,"suppressedUnchangedCount":97,
+  "entries":[{"reason":"NEW","title":"信息中心技术岗","daysUntilDeadline":2,
+              "strategyGrade":"MUST_TRACK","note":"本次采集新增岗位，报名还剩 2 天"}]}}
+```
+
+§10.7 只允许四个推送理由，未变化的岗位**不会**出现在 `entries` 里：
+
+| `reason` | 触发条件 |
+| --- | --- |
+| `NEW` | 本次采集新增 |
+| `UPDATED` | 内容指纹变化，硬条件需重新确认 |
+| `DEACTIVATED` | 在最新完整快照中消失 |
+| `DEADLINE_APPROACHING` | 内容未变，但报名剩余天数 ≤ `deadlineWindowDays`（默认 7） |
+
+- 每个岗位最多出现一次；变化本身优先于截止提醒，但**每条都带 `daysUntilDeadline`**，
+  读者不会因为被归类成"新增"而漏掉紧迫性。
+- 已过截止日或日期未知的岗位不产生提醒，不会推"还剩 -3 天"。
+- `suppressedUnchangedCount` 说明今天扫过但没什么可说的条数——它是个计数，不是列表。
+
+`JobUpsertResult.changes` 逐岗记录本次变化类型（含 `UNCHANGED`）。过滤是摘要的职责，
+入库阶段如实产出全部变化。
+
 ### 跨年度岗位族与关注清单
 
 | 用途 | 端点 |

@@ -3,6 +3,7 @@ package com.careeros;
 import com.careeros.application.*;
 import com.careeros.application.ExtractionPorts.*;
 import com.careeros.domain.EligibilityEvaluator;
+import com.careeros.domain.DailyDigestBuilder;
 import com.careeros.domain.JobLineageBuilder;
 import com.careeros.domain.OpportunityForecaster;
 import com.careeros.domain.OpportunityScorer;
@@ -24,6 +25,8 @@ class ApplicationConfiguration {
     @Bean OpportunityTierClassifier opportunityTierClassifier() { return new OpportunityTierClassifier(); }
     @Bean OpportunityScorer opportunityScorer() { return new OpportunityScorer(); }
     @Bean JobLineageBuilder jobLineageBuilder() { return new JobLineageBuilder(); }
+    @Bean DailyDigestBuilder dailyDigestBuilder() { return new DailyDigestBuilder(); }
+    @Bean DailyDigestService dailyDigestService(RepositoryPorts.JobPostings jobs, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.Organizations organizations, RepositoryPorts.Opportunities opportunities, DailyDigestBuilder builder) { return new DailyDigestService(jobs,events,organizations,opportunities,builder); }
     @Bean OpportunityForecaster opportunityForecaster() { return new OpportunityForecaster(); }
     @Bean OpportunityHistoryService opportunityHistoryService(RepositoryPorts.JobPostings jobs, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.Organizations organizations, JobLineageBuilder lineageBuilder, OpportunityForecaster forecaster) { return new OpportunityHistoryService(jobs,events,organizations,lineageBuilder,forecaster); }
     @Bean CareerDecisionService careerDecisionService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.JobPostings jobs, RepositoryPorts.Organizations organizations, RepositoryPorts.EligibilityAssessments assessments, RepositoryPorts.Opportunities opportunities, EligibilityEvaluator evaluator, OpportunityTierClassifier tierClassifier, OpportunityScorer scorer, OpportunityHistoryService history) { return new CareerDecisionService(candidates,jobs,organizations,assessments,opportunities,evaluator,tierClassifier,scorer,history); }

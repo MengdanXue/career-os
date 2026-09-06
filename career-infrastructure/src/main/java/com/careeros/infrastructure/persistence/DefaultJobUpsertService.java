@@ -7,6 +7,7 @@ import com.careeros.application.ExtractionExceptions;
 import com.careeros.application.ExtractionPorts.VerifiedProposalWriter;
 import com.careeros.application.JobUpsertService;
 import com.careeros.domain.ExtractedFact;
+import com.careeros.domain.DomainEnums.JobChangeKind;
 import com.careeros.domain.DomainEnums.JobField;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -83,6 +84,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         Instant now = clock.instant();
         Set<String> seen = new HashSet<>();
         List<UUID> ids = new ArrayList<>();
+        List<JobChange> changes = new ArrayList<>();
 
         for (NormalizedJob job : batch.jobs()) {
             if (!batch.recruitmentEventId().equals(job.recruitmentEventId())) {
@@ -101,6 +103,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                 entity.lastSeenAt = now;
                 jobs.save(entity);
                 ids.add(entity.id);
+                changes.add(new JobChange(entity.id, JobChangeKind.UNCHANGED));
                 unchanged++;
                 continue;
             }
@@ -113,6 +116,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
             } else {
                 updated++;
             }
+            JobChangeKind kind = existing.isEmpty() ? JobChangeKind.NEW : JobChangeKind.UPDATED;
             copy(job, entity);
             entity.stableJobKey = key;
             entity.contentFingerprint = fingerprint;
@@ -120,6 +124,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
             entity.lastSeenAt = now;
             jobs.save(entity);
             ids.add(entity.id);
+            changes.add(new JobChange(entity.id, kind));
         }
 
         if (batch.completeSnapshot() && batch.validationErrors().isEmpty()) {
@@ -128,11 +133,12 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                     existing.active = false;
                     existing.lastSeenAt = now;
                     jobs.save(existing);
+                    changes.add(new JobChange(existing.id, JobChangeKind.DEACTIVATED));
                     deactivated++;
                 }
             }
         }
-        return new JobUpsertResult(inserted, updated, unchanged, deactivated, ids);
+        return new JobUpsertResult(inserted, updated, unchanged, deactivated, ids, changes);
     }
 
     @Override

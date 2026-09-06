@@ -12,6 +12,7 @@ import com.careeros.application.JobUpsertService.NormalizedJob;
 import com.careeros.application.ExtractionExceptions;
 import com.careeros.domain.ExtractedFact;
 import com.careeros.domain.RecruitmentExtractionProposal;
+import com.careeros.domain.DomainEnums.JobChangeKind;
 import com.careeros.domain.DomainEnums.JobField;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -91,6 +92,31 @@ class DefaultJobUpsertServiceTest {
         assertThat(service.upsert(batch(List.of(), true, List.of("第 3 行解析失败"))).deactivated()).isZero();
         assertThat(service.upsert(batch(List.of(), true, List.of())).deactivated()).isEqualTo(1);
         assertThat(stored.values()).allMatch(entity -> !entity.active);
+    }
+
+    /**
+     * 计数器只回答"变了多少条"，每日摘要要回答"哪几条变了"。逐岗变化必须与计数一致，
+     * 且 UNCHANGED 也要如实产出——把它滤掉是摘要的职责，不是这里悄悄丢弃。
+     */
+    @Test
+    void everyUpsertReportsThePerJobChangeKind() {
+        var first = service.upsert(batch(List.of(job(2)), true, List.of()));
+        assertThat(first.changes()).singleElement()
+            .satisfies(change -> assertThat(change.kind()).isEqualTo(JobChangeKind.NEW));
+
+        var repeat = service.upsert(batch(List.of(job(2)), true, List.of()));
+        assertThat(repeat.changes()).singleElement()
+            .satisfies(change -> assertThat(change.kind()).isEqualTo(JobChangeKind.UNCHANGED));
+
+        var changed = service.upsert(batch(List.of(job(3)), true, List.of()));
+        assertThat(changed.changes()).singleElement()
+            .satisfies(change -> assertThat(change.kind()).isEqualTo(JobChangeKind.UPDATED));
+
+        var deactivated = service.upsert(batch(List.of(), true, List.of()));
+        assertThat(deactivated.changes()).singleElement()
+            .satisfies(change -> assertThat(change.kind()).isEqualTo(JobChangeKind.DEACTIVATED));
+        assertThat(deactivated.changes().getFirst().jobPostingId())
+            .isEqualTo(first.changes().getFirst().jobPostingId());
     }
 
     @Test
