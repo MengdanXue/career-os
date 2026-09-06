@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # Testcontainers 需要 Docker 守护进程。ubuntu-latest 自带，但显式断言一次：
+      # 缺了 Docker 时集成测试会静默跳过，构建照样绿——那正是本项目此前的盲区。
+      - name: Assert Docker is available
+        run: docker info > /dev/null
+
+      - name: Build and test
+        run: mvn -B --no-transfer-progress verify
+
+      # 集成测试跳过就等于没跑。这些用例覆盖 Flyway 迁移、乐观锁与并发行为，
+      # 是最容易出问题也最容易无声消失的部分。
+      #
+      # 这里锁定每个套件"已知的、有正当理由的"跳过数——超出即失败。目的是让**新增的**
+      # 静默跳过立刻暴露，而不是等某天发现一整个套件早就不跑了。
+      # CareerOsApplicationTest 允许 2 个：两个 Excel 导入用例依赖尚未提交的官方样本
+      # 工作簿（03-hz-unified-2025-plan.xls / 06-hdu-2026-second-plan.xlsx）。
+      - name: Assert the integration suites actually ran
+        run: |
+          set -euo pipefail
+          check() {
+            suite="$1"; allowed="$2"
+            report="$(find . -path "*/surefire-reports/TEST-${suite}.xml" -print -quit)"
+            if [ -z "$report" ]; then
+              echo "::error::missing surefire report for ${suite}"
+              exit 1
+            fi
+            tests="$(sed -n 's/.*<testsuite[^>]*tests="\([0-9]*\)".*/\1/p' "$report" | head -1)"
+            skipped="$(sed -n 's/.*<testsuite[^>]*skipped="\([0-9]*\)".*/\1/p' "$report" | head -1)"
+            skipped="${skipped:-0}"
+            echo "${suite}: ${tests} tests, ${skipped} skipped (allowed ${allowed})"
+            if [ "${skipped}" -gt "${allowed}" ]; then
+              echo "::error::${suite} skipped ${skipped} tests, only ${allowed} are expected"
+              exit 1
+            fi
+          }
+          check com.careeros.infrastructure.MigrationIntegrationTest 0
+          check com.careeros.infrastructure.extraction.ExtractionPersistenceIntegrationTest 0
+          check com.careeros.infrastructure.persistence.EventSourceConcurrencyIntegrationTest 0
+          check com.careeros.ExtractionEndToEndTest 0
+          check com.careeros.CareerOsApplicationTest 2
+
+      # 测试不该往工作区里写文件。本项目的构件存储默认落在 ${user.dir}/var/artifacts，
+      # 很容易在测试里污染仓库。
+      - name: Assert tests leave a clean checkout
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::tests modified the working tree"
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '**/surefire-reports/*.xml'
+          retention-days: 7
+          if-no-files-found: warn

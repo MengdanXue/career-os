@@ -161,9 +161,23 @@ class ExtractionEndToEndTest {
         return json.readTree(result.getResponse().getContentAsByteArray());
     }
 
+    /** 仓库内已提交的回归 fixture 目录，相对仓库根。 */
+    private static final String COMMITTED_FIXTURES =
+        "career-infrastructure/src/test/resources/fixtures/extraction";
+
+    /**
+     * 先找仓库内已提交的同名 fixture，再回落到工作区外的原始采集目录。
+     *
+     * <p>08/09/10 三份样本其实早就随仓库提交了，只是路径与这里写的
+     * {@code output/career-os-samples/raw/...} 不同，导致这三个端到端用例在任何
+     * 只 clone 了仓库的环境里都静默跳过——包括 CI。
+     */
     private Path findWorkspaceFile(String relative) {
+        String fileName = Path.of(relative).getFileName().toString();
         Path current = Path.of("").toAbsolutePath();
         for (int level = 0; level < 5 && current != null; level++, current = current.getParent()) {
+            Path committed = current.resolve(COMMITTED_FIXTURES).resolve(fileName);
+            if (Files.exists(committed)) return committed;
             Path candidate = current.resolve(relative);
             if (Files.exists(candidate)) return candidate;
         }
