@@ -9,6 +9,7 @@ import com.careeros.domain.acquisition.SourceCrawlRun;
 import com.careeros.domain.acquisition.SourceYearCoverage;
 import com.careeros.domain.acquisition.SourceOnboardingCheckpoint;
 import com.careeros.domain.acquisition.ArtifactImportFailure;
+import com.careeros.domain.acquisition.ArtifactDiscovery;
 import com.careeros.application.AcquisitionPorts.AcquisitionStore;
 import com.careeros.application.AcquisitionPorts.TargetSourceRegistration;
 import java.nio.charset.StandardCharsets;
@@ -33,14 +34,15 @@ final class AcquisitionApiModels {
         long unmatchedLifecycleCount, long ambiguousLifecycleCount,
         List<CoverageResponse> coverage,
         List<CheckpointResponse> checkpoints, long historicalFailureCount,
-        java.util.Map<String,Object> completion
+        java.util.Map<String,Object> completion, long unresolvedArtifactCount
     ) {
         SourceResponse withCompletion(java.util.Map<String,Object> value) {
             return new SourceResponse(id, code, name, entryUri, sourceType, region, crawlMode, enabled,
                 cronExpression, timeZone, lastSuccessAt, lastFailureAt, nextDueAt, consecutiveFailureCount,
                 connectionStatus, scopeLevel, scopeCode, priorityTier, coverageRole, accessStatus,
                 documentIssueCount, lifecycleDocumentCount, matchedLifecycleCount, unmatchedLifecycleCount,
-                ambiguousLifecycleCount, coverage, checkpoints, historicalFailureCount, value);
+                ambiguousLifecycleCount, coverage, checkpoints, historicalFailureCount, value,
+                unresolvedArtifactCount);
         }
 
         static SourceResponse from(
@@ -52,7 +54,7 @@ final class AcquisitionApiModels {
                     null, null, null, 0, target.connectionStatus().name(), target.scopeLevel(),
                     target.scopeCode(), target.priorityTier(), target.coverageRole(), "NOT_CONFIGURED", 0,
                     0, 0, 0, 0,
-                    List.of(), List.of(), 0, null);
+                    List.of(), List.of(), 0, null, 0);
             }
             long documentIssues = store.countDocumentImportFailures(value.id());
             var lifecycle = store.lifecycleCounts(value.id());
@@ -67,7 +69,8 @@ final class AcquisitionApiModels {
                     .sorted(java.util.Comparator.comparingInt(SourceYearCoverage::recruitmentYear))
                     .map(CoverageResponse::from).toList(),
                 store.findCheckpoints(value.id()).stream().map(CheckpointResponse::from).toList(),
-                store.countImportFailures(value.id()), null);
+                store.countImportFailures(value.id()), null,
+                store.countUnresolvedArtifactDiscoveries(value.id()));
         }
 
         private static String accessStatus(RecruitmentSource value, AcquisitionStore store) {
@@ -158,6 +161,21 @@ final class AcquisitionApiModels {
             return new FailureResponse(value.id(), value.runId(), value.sourceId(), value.documentId(),
                 value.stage().name(), value.sheetName(), value.rowNumber(), value.errorCode(),
                 value.safeMessage(), value.occurredAt());
+        }
+    }
+
+    record ArtifactDiscoveryResponse(
+        UUID id, UUID sourceId, UUID runId, UUID parentDocumentId,
+        String canonicalUri, String fetchUri, String title, String documentKind,
+        LocalDate publishedOn, String status, String errorCode, Instant firstSeenAt,
+        Instant lastAttemptAt, int attemptCount, boolean unresolved
+    ) {
+        static ArtifactDiscoveryResponse from(ArtifactDiscovery value) {
+            return new ArtifactDiscoveryResponse(value.id(), value.sourceId(), value.runId(),
+                value.parentDocumentId(), value.canonicalUri().toString(), value.fetchUri().toString(),
+                value.title(), value.kind().name(), value.publishedOn(), value.status().name(),
+                value.errorCode(), value.firstSeenAt(), value.lastAttemptAt(), value.attemptCount(),
+                value.unresolved());
         }
     }
 

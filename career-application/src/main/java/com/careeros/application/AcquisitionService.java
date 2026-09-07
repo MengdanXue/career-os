@@ -491,6 +491,8 @@ public final class AcquisitionService {
         Counts counts
     ) {
         Optional<AcquiredDocument> prior = store.findDocument(source.id(), link.uri());
+        recordDiscovery(source, runId, link, parent, kind,
+            ArtifactDiscovery.DiscoveryStatus.DISCOVERED, null);
         FetchedDocument response;
         try {
             response = fetchTimed(source, request(source, link, prior.orElse(null)));
@@ -501,6 +503,8 @@ public final class AcquisitionService {
             recordFailure(runId, source.id(), prior.map(AcquiredDocument::id).orElse(null),
                 ArtifactImportFailure.FailureStage.ARTIFACT_DOWNLOAD_FAILED,
                 failure.getClass().getSimpleName(), safeMessage(failure));
+            recordDiscovery(source, runId, link, parent, kind,
+                ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED, failure.getClass().getSimpleName());
             observer.document(source.code(), "FETCH_FAILED");
             return new DocumentOutcome(prior.orElse(null), null, null, false);
         }
@@ -510,8 +514,12 @@ public final class AcquisitionService {
             recordFailure(runId, source.id(), null,
                 ArtifactImportFailure.FailureStage.ARTIFACT_DOWNLOAD_FAILED,
                 "DOCUMENT_GONE", "Official document returned HTTP " + response.status());
+            recordDiscovery(source, runId, link, parent, kind,
+                ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED, "DOCUMENT_GONE");
             return new DocumentOutcome(null, response, null, false);
         }
+        recordDiscovery(source, runId, link, parent, kind,
+            ArtifactDiscovery.DiscoveryStatus.FETCHED, null);
         FetchObservation observation = observation(contentPolicies, response, link.uri());
         DocumentTransition transition;
         try {
@@ -521,6 +529,8 @@ public final class AcquisitionService {
             recordFailure(runId, source.id(), prior.map(AcquiredDocument::id).orElse(null),
                 ArtifactImportFailure.FailureStage.DOCUMENT_PARSE_FAILED,
                 failure.getClass().getSimpleName(), safeMessage(failure));
+            recordDiscovery(source, runId, link, parent, kind,
+                ArtifactDiscovery.DiscoveryStatus.PARSE_FAILED, failure.getClass().getSimpleName());
             return new DocumentOutcome(prior.orElse(null), response, null, false);
         }
         AcquiredDocument document = transition.document();
@@ -613,11 +623,34 @@ public final class AcquisitionService {
                 processing.errorCode() == null ? processing.status().name() : processing.errorCode(),
                 "Document processing ended with status " + processing.status());
         }
+        if (processing != null && (processing.status() == AcquiredDocumentProcessor.ProcessingStatus.UNSUPPORTED
+            || processing.status() == AcquiredDocumentProcessor.ProcessingStatus.FAILED
+            || processing.status() == AcquiredDocumentProcessor.ProcessingStatus.PROCESSED_WITH_ERRORS
+            || processing.status() == AcquiredDocumentProcessor.ProcessingStatus.OCR_REQUIRED)) {
+            recordDiscovery(source, runId, link, parent, kind,
+                ArtifactDiscovery.DiscoveryStatus.PARSE_FAILED,
+                processing.errorCode() == null ? processing.status().name() : processing.errorCode());
+        } else if (processing != null && processing.successful()) {
+            recordDiscovery(source, runId, link, parent, kind,
+                ArtifactDiscovery.DiscoveryStatus.PROCESSED, null);
+        }
         counts.fetched++;
         observer.document(source.code(), transition.type().name());
         boolean parsed = document.lastProcessedFingerprint() != null
             && document.lastProcessedFingerprint().equals(document.contentFingerprint());
         return new DocumentOutcome(document, response, processing, parsed);
+    }
+
+    private void recordDiscovery(
+        RecruitmentSource source, UUID runId, DiscoveredLink link, AcquiredDocument parent,
+        DocumentKind kind, ArtifactDiscovery.DiscoveryStatus status, String errorCode
+    ) {
+        Instant now = clock.instant();
+        UUID id = UUID.nameUUIDFromBytes(("artifact-discovery|" + source.id() + "|" + link.uri())
+            .getBytes(StandardCharsets.UTF_8));
+        store.saveArtifactDiscovery(new ArtifactDiscovery(id, source.id(), runId,
+            parent == null ? null : parent.id(), link.uri(), link.fetchUri(), link.title(), kind,
+            link.publishedOn(), status, errorCode, now, now, 1));
     }
 
     private FetchedDocument fetchTimed(RecruitmentSource source, FetchRequest request) {

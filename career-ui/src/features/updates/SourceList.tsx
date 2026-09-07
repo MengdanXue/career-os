@@ -60,6 +60,7 @@ function SourceRow({ source }: { source: AcquisitionSource }) {
         <span>{accessLabels[source.accessStatus]}{source.documentIssueCount > 0 ? ` · 历史附件问题记录 ${source.documentIssueCount} 条` : ''}</span>
         {source.id && <span>后续公告 {source.lifecycleDocumentCount} · 已关联 {source.matchedLifecycleCount} · 待关联 {source.unmatchedLifecycleCount} · 歧义 {source.ambiguousLifecycleCount}</span>}
         {source.historicalFailureCount > 0 && <span>历史采集失败记录 {source.historicalFailureCount} 条</span>}
+        {(source.unresolvedArtifactCount ?? 0) > 0 && <span>待处理制品 {source.unresolvedArtifactCount} 条（下载或解析未完成）</span>}
         {source.consecutiveFailureCount > 0 && <span>连续运行失败 {source.consecutiveFailureCount} 次</span>}
       </div>
     </div>

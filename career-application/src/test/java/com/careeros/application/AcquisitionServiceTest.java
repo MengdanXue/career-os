@@ -58,6 +58,24 @@ class AcquisitionServiceTest {
     }
 
     @Test
+    void discoveryInventoryRecordsTheFullLifecycleAndFailedFetches() {
+        Fixture fixture = new Fixture();
+
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        assertThat(fixture.store.discoveryEvents).extracting(ArtifactDiscovery::status)
+            .contains(ArtifactDiscovery.DiscoveryStatus.DISCOVERED,
+                ArtifactDiscovery.DiscoveryStatus.FETCHED,
+                ArtifactDiscovery.DiscoveryStatus.PROCESSED);
+
+        fixture.fetcher.failedUris.add(DETAIL);
+        fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
+        assertThat(fixture.store.discoveryEvents).last().extracting(ArtifactDiscovery::status)
+            .isEqualTo(ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED);
+        assertThat(fixture.store.discoveryEvents).last().extracting(ArtifactDiscovery::errorCode)
+            .isEqualTo("FetchFailedException");
+    }
+
+    @Test
     void incrementalRunRecordsObservedYearWithoutClaimingHistoricalCompleteness() {
         Fixture fixture = new Fixture();
         fixture.store.targetJobs.put(2026, 15L);
@@ -1169,6 +1187,7 @@ class AcquisitionServiceTest {
         final Map<Integer, SourceYearCoverage> coverages = new LinkedHashMap<>();
         final Map<Integer, Long> targetJobs = new HashMap<>();
         final List<ArtifactImportFailure> importFailures = new ArrayList<>();
+        final List<ArtifactDiscovery> discoveryEvents = new ArrayList<>();
         final Map<com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint,
             com.careeros.domain.acquisition.SourceOnboardingCheckpoint> checkpoints = new EnumMap<>(
                 com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.class);
@@ -1217,6 +1236,10 @@ class AcquisitionServiceTest {
             && value.runId().equals(runId)).toList(); }
         @Override public long countImportFailures(UUID sourceId) {
             return importFailures.stream().filter(value -> value.sourceId().equals(sourceId)).count();
+        }
+        @Override public ArtifactDiscovery saveArtifactDiscovery(ArtifactDiscovery value) {
+            discoveryEvents.add(value);
+            return value;
         }
         @Override public com.careeros.domain.acquisition.TargetSource.ConnectionStatus findTargetSourceStatus(
             String sourceCode

@@ -13,6 +13,7 @@ import com.careeros.domain.acquisition.AcquiredDocument.TransportRisk;
 import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.ArtifactImportFailure;
+import com.careeros.domain.acquisition.ArtifactDiscovery;
 import com.careeros.domain.acquisition.SourceOnboardingCheckpoint;
 import com.careeros.domain.acquisition.SourceCrawlRun;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
@@ -164,6 +165,32 @@ class JpaAcquisitionStoreTest {
         assertThat(store.saveImportFailures(List.of(failure))).containsExactly(failure);
         assertThat(store.findCheckpoints(SOURCE_ID)).containsExactly(checkpoint);
         assertThat(store.findImportFailures(SOURCE_ID, run.id())).containsExactly(failure);
+    }
+
+    @Test
+    void persistsDiscoveryInventoryBeforeADocumentExistsAndTracksAttempts(@Autowired AcquisitionStore store) {
+        SourceCrawlRun run = store.saveRun(SourceCrawlRun.running(UUID.randomUUID(), SOURCE_ID, RunTrigger.MANUAL, NOW));
+        URI uri = URI.create("https://official.example/2026/jobs.xlsx");
+        ArtifactDiscovery discovered = new ArtifactDiscovery(UUID.randomUUID(), SOURCE_ID, run.id(), null,
+            uri, uri, "2026 岗位表", DocumentKind.ATTACHMENT, LocalDate.of(2026, 4, 1),
+            ArtifactDiscovery.DiscoveryStatus.DISCOVERED, null, NOW, NOW, 1);
+        store.saveArtifactDiscovery(discovered);
+
+        ArtifactDiscovery failed = new ArtifactDiscovery(discovered.id(), SOURCE_ID, run.id(), null,
+            uri, uri, discovered.title(), discovered.kind(), discovered.publishedOn(),
+            ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED, "HTTP_429", NOW.plusSeconds(1),
+            NOW.plusSeconds(1), 1);
+        ArtifactDiscovery saved = store.saveArtifactDiscovery(failed);
+
+        assertThat(store.findArtifactDiscoveries(SOURCE_ID, run.id())).singleElement().satisfies(value -> {
+            assertThat(value.status()).isEqualTo(ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED);
+            assertThat(value.errorCode()).isEqualTo("HTTP_429");
+            assertThat(value.attemptCount()).isEqualTo(1);
+            assertThat(value.firstSeenAt()).isEqualTo(NOW);
+        });
+        assertThat(store.countUnresolvedArtifactDiscoveries(SOURCE_ID)).isEqualTo(1);
+        assertThat(saved.status()).isEqualTo(ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED);
+        assertThat(saved.attemptCount()).isEqualTo(1);
     }
 
     @Test

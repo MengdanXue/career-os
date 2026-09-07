@@ -11,6 +11,7 @@ import com.careeros.domain.acquisition.AcquiredDocument;
 import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.ArtifactImportFailure;
+import com.careeros.domain.acquisition.ArtifactDiscovery;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.SourceCrawlRun;
 import com.careeros.domain.acquisition.SourceOnboardingCheckpoint;
@@ -38,6 +39,7 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     private final SourceYearCoverageJpaRepository coverage;
     private final SourceOnboardingCheckpointJpaRepository checkpoints;
     private final ArtifactImportFailureJpaRepository importFailures;
+    private final ArtifactDiscoveryJpaRepository discoveries;
     @PersistenceContext private EntityManager entityManager;
 
     public JpaAcquisitionStore(
@@ -47,7 +49,8 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         AcquisitionChangeJpaRepository changes,
         SourceYearCoverageJpaRepository coverage,
         SourceOnboardingCheckpointJpaRepository checkpoints,
-        ArtifactImportFailureJpaRepository importFailures
+        ArtifactImportFailureJpaRepository importFailures,
+        ArtifactDiscoveryJpaRepository discoveries
     ) {
         this.sources = sources;
         this.runs = runs;
@@ -56,6 +59,7 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         this.coverage = coverage;
         this.checkpoints = checkpoints;
         this.importFailures = importFailures;
+        this.discoveries = discoveries;
     }
 
     @Override @Transactional(readOnly = true)
@@ -246,6 +250,40 @@ public class JpaAcquisitionStore implements AcquisitionStore {
               and stage not in ('DISCOVERY_CONTRACT_CHANGED', 'REMOTE_ACCESS_FAILED')
             """).setParameter("sourceId", sourceId).getSingleResult();
         return count.longValue();
+    }
+
+    @Override @Transactional
+    public ArtifactDiscovery saveArtifactDiscovery(ArtifactDiscovery value) {
+        var existing = discoveries.findBySourceIdAndCanonicalUri(value.sourceId(), value.canonicalUri().toString());
+        var entity = toEntity(value);
+        if (existing.isPresent()) {
+            var previous = existing.orElseThrow();
+            entity.id = previous.id;
+            entity.firstSeenAt = previous.firstSeenAt;
+            entity.attemptCount = value.status() == ArtifactDiscovery.DiscoveryStatus.DISCOVERED
+                ? previous.attemptCount + 1 : previous.attemptCount;
+        }
+        return toDomain(discoveries.saveAndFlush(entity));
+    }
+
+    @Override @Transactional(readOnly = true)
+    public List<ArtifactDiscovery> findArtifactDiscoveries(UUID sourceId, UUID runId) {
+        var values = runId == null
+            ? discoveries.findAll().stream()
+                .filter(value -> sourceId == null || sourceId.equals(value.sourceId))
+                .sorted(java.util.Comparator.comparing(
+                    (AcquisitionJpaModels.ArtifactDiscoveryEntity value) -> value.lastAttemptAt)
+                    .thenComparing(value -> value.id)).toList()
+            : discoveries.findBySourceIdAndRunIdOrderByLastAttemptAtAsc(sourceId, runId);
+        return values.stream().map(JpaAcquisitionStore::toDomain).toList();
+    }
+
+    @Override @Transactional(readOnly = true)
+    public long countUnresolvedArtifactDiscoveries(UUID sourceId) {
+        return discoveries.countBySourceIdAndStatusIn(sourceId, List.of(
+            ArtifactDiscovery.DiscoveryStatus.DISCOVERED,
+            ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED,
+            ArtifactDiscovery.DiscoveryStatus.PARSE_FAILED));
     }
 
     @Override @Transactional(readOnly = true)
@@ -448,5 +486,23 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     private static ArtifactImportFailure toDomain(AcquisitionJpaModels.ArtifactImportFailureEntity value) {
         return new ArtifactImportFailure(value.id, value.runId, value.sourceId, value.documentId,
             value.stage, value.sheetName, value.rowNumber, value.errorCode, value.safeMessage, value.occurredAt);
+    }
+
+    private static AcquisitionJpaModels.ArtifactDiscoveryEntity toEntity(ArtifactDiscovery value) {
+        var entity = new AcquisitionJpaModels.ArtifactDiscoveryEntity();
+        entity.id = value.id(); entity.sourceId = value.sourceId(); entity.runId = value.runId();
+        entity.parentDocumentId = value.parentDocumentId(); entity.canonicalUri = value.canonicalUri().toString();
+        entity.fetchUri = value.fetchUri().toString(); entity.title = value.title(); entity.kind = value.kind();
+        entity.publishedOn = value.publishedOn(); entity.status = value.status(); entity.errorCode = value.errorCode();
+        entity.firstSeenAt = value.firstSeenAt(); entity.lastAttemptAt = value.lastAttemptAt();
+        entity.attemptCount = value.attemptCount();
+        return entity;
+    }
+
+    private static ArtifactDiscovery toDomain(AcquisitionJpaModels.ArtifactDiscoveryEntity value) {
+        return new ArtifactDiscovery(value.id, value.sourceId, value.runId, value.parentDocumentId,
+            URI.create(value.canonicalUri), URI.create(value.fetchUri), value.title, value.kind,
+            value.publishedOn, value.status, value.errorCode, value.firstSeenAt, value.lastAttemptAt,
+            value.attemptCount);
     }
 }

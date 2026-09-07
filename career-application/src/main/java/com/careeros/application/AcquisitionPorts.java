@@ -3,6 +3,7 @@ package com.careeros.application;
 import com.careeros.domain.acquisition.AcquiredDocument;
 import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.ArtifactImportFailure;
+import com.careeros.domain.acquisition.ArtifactDiscovery;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.SourceCrawlRun;
@@ -47,6 +48,10 @@ public final class AcquisitionPorts {
         List<ArtifactImportFailure> findImportFailures(UUID sourceId, UUID runId);
         long countImportFailures(UUID sourceId);
         default long countDocumentImportFailures(UUID sourceId) { return countImportFailures(sourceId); }
+        /** Durable discovery inventory; default no-op keeps lightweight adapters source-compatible. */
+        default ArtifactDiscovery saveArtifactDiscovery(ArtifactDiscovery discovery) { return discovery; }
+        default List<ArtifactDiscovery> findArtifactDiscoveries(UUID sourceId, UUID runId) { return List.of(); }
+        default long countUnresolvedArtifactDiscoveries(UUID sourceId) { return 0L; }
         default LifecycleCounts lifecycleCounts(UUID sourceId) { return LifecycleCounts.none(); }
         ConnectionStatus findTargetSourceStatus(String sourceCode);
         void updateTargetSourceStatus(

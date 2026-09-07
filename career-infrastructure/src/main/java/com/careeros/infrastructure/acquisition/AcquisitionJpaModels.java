@@ -5,6 +5,7 @@ import com.careeros.domain.acquisition.AcquiredDocument.DocumentState;
 import com.careeros.domain.acquisition.AcquiredDocument.TransportRisk;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage;
+import com.careeros.domain.acquisition.ArtifactDiscovery.DiscoveryStatus;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
@@ -20,6 +21,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -195,5 +197,27 @@ final class AcquisitionJpaModels {
         @Column(name = "safe_message", nullable = false, length = 500) String safeMessage;
         @Column(name = "occurred_at", nullable = false) Instant occurredAt;
         protected ArtifactImportFailureEntity() {}
+    }
+
+    @Entity(name = "ArtifactDiscoveryEntity")
+    @Table(name = "artifact_discovery",
+        uniqueConstraints = @UniqueConstraint(name = "artifact_discovery_source_uri_uq",
+            columnNames = {"source_id", "canonical_uri"}))
+    static class ArtifactDiscoveryEntity {
+        @Id UUID id;
+        @Column(name = "source_id", nullable = false) UUID sourceId;
+        @Column(name = "run_id", nullable = false) UUID runId;
+        @Column(name = "parent_document_id") UUID parentDocumentId;
+        @Column(name = "canonical_uri", nullable = false) String canonicalUri;
+        @Column(name = "fetch_uri", nullable = false) String fetchUri;
+        @Column(nullable = false) String title;
+        @Enumerated(EnumType.STRING) @Column(name = "document_kind", nullable = false) DocumentKind kind;
+        @Column(name = "published_on") LocalDate publishedOn;
+        @Enumerated(EnumType.STRING) @Column(nullable = false) DiscoveryStatus status;
+        @Column(name = "error_code") String errorCode;
+        @Column(name = "first_seen_at", nullable = false) Instant firstSeenAt;
+        @Column(name = "last_attempt_at", nullable = false) Instant lastAttemptAt;
+        @Column(name = "attempt_count", nullable = false) int attemptCount;
+        protected ArtifactDiscoveryEntity() {}
     }
 }

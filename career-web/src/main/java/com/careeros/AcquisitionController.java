@@ -8,6 +8,7 @@ import com.careeros.application.AcquisitionService;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
+import com.careeros.domain.acquisition.ArtifactDiscovery.DiscoveryStatus;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
@@ -238,5 +239,25 @@ final class AcquisitionController {
     ) {
         if (size < 1 || size > 200) throw new IllegalArgumentException("size must be between 1 and 200");
         return store.findImportFailures(sourceId, null).stream().limit(size).map(FailureResponse::from).toList();
+    }
+
+    @GetMapping("/sources/{sourceId}/discoveries")
+    List<ArtifactDiscoveryResponse> discoveries(
+        @PathVariable("sourceId") UUID sourceId,
+        @RequestParam(name="runId", required=false) UUID runId,
+        @RequestParam(name="status", required=false) DiscoveryStatus status,
+        @RequestParam(name="size", defaultValue="200") int size
+    ) {
+        if (size < 1 || size > 1000) throw new IllegalArgumentException("size must be between 1 and 1000");
+        return store.findArtifactDiscoveries(sourceId, runId).stream()
+            .filter(value -> status == null || value.status() == status)
+            .limit(size)
+            .map(ArtifactDiscoveryResponse::from).toList();
+    }
+
+    @GetMapping("/sources/{sourceId}/discovery-health")
+    Map<String, Object> discoveryHealth(@PathVariable("sourceId") UUID sourceId) {
+        return Map.of("sourceId", sourceId,
+            "unresolvedCount", store.countUnresolvedArtifactDiscoveries(sourceId));
     }
 }

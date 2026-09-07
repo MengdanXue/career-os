@@ -26,6 +26,7 @@ export type AcquisitionSource = {
   accessStatus: 'ACCESSIBLE' | 'ACCESS_FAILED' | 'NOT_CONFIGURED' | 'UNKNOWN'; documentIssueCount: number;
   lifecycleDocumentCount: number; matchedLifecycleCount: number; unmatchedLifecycleCount: number; ambiguousLifecycleCount: number;
   coverage: AcquisitionCoverage[]; checkpoints: AcquisitionCheckpoint[]; historicalFailureCount: number;
+  unresolvedArtifactCount?: number;
   completion?: CompletionAssessment | null
 }
 

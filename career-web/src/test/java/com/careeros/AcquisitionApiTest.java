@@ -10,6 +10,7 @@ import com.careeros.application.AcquisitionPorts.*;
 import com.careeros.application.AcquisitionService;
 import com.careeros.application.SourceCompletionAuditService;
 import com.careeros.domain.acquisition.AcquisitionChange;
+import com.careeros.domain.acquisition.ArtifactDiscovery;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.RecruitmentSource;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
@@ -169,6 +170,27 @@ class AcquisitionApiTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items[0].changeType").value("ADDED"))
             .andExpect(jsonPath("$.nextCursor", not(blankOrNullString())));
+    }
+
+    @Test void exposesUnresolvedDiscoveryInventoryForTheMissingArtifactDashboard() throws Exception {
+        var discovery = new ArtifactDiscovery(UUID.randomUUID(), SOURCE_ID, RUN_ID, null,
+            URI.create("https://official.example/2026/jobs.xlsx"),
+            URI.create("https://official.example/2026/jobs.xlsx"), "2026 岗位表",
+            com.careeros.domain.acquisition.AcquiredDocument.DocumentKind.ATTACHMENT,
+            java.time.LocalDate.of(2026, 4, 1), ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED,
+            "HTTP_429", NOW, NOW, 1);
+        when(store.findArtifactDiscoveries(SOURCE_ID, RUN_ID)).thenReturn(List.of(discovery));
+        when(store.countUnresolvedArtifactDiscoveries(SOURCE_ID)).thenReturn(1L);
+
+        mvc.perform(get("/api/acquisition/sources/{id}/discoveries", SOURCE_ID)
+                .param("runId", RUN_ID.toString()).param("status", "FETCH_FAILED"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].canonicalUri").value(discovery.canonicalUri().toString()))
+            .andExpect(jsonPath("$[0].status").value("FETCH_FAILED"))
+            .andExpect(jsonPath("$[0].unresolved").value(true));
+        mvc.perform(get("/api/acquisition/sources/{id}/discovery-health", SOURCE_ID))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.unresolvedCount").value(1));
     }
 
     @Test void attachesPinnedAuditCompletionToSourcesAndCoverage() throws Exception {
