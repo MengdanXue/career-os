@@ -24,6 +24,10 @@ class ArtifactDiscoveryTest {
             "HTTP_429", NOW, NOW, 1);
 
         assertThat(value.unresolved()).isTrue();
+        assertThat(new ArtifactDiscovery(ID, SOURCE, RUN, null,
+            URI.create("https://example.test/jobs/1"), URI.create("https://example.test/jobs/1"),
+            "Recruitment announcement", AcquiredDocument.DocumentKind.ANNOUNCEMENT,
+            null, ArtifactDiscovery.DiscoveryStatus.FETCHED, null, NOW, NOW, 1).unresolved()).isTrue();
     }
 
     @Test

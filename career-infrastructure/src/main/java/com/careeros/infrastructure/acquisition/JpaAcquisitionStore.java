@@ -282,6 +282,7 @@ public class JpaAcquisitionStore implements AcquisitionStore {
     public long countUnresolvedArtifactDiscoveries(UUID sourceId) {
         return discoveries.countBySourceIdAndStatusIn(sourceId, List.of(
             ArtifactDiscovery.DiscoveryStatus.DISCOVERED,
+            ArtifactDiscovery.DiscoveryStatus.FETCHED,
             ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED,
             ArtifactDiscovery.DiscoveryStatus.PARSE_FAILED));
     }

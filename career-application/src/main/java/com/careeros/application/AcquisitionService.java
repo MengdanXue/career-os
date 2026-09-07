@@ -633,6 +633,9 @@ public final class AcquisitionService {
         } else if (processing != null && processing.successful()) {
             recordDiscovery(source, runId, link, parent, kind,
                 ArtifactDiscovery.DiscoveryStatus.PROCESSED, null);
+        } else if (processing == null && fullyProcessed(document)) {
+            recordDiscovery(source, runId, link, parent, kind,
+                ArtifactDiscovery.DiscoveryStatus.PROCESSED, null);
         }
         counts.fetched++;
         observer.document(source.code(), transition.type().name());

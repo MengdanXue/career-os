@@ -62,6 +62,7 @@ public record ArtifactDiscovery(
 
     public boolean unresolved() {
         return status == DiscoveryStatus.DISCOVERED
+            || status == DiscoveryStatus.FETCHED
             || status == DiscoveryStatus.FETCH_FAILED
             || status == DiscoveryStatus.PARSE_FAILED;
     }
