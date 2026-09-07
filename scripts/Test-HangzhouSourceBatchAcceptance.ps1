@@ -25,6 +25,7 @@ function Start-AcquisitionFixture([int]$Port, [string]$Mode) {
         $listener.Start()
         $incrementalCalls = 0
         $historicalCalls = 0
+        $auditCalls = 0
         try {
             $running = $true
             while ($running) {
@@ -42,6 +43,11 @@ function Start-AcquisitionFixture([int]$Port, [string]$Mode) {
                             connectionStatus = $connection
                             accessStatus = 'ACCESSIBLE'
                         }
+                        break
+                    }
+                    '^/api/acquisition/audit-snapshots$' {
+                        $auditCalls++
+                        $payload = @{ schemaVersion = 1; auditSnapshotId = "00000000-0000-0000-0000-$('{0:D12}' -f $auditCalls)"; parentSnapshotId = $null; registrySnapshotId = '00000000-0000-0000-0000-000000000001'; fromYear = 2024; toYear = 2026; coverageThrough = '2026-09-07'; sources = @() }
                         break
                     }
                     '^/api/acquisition/sources/.+/historical-runs$' {
@@ -87,7 +93,7 @@ function Start-AcquisitionFixture([int]$Port, [string]$Mode) {
                         break
                     }
                     '^/stats$' {
-                        $payload = @{ incrementalCalls = $incrementalCalls; historicalCalls = $historicalCalls }
+                        $payload = @{ incrementalCalls = $incrementalCalls; historicalCalls = $historicalCalls; auditCalls = $auditCalls }
                         break
                     }
                     '^/shutdown$' { $payload = @{ stopped = $true }; $running = $false; break }

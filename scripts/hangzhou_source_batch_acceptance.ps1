@@ -45,6 +45,18 @@ function Get-Sources([string]$Base) {
     return @(Invoke-RestMethod -Uri "$Base/api/acquisition/sources" -TimeoutSec 60)
 }
 
+function New-AuditSnapshot([string]$Base, [string[]]$SelectedCodes) {
+    $request = [ordered]@{ fromYear = $FromYear; toYear = $ToYear; selectedCodes = @($SelectedCodes); runIds = @() }
+    $json = $request | ConvertTo-Json -Depth 8
+    return Invoke-RestMethod -Method Post -Uri "$Base/api/acquisition/audit-snapshots" -ContentType 'application/json' -Body $json -TimeoutSec 60
+}
+
+function Append-AuditSnapshot([string]$Base, [string]$BaseId, [object[]]$RunIds) {
+    $request = [ordered]@{ baseSnapshotId = $BaseId; runIds = @($RunIds) }
+    $json = $request | ConvertTo-Json -Depth 8
+    return Invoke-RestMethod -Method Post -Uri "$Base/api/acquisition/audit-snapshots" -ContentType 'application/json' -Body $json -TimeoutSec 60
+}
+
 function Wait-Run([string]$Base, [object]$Run) {
     $deadline = [DateTimeOffset]::UtcNow.AddMinutes($RunTimeoutMinutes)
     while ($Run.status -eq 'RUNNING' -and [DateTimeOffset]::UtcNow -lt $deadline) {
@@ -131,11 +143,13 @@ function Save-State([object]$State, [string]$Path) {
 
 function New-State([string]$Base, [string[]]$SelectedCodes) {
     return [pscustomobject][ordered]@{
-        schemaVersion = 2
+        schemaVersion = 3
         baseUrl = $Base
         fromYear = $FromYear
         toYear = $ToYear
         selectedCodes = @($SelectedCodes)
+        auditSnapshotId = $null
+        auditAppendSnapshotId = $null
         startedAt = [DateTimeOffset]::UtcNow.ToString('o')
         completedAt = $null
         results = @()
@@ -243,11 +257,16 @@ try {
     } else {
         New-State -Base $base -SelectedCodes $selectedCodes
     }
-    Assert-Condition ($state.schemaVersion -eq 2 -and $state.baseUrl -eq $base `
+    Assert-Condition ($state.schemaVersion -eq 3 -and $state.baseUrl -eq $base `
         -and $state.fromYear -eq $FromYear -and $state.toYear -eq $ToYear) `
         '已有验收文件与当前 URL 或年度范围不兼容'
     Assert-Condition ((@($state.selectedCodes) -join "`u{001f}") -eq ($selectedCodes -join "`u{001f}")) `
         '已有验收文件的来源选择或顺序与当前 Codes 不一致'
+    if ($null -eq $state.auditSnapshotId) {
+        $audit = New-AuditSnapshot -Base $base -SelectedCodes $selectedCodes
+        $state.auditSnapshotId = if ($audit -is [string]) { ($audit | ConvertFrom-Json).auditSnapshotId } else { $audit.auditSnapshotId }
+        Save-State -State $state -Path $resolvedOutput
+    }
     $results = [System.Collections.Generic.List[object]]::new()
     @($state.results) | ForEach-Object { $results.Add($_) }
     Assert-Condition ((@($results.code | Select-Object -Unique).Count) -eq $results.Count) `
@@ -356,6 +375,11 @@ try {
     $state.summary | Add-Member -NotePropertyName accessClassified -NotePropertyValue $accessClassified
     Assert-Condition ($connectionClassified -eq $selected.Count -and $accessClassified -eq $selected.Count) `
         '来源连接或可访问状态存在未分类值'
+    $runIds = @($results | ForEach-Object { $_.firstIncremental.id; $_.historical.id; $_.secondIncremental.id } | Where-Object { $_ })
+    if ($state.auditSnapshotId -and $runIds.Count -gt 0) {
+        $appended = Append-AuditSnapshot -Base $base -BaseId $state.auditSnapshotId -RunIds $runIds
+        $state.auditAppendSnapshotId = if ($appended -is [string]) { ($appended | ConvertFrom-Json).auditSnapshotId } else { $appended.auditSnapshotId }
+    }
     Save-State -State $state -Path $resolvedOutput
     $state.summary | ConvertTo-Json -Depth 4
     Assert-Condition ($state.summary.failed -eq 0 -and $state.summary.connectionFailed -eq 0 `
