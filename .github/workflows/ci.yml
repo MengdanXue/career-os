@@ -28,6 +28,8 @@ jobs:
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: Verify Docker for Testcontainers
         run: docker info
+      - name: Refresh Mockito agent
+        run: rm -f "$HOME/.m2/repository/org/mockito/mockito-core/5.17.0/mockito-core-5.17.0.jar"
       # career-web binds frontend build, TypeScript checks and Vitest to Maven.
       # Do not pass skipTests or skip.npm here. Live network / LLM profiles remain opt-in.
       - name: Build and test all modules and frontend
