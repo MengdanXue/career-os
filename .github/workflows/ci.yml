@@ -33,7 +33,7 @@ jobs:
       # career-web binds frontend build, TypeScript checks and Vitest to Maven.
       # Do not pass skipTests or skip.npm here. Live network / LLM profiles remain opt-in.
       - name: Build and test all modules and frontend
-        run: mvn -B -ntp clean verify
+        run: mvn -B -ntp clean verify -DargLine=
       - name: Reject missing reports, failures and unexpected skips
         if: always()
         run: python3 .github/scripts/check_skipped_tests.py
