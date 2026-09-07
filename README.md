@@ -40,6 +40,10 @@ $env:CAREER_OS_AI_MODEL='gpt-5-mini'
 
 要求 Java 21、Maven 3.9+、PostgreSQL 16。运行 Docker 还可执行 Testcontainers 集成测试。
 
+**本地没有 Docker 时，持久化、迁移与并发用例会被静默跳过，而 Maven 仍然打印 `BUILD SUCCESS`。**
+GitHub Actions（`.github/workflows/ci.yml`）在有 Docker 的环境跑 `mvn -B -ntp verify`，
+并用 `.github/scripts/check_skipped_tests.py` 在白名单之外出现任何跳过时让构建失败。
+
 ```powershell
 mvn clean test
 mvn -DskipTests package

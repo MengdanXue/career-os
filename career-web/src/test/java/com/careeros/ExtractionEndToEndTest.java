@@ -161,9 +161,19 @@ class ExtractionEndToEndTest {
         return json.readTree(result.getResponse().getContentAsByteArray());
     }
 
+    /**
+     * 优先使用仓库内已提交的回归 fixture（README 里记录了 SHA-256），
+     * 找不到再回退到本地工作区的样本目录。此前只查工作区路径，
+     * 导致这些端到端用例在作者机器之外永远被 Assumptions 跳过。
+     */
     private Path findWorkspaceFile(String relative) {
+        String fileName = Path.of(relative).getFileName().toString();
+        Path committed = Path.of(
+            "career-infrastructure", "src", "test", "resources", "fixtures", "extraction", fileName);
         Path current = Path.of("").toAbsolutePath();
         for (int level = 0; level < 5 && current != null; level++, current = current.getParent()) {
+            Path fixture = current.resolve(committed);
+            if (Files.exists(fixture)) return fixture;
             Path candidate = current.resolve(relative);
             if (Files.exists(candidate)) return candidate;
         }
