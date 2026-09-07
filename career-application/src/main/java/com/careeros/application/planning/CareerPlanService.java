@@ -831,6 +831,10 @@ public final class CareerPlanService {
             (int) jobs.stream().filter(HistoricalJob::evidenceComplete).count(), analyzedLoadedAt);
     }
 
+    private static boolean complete(CoverageSignal signal) {
+        return signal.status() == CoverageStatus.COMPLETE || signal.status() == CoverageStatus.NO_TARGET_RECORDS;
+    }
+
     private static List<Risk> risks(CandidateProfile candidate, DataCoverage coverage) {
         var result = new ArrayList<Risk>();
         boolean masterVerified = candidate.educationRecords().stream().anyMatch(record ->
