@@ -24,7 +24,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-          cache: maven
       - name: Test the report gate
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: Verify Docker for Testcontainers
