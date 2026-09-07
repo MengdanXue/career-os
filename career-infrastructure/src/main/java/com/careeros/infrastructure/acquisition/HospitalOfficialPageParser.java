@@ -32,7 +32,8 @@ public final class HospitalOfficialPageParser {
     private static final Map<String, List<String>> OPTIONAL = Map.of(
         "actualEmployer", List.of("实际用人单位", "用人单位", "招聘单位", "所属单位"),
         "worksite", List.of("工作地点", "工作院区", "院区", "院区地点"),
-        "employment", List.of("用工性质", "编制性质", "岗位性质", "聘用形式")
+        "employment", List.of("用工性质", "编制性质", "岗位性质", "聘用形式"),
+        "experience", List.of("工作经历", "工作经验", "工作年限", "工作经历要求", "工作经验要求", "工作年限要求")
     );
 
     public ParsedHospitalAnnouncement parse(URI sourceUri, byte[] html) {
@@ -77,10 +78,11 @@ public final class HospitalOfficialPageParser {
                     value(cells, header.columns().get("majors")),
                     value(cells, header.columns().get("scope")),
                     value(cells, header.columns().get("headcount")),
-                    value(cells, header.columns().get("age")),
+                    rawValue(cells, header.columns().get("age")),
                     value(cells, header.columns().get("actualEmployer")),
                     value(cells, header.columns().get("worksite")),
-                    value(cells, header.columns().get("employment"))));
+                    value(cells, header.columns().get("employment")),
+                    rawValue(cells, header.columns().get("experience")), index + 1));
             }
             return new TableParse(List.copyOf(result), List.copyOf(issues));
         }
@@ -167,6 +169,12 @@ public final class HospitalOfficialPageParser {
         return value == null ? "" : value.replaceAll("[\\s\\n\\r：:（）()/]", "").trim();
     }
 
+    private static String rawValue(List<Element> cells, Integer index) {
+        if (index == null || index < 0 || index >= cells.size()) return null;
+        String value = cells.get(index).wholeText().replace('\u00a0', ' ').trim();
+        return value.isBlank() ? null : value;
+    }
+
     private static String pad(String value) { return value.length() == 1 ? "0" + value : value; }
 
     private record Header(int rowIndex, Map<String, Integer> columns) {}
@@ -221,8 +229,19 @@ public final class HospitalOfficialPageParser {
         String ageLimit,
         String actualEmployer,
         String worksite,
-        String employmentText
+        String employmentText,
+        String experienceText,
+        Integer rowNumber
     ) {
+        public HospitalJobRow(
+            String department, String title, String category, String educationDegree,
+            String majors, String candidateScope, String headcount, String ageLimit,
+            String actualEmployer, String worksite, String employmentText
+        ) {
+            this(department, title, category, educationDegree, majors, candidateScope,
+                headcount, ageLimit, actualEmployer, worksite, employmentText, null, null);
+        }
+
         public HospitalJobRow(
             String department, String title, String category, String educationDegree,
             String majors, String candidateScope, String headcount, String ageLimit
@@ -243,6 +262,8 @@ public final class HospitalOfficialPageParser {
             actualEmployer = optional(actualEmployer);
             worksite = optional(worksite);
             employmentText = optional(employmentText);
+            experienceText = optional(experienceText);
+            if (rowNumber != null && rowNumber < 1) throw new IllegalArgumentException("rowNumber must be positive");
         }
 
         private static String required(String value, String field) {

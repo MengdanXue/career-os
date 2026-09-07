@@ -62,17 +62,27 @@ public class HospitalOfficialJobImportService {
             event.defaultEmploymentType == null ? EmploymentType.UNKNOWN : event.defaultEmploymentType,
             ORGANIZATION, null, event.employmentStatement);
         var normalized = new ArrayList<JobUpsertService.NormalizedJob>();
+        var warnings = new ArrayList<RowWarning>();
         for (var row : parsed.jobs()) {
-            normalized.add(fields.toNormalizedJob(new RawOfficialJob(
+            var job = fields.toNormalizedJob(new RawOfficialJob(
                 stableRowCode(row.department(), row.title()), row.title(), null, row.majors(),
                 row.educationDegree(), row.employmentText(), row.headcount(),
-                row.candidateScope(), row.ageLimit(), null, null, row.department(), row.category(),
-                row.actualEmployer(), row.worksite()), context));
+                row.candidateScope(), row.ageLimit(), row.experienceText(), null, row.department(), row.category(),
+                row.actualEmployer(), row.worksite()), context);
+            normalized.add(job);
+            if (row.ageLimit() != null && job.maximumAge() == null) {
+                warnings.add(new RowWarning(row.rowNumber(), "年龄", row.ageLimit(),
+                    "无法确定统一年龄上限，保留原文待核实"));
+            }
+            if (row.experienceText() != null && job.minimumExperienceYears() == null) {
+                warnings.add(new RowWarning(row.rowNumber(), "工作经历", row.experienceText(),
+                    "无法确定最低工作年限，保留原文待核实"));
+            }
         }
         var result = upserts.upsert(new JobUpsertBatch(
             event.id, sourceUrl, normalized, parsed.completeSnapshot(), List.of()));
         admissions.classify(result.jobIds(), Instant.now());
-        return new ImportResult(event.id, result.inserted(), result.updated(), result.unchanged(), result.deactivated());
+        return new ImportResult(event.id, result.inserted(), result.updated(), result.unchanged(), result.deactivated(), warnings);
     }
 
     private static String stableRowCode(String department, String title) {
@@ -84,6 +94,17 @@ public class HospitalOfficialJobImportService {
         int inserted,
         int updated,
         int unchanged,
-        int deactivated
-    ) {}
+        int deactivated,
+        List<RowWarning> warnings
+    ) {
+        public ImportResult(UUID recruitmentEventId, int inserted, int updated, int unchanged, int deactivated) {
+            this(recruitmentEventId, inserted, updated, unchanged, deactivated, List.of());
+        }
+
+        public ImportResult {
+            warnings = List.copyOf(warnings);
+        }
+    }
+
+    public record RowWarning(Integer row, String field, String rawValue, String message) {}
 }

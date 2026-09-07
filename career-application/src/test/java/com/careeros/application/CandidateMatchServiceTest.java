@@ -129,7 +129,7 @@ class CandidateMatchServiceTest {
         UUID jobId = UUID.randomUUID(), eventId = UUID.randomUUID(), organizationId = UUID.randomUUID();
         var job = new JobPosting(jobId, eventId, organizationId, "101", "信息中心工作人员",
             JobFamily.INFORMATION_SYSTEMS, EmploymentType.UNKNOWN, "杭州", 1, EducationLevel.MASTER,
-            Set.of("计算机科学与技术"), Set.of(), 38, LocalDate.of(2026, 8, 1), null,
+            Set.of("计算机科学与技术"), Set.of(), 38, LocalDate.of(2026, 8, 1), 0,
             Set.of(), "医院信息系统建设和数据库管理",
             "https://hrss.hangzhou.gov.cn/art/2026/notice.html", List.of(),
             "杭州市卫生健康委员会", "专业技术", "十级以下", "硕士研究生及以上",

@@ -58,6 +58,45 @@ class DecisionIntelligenceServiceTest {
     }
 
     @Test
+    void legacyEligibilitySnapshotIsNotExposedAsTheCurrentDecision() {
+        var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
+        seedLegacyEligibleSnapshotWithUnknownRequirements(fixture);
+
+        assertThatThrownBy(() -> fixture.service.current(fixture.candidateId, fixture.jobId))
+            .isInstanceOf(DecisionExceptions.DecisionNotFoundException.class);
+
+        assertThat(fixture.snapshots.saved).isEqualTo(1);
+    }
+
+    @Test
+    void legacyEligibleSnapshotIsReassessedForUnchangedUnknownAgeAndExperience() {
+        var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
+        var legacy = seedLegacyEligibleSnapshotWithUnknownRequirements(fixture);
+
+        var reassessed = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW.plusSeconds(60));
+        var repeated = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW.plusSeconds(120));
+
+        assertThat(reassessed.decision().eligibilityStatus()).isEqualTo(EligibilityStatus.UNCERTAIN);
+        assertThat(reassessed.decision().recommendationStatus()).isEqualTo(RecommendationStatus.REVIEW);
+        assertThat(reassessed.eligibility().ruleResults().get(RuleType.AGE).status())
+            .isEqualTo(EligibilityStatus.UNCERTAIN);
+        assertThat(reassessed.eligibility().ruleResults().get(RuleType.EXPERIENCE).status())
+            .isEqualTo(EligibilityStatus.UNCERTAIN);
+        assertThat(reassessed.decision().id()).isNotEqualTo(legacy.decision().id());
+        assertThat(reassessed.decision().jobContentFingerprint()).isEqualTo(legacy.decision().jobContentFingerprint());
+        assertThat(reassessed.decision().profileVersion()).isEqualTo(legacy.decision().profileVersion());
+        assertThat(reassessed.decision().evaluatorVersion()).contains(EligibilityEvaluator.VERSION);
+        assertThat(reassessed.eligibility().evaluatorVersion()).isEqualTo(reassessed.decision().evaluatorVersion());
+        assertThat(reassessed.eligibility().evaluatorVersion())
+            .as("eligibility_assessment.evaluator_version is VARCHAR(80)").hasSizeLessThanOrEqualTo(80);
+        assertThat(repeated.decision().id()).isEqualTo(reassessed.decision().id());
+        assertThat(fixture.service.current(fixture.candidateId, fixture.jobId).decision().id())
+            .isEqualTo(reassessed.decision().id());
+        assertThat(fixture.snapshots.saved).isEqualTo(2);
+        assertThat(fixture.snapshots.values.values()).contains(legacy);
+    }
+
+    @Test
     void rawJobIsRejectedBeforeAnyAssessmentIsSaved() {
         var fixture = fixture(candidate("profile-v1", Set.of("计算机科学与技术")));
         fixture.admissions.save(JobAdmission.raw(
@@ -151,6 +190,36 @@ class DecisionIntelligenceServiceTest {
 
     private static Fixture fixture(CandidateProfile initialCandidate) {
         return fixture(initialCandidate, EmploymentType.ESTABLISHMENT);
+    }
+
+    private static DecisionBundle seedLegacyEligibleSnapshotWithUnknownRequirements(Fixture fixture) {
+        var original = fixture.contexts.context;
+        var job = original.job();
+        var unknownRequirements = new JobPosting(job.id(), job.recruitmentEventId(), job.organizationId(),
+            job.externalJobCode(), job.title(), job.jobFamily(), job.employmentType(), job.location(),
+            job.headcount(), job.minimumEducation(), job.exactMajors(), job.acceptedGraduationYears(),
+            null, null, null, job.requiredProfessionalTitles(), job.duties(), job.sourceUrl(), job.evidenceIds());
+        fixture.contexts.context = new JobContext(unknownRequirements, original.organization(), original.event(),
+            original.contentFingerprint(), original.active());
+        // Literal identity and verdict from before missing qualification evidence became uncertain.
+        String oldVersion = "decision-v3-qualification-cutoff@qualification=2026-09-01";
+        String profileVersion = "profile-v1";
+        var rules = new EnumMap<RuleType, EligibilityAssessment.RuleResult>(RuleType.class);
+        for (var type : RuleType.values()) {
+            rules.put(type, new EligibilityAssessment.RuleResult(EligibilityStatus.ELIGIBLE, "旧版判定符合"));
+        }
+        var eligibility = new EligibilityAssessment(UUID.randomUUID(), fixture.candidateId, fixture.jobId,
+            EligibilityStatus.ELIGIBLE, rules, job.evidenceIds(), oldVersion, NOW, profileVersion, FINGERPRINT);
+        var fit = new FitAssessment(UUID.randomUUID(), fixture.candidateId, fixture.jobId, List.of(),
+            oldVersion, profileVersion, FINGERPRINT, NOW);
+        var stability = new StabilityAssessment(UUID.randomUUID(), fixture.candidateId, fixture.jobId, List.of(),
+            oldVersion, profileVersion, FINGERPRINT, NOW);
+        var decision = new DecisionAssessment(UUID.randomUUID(), fixture.candidateId, fixture.jobId,
+            eligibility.id(), fit.id(), stability.id(), EligibilityStatus.ELIGIBLE, OpportunityTier.T2,
+            RecommendationStatus.REVIEW, 0, 0, 0, oldVersion, profileVersion, FINGERPRINT, NOW);
+        var bundle = new DecisionBundle(eligibility, fit, stability, decision, fixture.contexts.context);
+        return fixture.snapshots.save(new DecisionInputKey(fixture.candidateId, fixture.jobId, profileVersion,
+            FINGERPRINT, oldVersion), bundle);
     }
 
     private static Fixture fixture(CandidateProfile initialCandidate, EmploymentType employmentType) {

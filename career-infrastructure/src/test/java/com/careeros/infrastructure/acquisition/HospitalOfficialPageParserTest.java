@@ -9,6 +9,24 @@ import org.junit.jupiter.api.Test;
 
 class HospitalOfficialPageParserTest {
     @Test
+    void preservesQualificationLineBreaksForConditionalAgeRules() {
+        byte[] html = """
+            <html><title>医院招聘</title><table>
+            <tr><th>科室</th><th>岗位名称</th><th>岗位类别</th><th>学历</th><th>专业</th>
+            <th>招聘对象</th><th>人数</th><th>年龄</th></tr>
+            <tr><td>信息中心</td><td>系统工程师</td><td>专业技术</td><td>硕士</td><td>计算机</td>
+            <td>社会人员</td><td>1</td><td>硕士35周岁以下<br>博士不限</td></tr>
+            </table></html>
+            """.getBytes(StandardCharsets.UTF_8);
+
+        var parsed = new HospitalOfficialPageParser().parse(URI.create(
+            "https://zp.hz-hospital.com/index/index/announcement_desc/id/212.html"), html);
+
+        assertThat(parsed.jobs()).singleElement().satisfies(job ->
+            assertThat(job.ageLimit()).isEqualTo("硕士35周岁以下\n博士不限"));
+    }
+
+    @Test
     void parsesPublicHospitalJobTableAndPreservesHttpApplicationUrlAsEvidenceOnly() {
         byte[] html;
         try (var input = getClass().getResourceAsStream(

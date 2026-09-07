@@ -12,6 +12,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EligibilityEvaluatorTest {
     private final EligibilityEvaluator evaluator = new EligibilityEvaluator();
 
+    @Test void missingMaximumAgeCannotEstablishUnrestrictedEligibility() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+        var result = evaluate(candidate, job(null, null, EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(2027), 0));
+
+        assertRule(result, RuleType.AGE, EligibilityStatus.UNCERTAIN);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.UNCERTAIN);
+    }
+
+    @Test void missingExperienceRequirementCannotEstablishUnrestrictedEligibility() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+        var result = evaluate(candidate, job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(2027), null));
+
+        assertRule(result, RuleType.EXPERIENCE, EligibilityStatus.UNCERTAIN);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.UNCERTAIN);
+    }
+
+    @Test void explicitlyZeroExperienceRequirementAllowsCandidateWithoutWorkHistory() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, null);
+        var result = evaluate(candidate, job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(2027), 0));
+
+        assertRule(result, RuleType.EXPERIENCE, EligibilityStatus.ELIGIBLE);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.ELIGIBLE);
+    }
+
     @Test void ageIsEligibleBeforeAllPossibleBirthdays() {
         var result = evaluator.evaluate(candidate(PartialDate.month(1992, 12), EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5), job(32, LocalDate.of(2025, 8, 31), EducationLevel.MASTER, Set.of(), Set.of(), null));
         assertRule(result, RuleType.AGE, EligibilityStatus.ELIGIBLE);

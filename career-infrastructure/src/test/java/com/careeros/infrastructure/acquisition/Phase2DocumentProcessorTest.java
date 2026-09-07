@@ -190,8 +190,25 @@ class Phase2DocumentProcessorTest {
     }
 
     @Test
+    void unresolvedWorkbookConditionsReachThePersistentReviewIssuePipeline() throws Exception {
+        when(workbooks.importWorkbook(any(), any())).thenReturn(new ImportResult(
+            UUID.randomUUID(), 1, 0, 0, 0, List.of(), List.of(
+                new OfficialExcelImportService.RowWarning("岗位表", 2, "年龄", "硕士35岁，博士40岁", "待核实"))));
+        var result = processor.process(command(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", new byte[] {'P','K',3,4}));
+        assertThat(result.status()).isEqualTo(ProcessingStatus.PROCESSED_WITH_ERRORS);
+        assertThat(result.inserted()).isEqualTo(1);
+        assertThat(result.issues()).singleElement().satisfies(issue -> {
+            assertThat(issue.errorCode()).isEqualTo("ELIGIBILITY_NEEDS_REVIEW");
+            assertThat(issue.sheetName()).isEqualTo("岗位表");
+            assertThat(issue.rowNumber()).isEqualTo(2);
+            assertThat(issue.safeMessage()).contains("年龄", "硕士35岁");
+        });
+    }
+
+    @Test
     void processorVersionChangesWhenWorkbookInterpretationChanges() {
-        assertThat(processor.version()).isEqualTo("official-fact-fusion-v14");
+        assertThat(processor.version()).isNotEqualTo("official-fact-fusion-v14");
     }
 
     @Test

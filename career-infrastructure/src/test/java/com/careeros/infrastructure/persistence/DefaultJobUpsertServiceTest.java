@@ -212,6 +212,9 @@ class DefaultJobUpsertServiceTest {
 
         assertThat(first.inserted()).isEqualTo(1);
         assertThat(repeat.unchanged()).isEqualTo(1);
+        assertThat(stored.values().iterator().next().ageReferenceDate)
+            .as("报名截止日不能充当未提供的年龄计算基准")
+            .isNull();
         assertThat(stored).containsKey(service.stableKey(job(2)));
     }
 

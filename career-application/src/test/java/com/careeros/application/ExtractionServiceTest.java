@@ -6,6 +6,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.careeros.domain.ReviewPolicy;
+import com.careeros.domain.DomainEnums.ReviewStatus;
+import com.careeros.domain.DomainEnums.ReviewDecision;
+import com.careeros.domain.Evidence;
+import com.careeros.domain.ExtractionRun;
+import com.careeros.domain.RecruitmentExtractionProposal;
+import com.careeros.domain.ReviewItem;
+import com.careeros.domain.ReviewAction;
+import com.careeros.domain.ReviewPayload;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,6 +24,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class ExtractionServiceTest {
     @Test
@@ -28,6 +41,122 @@ class ExtractionServiceTest {
         assertThat(second.run().id()).isEqualTo(first.run().id());
         assertThat(second.reused()).isTrue();
         assertThat(extractor.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void legacyVerifiedExtractionIsReprojectedOnceWhenPipelineChanges() throws Exception {
+        var extractor = new Fixtures.CountingExtractor(Fixtures.verifiedProposal(), true);
+        var persistence = new Fixtures.MemoryExtractionPersistence();
+        var writer = new Fixtures.RecordingWriter();
+        var service = service(extractor, persistence, writer);
+        var command = Fixtures.htmlCommand("<h1>招聘公告</h1>");
+        var legacy = seedLegacyExtraction(command, persistence, DataQualityStatus.VERIFIED);
+
+        var updated = service.submit(command);
+        var repeated = service.submit(command);
+
+        assertThat(updated.reused()).isFalse();
+        assertThat(updated.run().id()).isNotEqualTo(legacy.run().id());
+        assertThat(updated.run().status()).isEqualTo(DataQualityStatus.VERIFIED);
+        assertThat(updated.run().inputFingerprint()).isNotEqualTo(legacy.run().inputFingerprint());
+        assertThat(writer.calls).isEqualTo(1);
+        assertThat(extractor.calls()).isEqualTo(1);
+        assertThat(repeated.reused()).isTrue();
+        assertThat(repeated.run().id()).isEqualTo(updated.run().id());
+        assertThat(persistence.findById(legacy.run().id())).isEqualTo(legacy);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DataQualityStatus.class, names = {"REVIEW_REQUIRED", "REJECTED"})
+    void pipelineChangePreservesLegacyReviewWithoutExtractingOrWriting(DataQualityStatus status) throws Exception {
+        var extractor = new Fixtures.CountingExtractor(Fixtures.verifiedProposal(), true);
+        var persistence = new Fixtures.MemoryExtractionPersistence();
+        var writer = new Fixtures.RecordingWriter();
+        var service = service(extractor, persistence, writer);
+        var command = Fixtures.htmlCommand("<h1>招聘公告</h1>");
+        var legacy = seedLegacyExtraction(command, persistence, status);
+
+        var result = service.submit(command);
+
+        assertThat(result.reused()).isTrue();
+        assertThat(result.run()).isEqualTo(legacy.run());
+        assertThat(result.reviewId()).isEqualTo(legacy.reviewId()).isPresent();
+        assertThat(extractor.calls()).isZero();
+        assertThat(writer.calls).isZero();
+        assertThat(persistence.findById(legacy.run().id())).isEqualTo(legacy);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ReviewDecision.class, names = {"CONFIRM", "CORRECT"})
+    void pipelineChangePreservesHumanVerifiedProposalAndEvidence(ReviewDecision decision) throws Exception {
+        var extractor = new Fixtures.CountingExtractor(Fixtures.verifiedProposal(), true);
+        var persistence = new Fixtures.MemoryExtractionPersistence();
+        var writer = new Fixtures.RecordingWriter();
+        var service = service(extractor, persistence, writer);
+        var command = Fixtures.htmlCommand("<h1>招聘公告</h1>");
+        var legacy = seedLegacyExtraction(command, persistence, DataQualityStatus.VERIFIED, decision);
+
+        var result = service.submit(command);
+        var repeated = service.submit(command);
+
+        assertThat(result.run()).isEqualTo(legacy.run());
+        assertThat(result.run().status()).isEqualTo(DataQualityStatus.VERIFIED);
+        assertThat(result.reviewId()).isEqualTo(legacy.reviewId()).isPresent();
+        assertThat(result.run().evidenceId()).isEqualTo(Fixtures.EVIDENCE_ID);
+        assertThat(result.run().proposedPayload().jobs().getFirst().headcount().value())
+            .isEqualTo(decision == ReviewDecision.CORRECT ? 3 : 1);
+        assertThat(repeated.run()).isEqualTo(legacy.run());
+        assertThat(extractor.calls()).isZero();
+        assertThat(writer.calls).isZero();
+        assertThat(persistence.findById(legacy.run().id())).isEqualTo(legacy);
+    }
+
+    private static PersistedExtraction seedLegacyExtraction(SubmitExtractionCommand command,
+        Fixtures.MemoryExtractionPersistence persistence, DataQualityStatus status) throws Exception {
+        return seedLegacyExtraction(command, persistence, status, null);
+    }
+
+    private static PersistedExtraction seedLegacyExtraction(SubmitExtractionCommand command,
+        Fixtures.MemoryExtractionPersistence persistence, DataQualityStatus status, ReviewDecision decision) throws Exception {
+        var artifacts = new Fixtures.MemoryArtifactStore();
+        var artifact = artifacts.put(command.content(), command.mediaType(), command.capturedAt());
+        String legacyIdentity = artifact.sha256() + "|fixture-html|1.0.0|openai|1.0.0|fixture-model|p1|"
+            + RecruitmentExtractionProposal.SCHEMA_VERSION;
+        String fingerprint = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+            .digest(legacyIdentity.getBytes(StandardCharsets.UTF_8)));
+        var evidence = new Evidence(Fixtures.EVIDENCE_ID, artifact.id(),
+            com.careeros.domain.DomainEnums.EvidenceType.OFFICIAL_NOTICE,
+            command.sourceUrl(), command.sourceTitle(), null, artifact.sha256(), Fixtures.NOW);
+        var originalProposal = Fixtures.verifiedProposal();
+        var proposal = originalProposal;
+        if (decision == ReviewDecision.CORRECT) {
+            var job = proposal.jobs().getFirst();
+            var corrected = new RecruitmentExtractionProposal.JobProposal(job.title(), job.externalJobCode(),
+                Fixtures.explicit(3), job.employmentType(), job.location(), job.minimumEducation(), job.degree(),
+                job.majorText(), job.maximumAge(), job.acceptedGraduationYears(), job.minimumExperienceYears(),
+                job.jobFamily(), job.duties());
+            proposal = new RecruitmentExtractionProposal(proposal.schemaVersion(), proposal.source(),
+                proposal.organization(), proposal.recruitmentEvent(), List.of(corrected), proposal.warnings(),
+                proposal.confidence(), proposal.completeSnapshot());
+        }
+        var run = new ExtractionRun(UUID.randomUUID(), evidence.id(), command.organizationId(),
+            command.recruitmentEventId(), fingerprint, com.careeros.domain.DomainEnums.ExtractionSourceType.HTML,
+            "fixture-html", "1.0.0", "openai", "1.0.0", "fixture-model", "p1",
+            RecruitmentExtractionProposal.SCHEMA_VERSION, status, proposal.confidence(), proposal,
+            "{}", null, null, Fixtures.NOW, Fixtures.NOW);
+        ReviewItem review = status == DataQualityStatus.VERIFIED ? null : new ReviewItem(UUID.randomUUID(),
+            run.id(), status == DataQualityStatus.REJECTED ? ReviewStatus.RESOLVED : ReviewStatus.PENDING,
+            0, proposal, List.of(), List.of(), Fixtures.NOW,
+            status == DataQualityStatus.REJECTED ? Fixtures.NOW : null);
+        if (decision != null) {
+            UUID reviewId = UUID.randomUUID();
+            var action = new ReviewAction(UUID.randomUUID(), reviewId, decision, 0,
+                ReviewPayload.full(originalProposal), decision == ReviewDecision.CORRECT ? ReviewPayload.full(proposal) : null,
+                "人工核验完成", Fixtures.NOW);
+            review = new ReviewItem(reviewId, run.id(), ReviewStatus.RESOLVED, 1, proposal,
+                List.of(), List.of(action), Fixtures.NOW.minusSeconds(60), Fixtures.NOW);
+        }
+        return persistence.save(new ExtractionBundle(artifact, evidence, Fixtures.parsed(evidence), run, review));
     }
 
     @Test

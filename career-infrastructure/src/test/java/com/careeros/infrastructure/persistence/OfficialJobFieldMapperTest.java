@@ -8,6 +8,91 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class OfficialJobFieldMapperTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+        "1990年1月1日以后出生，年龄不超过35周岁|35",
+        "年龄在18周岁以上、35周岁以下|35",
+        "18至35周岁|35",
+        "1990-01-01以后出生，35周岁及以下|35",
+        "未满35周岁|34",
+        "35周岁（不含）以下|34",
+        "不超过35周岁|35",
+        "38周岁及以下|38"
+    })
+    void readsTheAgeUpperBoundWithoutMistakingDatesOrLowerBounds(String raw, int expected) {
+        assertThat(OfficialJobFieldMapper.ageLimit(raw)).isEqualTo(expected);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "硕士35周岁以下，博士40周岁以下", "35周岁以下，高级职称放宽至40周岁",
+        "18周岁以上", "1990年1月1日以后出生", "按公告要求", "年龄不低于35周岁",
+        "非35周岁以下", "硕士35周岁以下，博士不限", "硕士35周岁以下\n博士不限",
+        "硕士35周岁以下\r\n博士不限", "35周岁以下\n高级职称可放宽",
+        "硕士35周岁以下\u2028博士不限", "35周岁以下或不限",
+        "35周岁以下；年龄不限", "35周岁以下或\n不限"
+    })
+    void preservesUnknownOrConditionalAgeLimits(String raw) {
+        assertThat(OfficialJobFieldMapper.ageLimit(raw)).isNull();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+        "2024年1月以后取得学历，工作经历不限|0", "工作经历不限|0",
+        "2020年毕业，3年以上工作经历|3", "至少2年相关工作经验|2",
+        "3年及以上|3", "无工作经验要求|0", "工作年限不限|0",
+        "工作年限要求不限|0", "工作年限无要求|0", "无工作年限要求|0",
+        "工作年限不作要求|0", "工作年限不做要求|0", "工作年限无限制|0",
+        "工作年限：不限|0", "工作年限要求：不限|0", "工作年限 不限。|0",
+        "工作年限不限；本科及以上学历|0", "工作年限不限；本科三年制学历|0",
+        "工作经历不限；工作经验不限|0"
+    })
+    void readsExperienceYearsWithoutMistakingCalendarYears(String raw, int expected) {
+        assertThat(OfficialJobFieldMapper.experienceYears(raw)).isEqualTo(expected);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "2025年应届毕业生", "2024年1月以后取得学历", "本科5年，硕士3年",
+        "工作经历见公告", "3年制研究生", "任职不超过3年", "不要求3年工作经历",
+        "2年以上相关工作经验者优先", "工作经历要求\n本科5年，硕士3年",
+        "本科需3年工作经验\n硕士不限", "本科需3年工作经验\r\n硕士不限",
+        "本科需3年工作经验\u2028硕士不限", "2年以上相关工作经验者\n优先",
+        "优先考虑具有2年相关工作经验者", "工作年限不限于3年",
+        "本科工作年限不限，硕士3年工作经验", "工作年限不限，相关工作经验至少3年",
+        "工作年限不限；本科须三年工作经验", "工作年限不限\n本科须三年工作经验",
+        "工作年限不限；本科须三年", "工作年限不限；具有相关工作经验者优先"
+    })
+    void leavesNonExperienceAndAmbiguousRequirementsUnknown(String raw) {
+        assertThat(OfficialJobFieldMapper.experienceYears(raw)).isNull();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullAndEmptySource
+    @org.junit.jupiter.params.provider.ValueSource(strings = {" ", "\n\t"})
+    void missingAgeAndExperienceEvidenceStaysUnknown(String raw) {
+        assertThat(OfficialJobFieldMapper.ageLimit(raw)).isNull();
+        assertThat(OfficialJobFieldMapper.experienceYears(raw)).isNull();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "本科需3年工作经验\n硕士不限", "2年以上相关工作经验者优先"
+    })
+    void retainsAmbiguousExperienceAsOriginalRequirementEvidence(String experience) {
+        var context = new OfficialJobFieldMapper.ImportContext(
+            UUID.randomUUID(), UUID.randomUUID(), "杭州市信息中心", "杭州", null,
+            "https://example.test/notice", "https://example.test/jobs", List.of());
+        var row = new OfficialJobFieldMapper.RawOfficialJob(
+            "A1", "软件工程师", null, null, null, null, "1",
+            null, null, experience, null, null, null);
+
+        var job = new OfficialJobFieldMapper().toNormalizedJob(row, context);
+
+        assertThat(job.originalRequirementText()).isEqualTo(experience);
+        assertThat(job.minimumExperienceYears()).isNull();
+    }
+
     @Test
     void mapsHospitalInformationJobIntoCandidateRelevantOfficialFields() {
         var mapper = new OfficialJobFieldMapper();

@@ -24,6 +24,64 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class OfficialExcelImportServiceTest {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.MethodSource("ambiguousHardConditions")
+    void ambiguousHardConditionsKeepTheJobAndExposeLocatedWarnings(String age, String experience) throws Exception {
+        var events = mock(RecruitmentEventJpaRepository.class);
+        var organizations = mock(OrganizationJpaRepository.class);
+        var upserts = mock(JobUpsertService.class);
+        when(events.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(organizations.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(upserts.stableKey(any())).thenReturn("job-1");
+        when(upserts.upsert(any())).thenReturn(new JobUpsertResult(1, 0, 0, 0, List.of(UUID.randomUUID())));
+        byte[] bytes;
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("岗位表");
+            var header = sheet.createRow(0);
+            var row = sheet.createRow(1);
+            var headers = List.of("单位名称", "岗位名称", "年龄", "工作经历", "招聘人数");
+            var values = List.of("杭州市测试信息中心", "软件工程师", age, experience, "1");
+            for (int i = 0; i < headers.size(); i++) {
+                header.createCell(i).setCellValue(headers.get(i));
+                row.createCell(i).setCellValue(values.get(i));
+            }
+            workbook.write(output);
+            bytes = output.toByteArray();
+        }
+        var result = new OfficialExcelImportService(events, organizations, upserts,
+            mock(OfficialJobAdmissionService.class)).importWorkbook(new ByteArrayInputStream(bytes),
+                new OfficialExcelImportService.ImportCommand("2026招聘", "https://example.test/notice",
+                    2026, LocalDate.of(2026, 3, 17), null, "杭州", EventType.PUBLIC_INSTITUTION));
+        var batch = ArgumentCaptor.forClass(JobUpsertBatch.class);
+        verify(upserts).upsert(batch.capture());
+        assertThat(batch.getValue().jobs()).singleElement().satisfies(job -> {
+            assertThat(job.maximumAge()).isNull();
+            assertThat(job.minimumExperienceYears()).isNull();
+            assertThat(job.ageRequirementText()).isEqualTo(age);
+            assertThat(job.originalRequirementText()).contains(experience);
+        });
+        assertThat(result.inserted()).isEqualTo(1);
+        assertThat(result.errors()).isEmpty();
+        var json = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(result);
+        assertThat(json.path("warnings").size()).isEqualTo(2);
+        assertThat(json.path("warnings").get(0).path("sheet").asText()).isEqualTo("岗位表");
+        assertThat(json.path("warnings").get(0).path("row").asInt()).isEqualTo(2);
+        assertThat(json.path("warnings").get(0).path("field").asText()).isEqualTo("年龄");
+        assertThat(json.path("warnings").get(0).path("rawValue").asText()).isEqualTo(age);
+        assertThat(json.path("warnings").get(1).path("sheet").asText()).isEqualTo("岗位表");
+        assertThat(json.path("warnings").get(1).path("row").asInt()).isEqualTo(2);
+        assertThat(json.path("warnings").get(1).path("field").asText()).isEqualTo("工作经历");
+        assertThat(json.path("warnings").get(1).path("rawValue").asText()).isEqualTo(experience);
+    }
+
+    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> ambiguousHardConditions() {
+        return java.util.stream.Stream.of(
+            org.junit.jupiter.params.provider.Arguments.of("硕士35周岁以下，博士40周岁以下", "本科5年，硕士3年"),
+            org.junit.jupiter.params.provider.Arguments.of("硕士35周岁以下\n博士不限", "本科需3年工作经验\n硕士不限"),
+            org.junit.jupiter.params.provider.Arguments.of("硕士35周岁以下\n博士不限", "2年以上相关工作经验者优先"),
+            org.junit.jupiter.params.provider.Arguments.of("35周岁以下或不限", "工作年限不限；本科须三年工作经验"));
+    }
+
     @Test
     void identifiesApplicantRosterAsANonJobWorkbook() throws Exception {
         RecruitmentEventJpaRepository events = mock(RecruitmentEventJpaRepository.class);

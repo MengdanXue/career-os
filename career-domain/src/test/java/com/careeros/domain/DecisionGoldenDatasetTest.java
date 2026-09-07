@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -63,7 +64,7 @@ class DecisionGoldenDatasetTest {
         return new JobPosting(
             UUID.randomUUID(), UUID.randomUUID(), organizationId, "GOLDEN", "信息技术岗",
             JobFamily.INFORMATION_SYSTEMS, employmentType, "杭州", 1, EducationLevel.BACHELOR,
-            Set.of(major), Set.of(), null, null, null, Set.of(), "Java 数据治理",
+            Set.of(major), Set.of(), 40, LocalDate.of(2026, 8, 20), 0, Set.of(), "Java 数据治理",
             "https://example.gov.cn/golden", evidence
         );
     }

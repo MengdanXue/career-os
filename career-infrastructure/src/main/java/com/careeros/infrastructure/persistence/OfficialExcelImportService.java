@@ -56,7 +56,7 @@ public class OfficialExcelImportService {
         var event=findWorkbookEvent(command.workbookSourceUrl(),workbookIdentity)
             .map(existing -> mergeAnnouncementDates(existing, command, announcementEvent.orElse(null),workbookIdentity))
             .orElseGet(()->createEvent(command, announcementEvent.orElse(null),workbookIdentity));
-        int recognizedSheets=0; int substantiveSheets=0; int nonJobSheets=0; int nonTargetSheets=0; String workbookDefaultOrganization=command.defaultOrganizationName(); var errors=new ArrayList<RowError>(); var seen=new HashSet<String>(); var normalizedJobs=new ArrayList<NormalizedJob>();var rowEvidence=new ArrayList<RowEvidence>();
+        int recognizedSheets=0; int substantiveSheets=0; int nonJobSheets=0; int nonTargetSheets=0; String workbookDefaultOrganization=command.defaultOrganizationName(); var errors=new ArrayList<RowError>(); var warnings=new ArrayList<RowWarning>(); var seen=new HashSet<String>(); var normalizedJobs=new ArrayList<NormalizedJob>();var rowEvidence=new ArrayList<RowEvidence>();
         try(var workbook=WorkbookFactory.create(new java.io.ByteArrayInputStream(workbookBytes))){
             var formatter=new DataFormatter(Locale.ROOT);
             String titleOrganization=workbookOrganization(workbook,formatter);
@@ -97,8 +97,9 @@ public class OfficialExcelImportService {
                         String ageText=value(row,header.columns(),formatter,"年龄","年龄要求");
                         String conditions=values(row,header.columns(),formatter,
                             "其他条件","其他资格条件或要求","资格条件","其他要求","备注");
-                        String experienceText=join(value(row,header.columns(),formatter,
-                            "工作经历","工作经验","工作年限","相关经历"),conditions);
+                        String experienceRequirementText=value(row,header.columns(),formatter,
+                            "工作经历","工作经验","工作年限","相关经历");
+                        String experienceText=join(experienceRequirementText,conditions);
                         String applicantText=join(value(row,header.columns(),formatter,
                             "招聘对象","人员范围","对象范围"),conditions);
                         String employmentText=value(row,header.columns(),formatter,"用工性质","编制性质","岗位性质","聘用形式");
@@ -117,7 +118,7 @@ public class OfficialExcelImportService {
                         Boolean professionalTestRequired=yesNo(value(row,header.columns(),formatter,
                             "是否设置专业（业务、技能、心理素质）测试","是否设置专业测试","专业测试"));
                         String contactPhone=value(row,header.columns(),formatter,"招聘单位咨询电话","咨询电话","联系电话");
-                        String originalRequirementText=joinValues(educationText,degreeRequirement,majorText,ageText,conditions);
+                        String originalRequirementText=joinValues(educationText,degreeRequirement,majorText,ageText,experienceRequirementText,conditions);
                         String worksite=value(row,header.columns(),formatter,"工作地点","工作院区","院区","地区","所在地");
                         actualEmployer=firstText(actualEmployer,command.defaultActualEmployer());
                         worksite=firstText(worksite,command.defaultWorksite());
@@ -140,6 +141,14 @@ public class OfficialExcelImportService {
                         String stableKey=upserts.stableKey(normalized);
                         if(!seen.add(stableKey)) throw new IllegalArgumentException("同一文件出现重复稳定岗位键");
                         normalizedJobs.add(normalized);
+                        if (!blank(ageText) && normalized.maximumAge() == null) {
+                            warnings.add(new RowWarning(sheet.getSheetName(), rowIndex + 1, "年龄", ageText,
+                                "无法确定统一年龄上限，保留原文待核实"));
+                        }
+                        if (!blank(experienceText) && normalized.minimumExperienceYears() == null) {
+                            warnings.add(new RowWarning(sheet.getSheetName(), rowIndex + 1, "工作经历", experienceText,
+                                "无法确定最低工作年限，保留原文待核实"));
+                        }
                     var sourceColumns=sourceColumns(header);
                     rowEvidence.add(new RowEvidence(sheet.getSheetName(),rowIndex+1,evidenceFields(fields(
                         normalized,headcountText,educationText,majorText,ageText,employmentText),sourceColumns),
@@ -162,7 +171,7 @@ public class OfficialExcelImportService {
             for(int index=0;index<Math.min(result.jobIds().size(),rowEvidence.size());index++){var located=rowEvidence.get(index);workbookEvidence.replaceJobFacts(workbookEvidenceId,result.jobIds().get(index),located.sheet(),located.row(),located.fields(),located.sourceColumns());}
         }
         admissions.classify(result.jobIds(), Instant.now());
-        return new ImportResult(event.id,result.inserted(),result.updated(),result.unchanged(),result.deactivated(),List.copyOf(errors));
+        return new ImportResult(event.id,result.inserted(),result.updated(),result.unchanged(),result.deactivated(),List.copyOf(errors),List.copyOf(warnings));
     }
 
     private Optional<JpaModels.RecruitmentEventEntity> findWorkbookEvent(String sourceUrl,String identity){return events.findFirstByWorkbookIdentity(identity).or(()->events.findFirstBySourceUrl(sourceUrl)).or(()->events.findAll().stream().filter(value->identity.equals(OfficialWorkbookIdentity.of(value.sourceUrl))).findFirst());}
@@ -296,5 +305,11 @@ public class OfficialExcelImportService {
         public ImportCommand{if(blank(announcementTitle)||blank(sourceUrl)||blank(workbookSourceUrl))throw new IllegalArgumentException("announcementTitle, sourceUrl and workbookSourceUrl are required");if(eventType==null)eventType=EventType.PUBLIC_INSTITUTION;}
     }
     public record RowError(String sheet,int row,String message){}
-    public record ImportResult(UUID recruitmentEventId,int inserted,int updated,int unchanged,int deactivated,List<RowError> errors){}
+    public record RowWarning(String sheet,int row,String field,String rawValue,String message){}
+    public record ImportResult(UUID recruitmentEventId,int inserted,int updated,int unchanged,int deactivated,List<RowError> errors,List<RowWarning> warnings){
+        public ImportResult(UUID recruitmentEventId,int inserted,int updated,int unchanged,int deactivated,List<RowError> errors){
+            this(recruitmentEventId,inserted,updated,unchanged,deactivated,errors,List.of());
+        }
+        public ImportResult{errors=List.copyOf(errors);warnings=List.copyOf(warnings);}
+    }
 }

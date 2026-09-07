@@ -238,7 +238,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                 job.jobFamily(), valueOr(job.employmentType(), EmploymentType.UNKNOWN), job.location(),
                 required(job.headcount(), "headcount"), valueOr(job.minimumEducation(), EducationLevel.UNKNOWN),
                 splitMajors(valueOr(job.majorText(), null)), valueOr(job.acceptedGraduationYears(), Set.of()),
-                valueOr(job.maximumAge(), null), valueOr(proposal.recruitmentEvent().applicationEndsOn(), null),
+                valueOr(job.maximumAge(), null), null,
                 valueOr(job.minimumExperienceYears(), null), Set.of(), job.duties(), proposal.source().sourceUrl(),
                 evidenceIds))
             .toList();

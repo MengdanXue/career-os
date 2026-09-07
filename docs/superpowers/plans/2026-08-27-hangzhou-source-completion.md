@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Goal:** Connect and live-verify all 28 Hangzhou target official sources, with no NOT_CONNECTED or FAILED source and with conservative, evidence-backed 2024–2026 coverage.
+**Goal:** Establish an auditable Hangzhou 2024–2026 opportunity history and 2027 incremental foundation, proving coverage through six independent completion gates; source connectivity is only Level 1.
 
-**Architecture:** Extend the existing SourceListingReader into a typed multi-entry orchestrator while preserving its application port and all legacy source behavior. Shared listing modes, audited transport, evidence aggregation, and employment/lifecycle normalization are implemented once; three forward-only Flyway source batches then provide per-site contracts and are accepted through incremental → historical → incremental live runs.
+**Architecture:** Reuse the implemented multi-entry SourceListingReader, artifact storage, extraction/review pipeline, recruitment_event, job upsert and lifecycle linking. Add conservative coverage assessment, document inventories, cross-source batch identity, immutable job versions and independent policy/verification evidence. Preserve forward-only migrations and accept changes with real incremental → historical → incremental runs plus cross-source reconciliation.
 
 **Tech Stack:** Java 21, Spring Boot 3.5, PostgreSQL 16, Flyway, Jsoup, Jackson, Apache POI, JUnit 5, Testcontainers, React 19, TypeScript 7, Vitest, Playwright CLI.
 
@@ -13,12 +13,20 @@
 ## Global Constraints
 
 - Default transport is HTTPS; audited HTTP is read-only, exact-host and path-prefix scoped, and never carries credentials or candidate data.
-- A year is COMPLETE only when every required listing entry proves terminal traversal and all downloads/parsers succeed.
+- A year is COMPLETE only with audited required channels, applicable time-range evidence, document reconciliation and official cross-checks; terminal traversal alone is insufficient.
 - A configured source with an unprovable official archive remains PARTIAL; no empty result may be promoted to COMPLETE.
 - Existing canonical URL, content fingerprint, stable job key, source pacing, redirect validation, response-size limits, and unique-only lifecycle linking remain intact.
 - Runtime configuration is recruitment_source.configuration seeded by Flyway; YAML is a validated catalog mirror.
-- Every behavior change follows red-green-refactor TDD and each source batch receives a separate commit and live acceptance record.
-- Existing migrations are immutable; all schema and source changes use V43 and later.
+- Meaningful correctness changes receive failing regression tests, focused verification and independently reviewable commits; operational runs retain live acceptance evidence.
+- Existing migrations through V77 are immutable. Main Agent assigns every new migration number after inspecting the current maximum; historical task filenames below are not instructions to reuse V43–V77.
+- Source count is registry-derived, never hardcoded to 28 or 30. Unknown metrics are null/unknown, not zero; 2026 coverage is year-to-date at the recorded cutoff.
+- COMPLETE/NO_TARGET_RECORDS from the legacy pipeline cannot be promoted directly to Level 2 or VERIFIED_NO_DATA. Connection/API access status cannot bypass six-level gates.
+
+## Revision and execution order — 2026-09-07
+
+The baseline is `175c77a` / V77. Tasks 1–11 below preserve the original implementation history; their unchecked boxes do not imply that already implemented multi-entry transport/source features must be rebuilt. Their old acceptance language is superseded by this revision and design sections 11–12. Concrete evidence and all eighteen requirement mappings are in [the audit](../../audits/2026-09-07-remote-local-acquisition-audit.md).
+
+Execute the new Phase A–F tasks below. Parent owns schema numbering, aggregate acceptance and remote integration. The user authorized multi-Agent implementation: district, university/research, hospital, SOE source investigations may proceed independently after shared contracts are fixed; lifecycle, audit and policy work use separate file ownership. Keep current branch changes and existing user evidence. Do not pause for approval after each source.
 
 ---
 
@@ -365,7 +373,7 @@ Require NOT_CONNECTED=0 and FAILED=0; documented PARTIAL is allowed only for off
 
 - [ ] **Step 1: Write failing domain/API/UI tests**
 
-Cover registration, admission ticket, written/professional tests, correction/cancellation, review-required stages, actual employer/worksite, unknown evidence, exactly 28 sources, and separate access/connection/history states.
+Cover registration, admission ticket, written/professional tests, correction/cancellation, review-required stages, actual employer/worksite, unknown evidence, registry-derived source counts, and separate access/connection/history states.
 
 - [ ] **Step 2: Verify RED**
 
@@ -394,7 +402,7 @@ Preserve unmatched/ambiguous lifecycle rows and never display inferred formal em
 
 - [ ] **Step 1: Verify completion matrix**
 
-Exactly 28 unique sources; NOT_CONNECTED=0; FAILED=0; CONNECTED + PARTIAL=28. Every PARTIAL has official gap reason, annual stop reason, and run IDs.
+All registered target sources are enumerated; NOT_CONNECTED=0 and FAILED=0 qualify only for the Level 1 connectivity gate after live rerun checks. Every PARTIAL has an explained gap and run IDs. Evaluate Levels 2–6 separately using design section 11 and Phase F below.
 
 - [ ] **Step 2: Run full backend suite**
 
@@ -417,7 +425,7 @@ Expected: exit 0 and zero failures/errors.
 
 - [ ] **Step 5: Perform Playwright acceptance**
 
-Verify npx.cmd exists; inspect /updates and /opportunities; check 28 sources/no failed or unconnected sources; inspect representative district, hospital, university, research, and SOE details; close the browser session.
+Verify npx.cmd exists; inspect /updates and /opportunities; reconcile the registry-derived source count and six-level gaps; inspect representative district, hospital, university, research, and SOE details; close the browser session.
 
 - [ ] **Step 6: Request independent code review**
 
@@ -433,3 +441,87 @@ Fix every Critical/Important finding with a failing regression test first.
     gh repo view career-os --json visibility,url
 
 Expected: PRIVATE visibility, clean worktree, and all verified batch commits on the remote branch.
+
+## Phase A — Stop unsupported completion claims and integrate eligibility fixes
+
+**Requirements:** 1, 8, 10, 11, 14, 16, 18. This phase is the prerequisite for new live backfills; it produces honest status even before all later capabilities exist.
+
+**Files:** modify `career-domain/src/main/java/com/careeros/domain/acquisition/SourceYearCoverage.java`, `career-application/src/main/java/com/careeros/application/AcquisitionService.java`, `career-web/src/main/java/com/careeros/AcquisitionApiModels.java`, `scripts/hangzhou_source_batch_acceptance.ps1`; adapt remote eligibility fixes in `OfficialJobFieldMapper.java` and `DefaultJobUpsertService.java`; add corresponding regression tests and a parent-assigned forward migration if persisted states change.
+
+**Interface:** Keep legacy API fields during transition. Produce explicit evidence-backed completion gates with status/reason/evidence IDs, and historical conclusion states UNKNOWN/PARTIAL/ARCHIVE_UNAVAILABLE/MOVED/VERIFIED_NO_DATA/COMPLETE. Missing evidence yields UNKNOWN/FAIL rather than inferred success. No old enum name alone grants a new gate.
+
+- [ ] Add regressions for completed pagination + jobs but no channel/cross-source audit → no historical-complete conclusion; filtered empty archive → no absence conclusion; 404 → unavailable/unknown, never no-data.
+- [ ] Run focused tests: `mvn -pl career-application -am '-Dtest=AcquisitionServiceTest,SourceYearCoverageTest' '-Dsurefire.failIfNoSpecifiedTests=false' test`; confirm failures correspond to the new assertions.
+- [ ] Change the assessment path and API display together; preserve old evidence and label it legacy pending reassessment. Where full audit facts are unavailable, report unresolved gates explicitly rather than fabricate proof.
+- [ ] Adapt age/work-experience parsing from reviewed remote changes. Test birth-year wording, Chinese years, graduation-year distractors and missing age reference. An application deadline cannot become an age cutoff without official evidence.
+- [ ] Verify focused infrastructure tests plus `scripts/Test-HangzhouSourceBatchAcceptance.ps1`. Commit this bounded correction independently and record which gates remain unimplemented.
+
+## Phase B — Persistent channel/document evidence and failure inventory
+
+**Requirements:** 2, 7, 8, 9, 11. Parallel source investigations can now consume the evidence contracts.
+
+**Files:** extend `ListingEntryContract.java`, `ConfigurableSourceListingReader.java`, `AcquisitionHttpPorts.java`, `AcquiredDocument.java`, `AcquisitionService.java`, `Phase2DocumentProcessor.java`, `PdfBoxDocumentParser.java`, `JpaAcquisitionStore.java` and `AcquisitionJpaModels.java`; create document classification and listing snapshot records/services under the existing domain/acquisition and infrastructure/acquisition packages; forward migration and tests owned by parent.
+
+**Interface:** Every run/source/entry/year stores listing snapshot references, URL/fetch time/raw checksum, required-channel audit, time range and traversal evidence. Every document stores parent ID, document type, media type, raw checksum, parser/extraction state, confidence and review ID. Reuse existing artifact and review stores.
+
+- [ ] Add fixtures showing an unregistered official exam lane blocks channel completeness; a stored JSON list is sufficient to reproduce discovered totals; later website edits do not erase old bytes.
+- [ ] Add document classification cases for jobs, major catalogs, registration forms, scores and interview/physical/publication lists; a major catalog produces zero jobs with explicit NON_JOB classification.
+- [ ] Add unsupported Word/ZIP and image/scanned PDF tests that preserve a review item and unresolved document count. Zero text may not become reliable zero jobs. Implement bounded Word/ZIP processing with parent/child evidence; encrypted/malformed/oversized content keeps explicit failure.
+- [ ] Persist document processing outcomes for all attachments, including previously ignored lifecycle workbooks. Distinguish a successfully classified non-job document from a parse failure.
+- [ ] Run `mvn -pl career-infrastructure -am '-Dtest=*Document*Test,*Listing*Test,*Acquisition*Test' '-Dsurefire.failIfNoSpecifiedTests=false' test`; verify artifact round-trip and retry counting with integration tests, then commit.
+
+## Phase C — Cross-source batch identity and immutable opportunity versions
+
+**Requirements:** 3, 4, 5, 6, 13. Depends on persistent evidence from B; does not replace existing recruitment_event.
+
+**Files:** modify `RecruitmentEvent.java`, `JobPosting.java`, `DefaultJobUpsertService.java`, `OfficialExcelImportService.java`, `OfficialAnnouncementFactService.java`, `JpaModels.java` and repositories. Add batch-source alias, job-version and job-change persistence beside existing models; forward migration assigned by parent.
+
+**Interface:** Canonical batch identity joins many source evidence URLs. Primary job identity is batch+actual employer+code; fallback includes title+key qualifications. Current job_posting remains the read projection; immutable versions retain previous/current facts, effective/fetched times and source evidence. Alias legacy keys rather than delete historical evidence.
+
+- [ ] Add cases where HRSS and unit copies with the same explicit official batch number produce one batch; an ambiguous similar title produces unresolved candidates without automatic merge.
+- [ ] Add supplement/re-upload cases: same batch+code remains one job; distinct employers sharing code stay distinct; code-less jobs with distinct requirements stay separate; official correction resolves fallback-key changes to one versioned identity.
+- [ ] Persist versions and semantic change events for headcount, reduction, cancellation, conditions and registration extensions. Test original deadline remains queryable after extension and source disappearance does not imply official cancellation.
+- [ ] Test each supported employment type per row and independent recruitment_type; missing wording remains unknown. Preserve human-verified evidence during alias migration.
+- [ ] Run focused `DefaultJobUpsertServiceTest`, `OfficialExcelImportServiceTest`, event concurrency and migration integration tests. Review migration duplicate candidates before applying to the local database, then commit.
+
+## Phase D — Full lifecycle and registration fact linkage
+
+**Requirements:** 5, 12, 13, 14. Depends on C's canonical batches and B's document inventory.
+
+**Files:** modify `RecruitmentLifecycle.java`, `RecruitmentProcessFacts.java`, `OfficialLifecycleDocumentService.java`, `OfficialAnnouncementFactParser.java`, `Phase2DocumentProcessor.java`, job-detail API/UI and lifecycle persistence.
+
+**Interface:** Preserve the eight existing stages and expose the complete sequence plus correction/cancellation/reduction/extension/replacement/abandonment. Every event has batch, document, effective time, extracted facts and MATCHED/UNMATCHED/AMBIGUOUS status; missing expected stages remain visible.
+
+- [ ] Add cases for registration, replacement after qualification/physical exam, abandonment and combined correction/extension; multiple stages from one document are retained without creating new jobs.
+- [ ] Parse lifecycle spreadsheets into semantic document/event evidence, not job rows. Test preserved unresolved links when a batch is absent and deterministic relinking after the parent batch arrives.
+- [ ] Extract application URL/channel/start/end, qualification/exam times and account requirement, with evidence excerpts; supplementary requirements enter fact fusion with explicit conflicts.
+- [ ] Run `RecruitmentLifecycleTest`, `OfficialLifecycleDocumentServiceIntegrationTest`, `OfficialEvidenceLifecycleIntegrationTest` and job-detail UI tests. Commit only after orphan counts and missing-stage display are verified.
+
+## Phase E — Independent policies and cross-source verification
+
+**Requirements:** 14, 15, 17. Policy and verification work can run in parallel after shared identity contracts are fixed.
+
+**Files:** extend `PolicyRule.java`, `PolicyRuleJpaRepository.java`, registry roles and acquisition routing; add policy-source/version/applicability models and coverage-gap/verification-warning models; extend audit read endpoints and UI. Keep policy parsers beside current extraction code rather than embedding jurisdiction rules in generic field mappers.
+
+**Interface:** policy_source → versioned policy_rule → applicable_job/recruitment. Verification source → observed batch candidate → reconciliation result → persistent gap/warning; verification-only ingestion does not duplicate job creation.
+
+- [ ] Add policy cases for 2026 versus 2027 graduates, overseas certification deadlines, no-employer/no-social-insurance restrictions, explicit age reference and major catalog applicability. Missing future policy remains unknown; prior employment alone cannot automatically exclude a future graduate.
+- [ ] Store jurisdiction, target population, effective dates, official source URL and original excerpts; support superseded rules without overwriting old assessments.
+- [ ] Test an official verifier observing a batch absent from the primary feed creates a gap, not a duplicate job; matching existing batch resolves the gap with evidence; ambiguous match keeps warning open.
+- [ ] Enumerate policy categories with evidence/unknown/expired counts. Run policy-domain, acquisition integration and assessment regressions; commit each independently reviewed subsystem.
+
+## Phase F — Real historical reconciliation and six-level delivery
+
+**Requirements:** 1–18 acceptance. Start after A; advance each source through later gates only when dependent capabilities are implemented and verified.
+
+**Files:** extend `scripts/hangzhou_source_batch_acceptance.ps1` and its test, acquisition audit API/UI, `docs/hangzhou-source-status-matrix.md`, and per-run report output. Source-specific migrations/configuration follow the parent-assigned sequence.
+
+**Interface:** Frozen registry + cutoff + run IDs → per-source/per-year metrics + six gate assessments + gap and warning ledger. Summary includes exact denominators and unknown counts. Report filenames and timestamps distinguish this run from 2026-08-31 legacy acceptance.
+
+- [ ] Reconcile actual official channels for districts, universities/research, hospitals and SOEs. Include combined HRSS/health notices whose attachment rows identify the employer; do not infer no opportunities from title-only filtering.
+- [ ] For every source, collect incremental → historical 2024/2025/2026 → incremental evidence. Preserve downloadable raw artifacts and reasoned failure dispositions; complete known source gaps through official annual indexes, search and supervisor channels where accessible.
+- [ ] Compute annual coverage over audited source-year scope; report complete, verified-no-data, partial, moved, unavailable and unknown separately. A known archive limit remains visible even if all obtainable data is processed.
+- [ ] Output source totals/statuses, annual coverage fractions, canonical batch/job/event totals, important attachment success/failure/unresolved, orphan/ambiguous jobs/events, policy coverage, verification warnings, coverage confidence and per-source highest continuous passing level.
+- [ ] Test report refusal for green sources with missing documents, empty filtered archive, unlinked lifecycle or verifier-only batch. Test real changes on rerun are explained, rather than requiring every genuine change to be zero.
+- [ ] Run focused API/report/UI checks and applicable backend/frontend suites after final integration. Inspect source and opportunity pages with representative evidence and unresolved cases. Independent reviewer checks all six gate definitions against outputs.
+- [ ] Record actual achieved levels, limits and run IDs; commit and push reviewed changes to the existing private branch. Work continues on accessible unresolved gaps; external unavailable archives are stated with evidence instead of a fabricated complete status.

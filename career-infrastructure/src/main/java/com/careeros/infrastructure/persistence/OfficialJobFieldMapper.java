@@ -20,11 +20,21 @@ import org.springframework.stereotype.Component;
 public final class OfficialJobFieldMapper {
     private static final Pattern NUMBER = Pattern.compile("(\\d+)");
     private static final Pattern YEAR = Pattern.compile("(20\\d{2})");
+    private static final Pattern DATE = Pattern.compile("(?<!\\d)\\d{4}(?:\\s*年(?:\\s*\\d{1,2}\\s*月(?:\\s*\\d{1,2}\\s*日)?)?|[-/.]\\d{1,2}(?:[-/.]\\d{1,2})?)");
+    private static final Pattern AGE = Pattern.compile("(?<!\\d)(\\d{1,3})\\s*(?:周)?岁");
+    private static final Pattern AGE_UPPER = Pattern.compile("(?:不超过|不得超过|最高|最大)\\s*(\\d{1,3})\\s*(?:周)?岁|(\\d{1,3})\\s*(?:周)?岁\\s*(?:及)?(?:以下|以内)");
+    private static final Pattern AGE_EXCLUSIVE = Pattern.compile("(?:未满|不满)\\s*(\\d{1,3})\\s*(?:周)?岁|(\\d{1,3})\\s*(?:周)?岁\\s*[（(]不含[）)]\\s*以下");
+    private static final Pattern AGE_RANGE = Pattern.compile("(?<!\\d)(\\d{1,3})\\s*(?:周岁|岁)?\\s*(?:至|到|[-—~～－])\\s*(\\d{1,3})\\s*(?:周)?岁");
+    private static final Pattern CONDITIONAL_AGE = Pattern.compile("博士|硕士|本科|职称|放宽|非|不低于|不少于|不限");
+    private static final Pattern EXPERIENCE = Pattern.compile("(?<!\\d)(\\d{1,2})\\s*年(?!制)");
+    private static final Pattern EXPERIENCE_CLAUSE = Pattern.compile("经验|经历|年限|[零〇一二三四五六七八九十百两]+年(?!制)");
+    private static final Pattern CONDITIONAL_EXPERIENCE = Pattern.compile("不超过|不要求|以内|以下|至多|最多|博士|硕士|本科|应届|优先|不限于");
+    private static final Pattern NO_EXPERIENCE = Pattern.compile("^(?:(?:工作)?(?:经历|经验|年限)(?:要求)?[:：]?)?(?:不限|无要求|不作要求|不做要求|无限制)$|^无(?:工作)?(?:经历|经验|年限)要求$");
 
     public NormalizedJob toNormalizedJob(RawOfficialJob row, ImportContext context) {
         Objects.requireNonNull(row, "row");
         Objects.requireNonNull(context, "context");
-        String requirements = join(row.educationText(), row.majorText(), row.ageText(), row.candidateScope());
+        String requirements = join(row.educationText(), row.majorText(), row.ageText(), row.experienceText(), row.candidateScope());
         EmploymentType employmentType = row.employmentText() == null || row.employmentText().isBlank()
             ? context.defaultEmploymentType()
             : employmentType(row.employmentText());
@@ -127,12 +137,58 @@ public final class OfficialJobFieldMapper {
     }
 
     static Integer ageLimit(String value) {
-        return text(value).contains("岁") || text(value).contains("周岁") ? integer(value) : null;
+        String raw = DATE.matcher(text(value)).replaceAll(" ").strip();
+        // Conditional relaxations need a rule tied to the applicant's degree/title, not one scalar.
+        if (CONDITIONAL_AGE.matcher(raw).find()) return null;
+        var range = AGE_RANGE.matcher(raw);
+        if (range.matches()) {
+            int lower = Integer.parseInt(range.group(1));
+            int upper = Integer.parseInt(range.group(2));
+            return lower <= upper && plausibleAge(lower) && plausibleAge(upper) ? upper : null;
+        }
+        var bounds = new LinkedHashSet<Integer>();
+        var exclusive = AGE_EXCLUSIVE.matcher(raw);
+        while (exclusive.find()) bounds.add(Integer.parseInt(firstPresent(exclusive.group(1), exclusive.group(2))) - 1);
+        var upper = AGE_UPPER.matcher(raw);
+        while (upper.find()) bounds.add(Integer.parseInt(firstPresent(upper.group(1), upper.group(2))));
+        if (bounds.size() == 1) {
+            int bound = bounds.iterator().next();
+            return plausibleAge(bound) ? bound : null;
+        }
+        if (!bounds.isEmpty()) return null;
+        var bare = AGE.matcher(raw);
+        if (bare.matches()) {
+            int bound = Integer.parseInt(bare.group(1));
+            return plausibleAge(bound) ? bound : null;
+        }
+        return null;
     }
 
     static Integer experienceYears(String value) {
-        return text(value).matches(".*\\d+\\s*年.*") ? integer(value) : null;
+        String raw = DATE.matcher(text(value)).replaceAll(" ").strip();
+        // An explicit standalone no-experience clause is distinct from missing evidence.
+        String[] clauses = raw.split("[，,；;。\\n]");
+        var values = new LinkedHashSet<Integer>();
+        boolean unrestricted = false;
+        boolean otherExperienceClause = false;
+        for (String clause : clauses) {
+            String part = clause.replaceAll("\\s+", "");
+            if (NO_EXPERIENCE.matcher(part).matches()) unrestricted = true;
+            else if (EXPERIENCE_CLAUSE.matcher(part).find()) otherExperienceClause = true;
+        }
+        var matcher = EXPERIENCE.matcher(raw);
+        while (matcher.find()) values.add(Integer.parseInt(matcher.group(1)));
+        // A second experience clause may contain a condition without an Arabic year count.
+        if (unrestricted) return values.isEmpty() && !otherExperienceClause ? 0 : null;
+        if (CONDITIONAL_EXPERIENCE.matcher(raw).find()) return null;
+        if (values.size() != 1) return null;
+        if (!(raw.contains("工作") || raw.contains("经验") || raw.contains("经历")
+            || raw.matches("\\d{1,2}\\s*年(?:及以上|以上)?"))) return null;
+        int years = values.iterator().next();
+        return years >= 0 && years <= 50 ? years : null;
     }
+
+    private static boolean plausibleAge(int age) { return age >= 16 && age <= 70; }
 
     static Set<String> professionalTitles(String value) {
         Set<String> result = new LinkedHashSet<>();

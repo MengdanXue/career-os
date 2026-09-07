@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
 @Component
 public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor {
     private static final Logger LOG = LoggerFactory.getLogger(Phase2DocumentProcessor.class);
-    public static final String PROCESSOR_VERSION = "official-fact-fusion-v14";
+    public static final String PROCESSOR_VERSION = "official-fact-fusion-v15";
     private static final Pattern ANNOUNCEMENT_YEAR = Pattern.compile("20\\d{2}年");
     private static final Pattern ORGANIZATION_SUFFIX = Pattern.compile(
         ".*(中心|医院|大学|学院|学校|中学|研究院|研究所|集团|公司|协会|图书馆|博物馆|艺术馆|乐团|运动队|厅|局|委员会|院|所|站|馆|社|室)$");
@@ -118,10 +118,18 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
                     imported = hospitalJobs.importAnnouncement(
                         command.parentAnnouncementUri().toString(), hospital);
                 }
-                if (!hospital.issues().isEmpty()) {
-                    var issues = hospital.issues().stream().map(issue -> new ProcessingIssue(
-                        com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED,
-                        "网页岗位表", issue.rowNumber(), issue.errorCode(), issue.message())).toList();
+                var issues = new java.util.ArrayList<>(hospital.issues().stream().map(issue -> new ProcessingIssue(
+                    com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED,
+                    "网页岗位表", issue.rowNumber(), issue.errorCode(), issue.message())).toList());
+                if (imported != null) {
+                    imported.warnings().forEach(warning -> issues.add(new ProcessingIssue(
+                        warning.row() == null
+                            ? com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage.NORMALIZATION_FAILED
+                            : com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED,
+                        "网页岗位表", warning.row(), "ELIGIBILITY_NEEDS_REVIEW",
+                        warning.field() + "：" + warning.rawValue() + "；" + warning.message())));
+                }
+                if (!issues.isEmpty()) {
                     return ProcessingResult.importedWithErrors(
                         imported == null ? event.id() : imported.recruitmentEventId(),
                         imported == null ? 0 : imported.inserted(),
@@ -164,10 +172,14 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
         } catch (OfficialExcelImportService.NonTargetWorkbookException ignored) {
             return ProcessingResult.ignored("NON_TARGET_WORKBOOK_SCHEMA");
         }
-        if (!result.errors().isEmpty()) {
-            var issues = result.errors().stream().map(error -> new ProcessingIssue(
+        if (!result.errors().isEmpty() || !result.warnings().isEmpty()) {
+            var issues = new java.util.ArrayList<>(result.errors().stream().map(error -> new ProcessingIssue(
                 com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED,
-                error.sheet(), error.row(), "ROW_PARSE_FAILED", error.message())).toList();
+                error.sheet(), error.row(), "ROW_PARSE_FAILED", error.message())).toList());
+            result.warnings().forEach(warning -> issues.add(new ProcessingIssue(
+                com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage.ROW_PARSE_FAILED,
+                warning.sheet(), warning.row(), "ELIGIBILITY_NEEDS_REVIEW",
+                warning.field() + "：" + warning.rawValue() + "；" + warning.message())));
             return ProcessingResult.importedWithErrors(result.recruitmentEventId(), result.inserted(), result.updated(),
                 result.unchanged(), result.deactivated(), issues);
         }

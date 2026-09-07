@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public final class ExtractionService {
+    public static final String PIPELINE_VERSION = "extraction-projection-v2";
     private final ArtifactStore artifactStore;
     private final DocumentParser parser;
     private final DocumentEnrichmentPort enrichment;
@@ -107,6 +108,13 @@ public final class ExtractionService {
         Instant startedAt
     ) {
         Optional<PersistedExtraction> existing = persistence.findByInputFingerprint(fingerprint);
+        if (existing.isEmpty()) {
+            // Human-confirmed/corrected proposals and pending/rejected reviews require explicit re-review.
+            existing = persistence.findByInputFingerprint(legacyInputFingerprint(artifact))
+                .filter(value -> value.reviewId().isPresent()
+                    || value.run().status() == DataQualityStatus.REVIEW_REQUIRED
+                    || value.run().status() == DataQualityStatus.REJECTED);
+        }
         if (existing.isPresent()) {
             PersistedExtraction value = existing.orElseThrow();
             observer.completed(value.run(), true, Duration.between(startedAt, clock.instant()));
@@ -240,6 +248,10 @@ public final class ExtractionService {
     }
 
     private String inputFingerprint(SourceArtifact artifact) {
+        return sha256(PIPELINE_VERSION + "|" + legacyInputFingerprint(artifact));
+    }
+
+    private String legacyInputFingerprint(SourceArtifact artifact) {
         ParserDescriptor parserDescriptor = parser.descriptor();
         ExtractorDescriptor extractorDescriptor = extractor.descriptor();
         return sha256(String.join("|",

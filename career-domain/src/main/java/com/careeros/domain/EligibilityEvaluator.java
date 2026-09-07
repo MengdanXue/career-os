@@ -16,7 +16,7 @@ import java.util.stream.Stream;
 import static com.careeros.domain.CandidateFacts.CandidateFactKey.*;
 
 public final class EligibilityEvaluator {
-    public static final String VERSION = "phase0-rules-v1";
+    public static final String VERSION = "eligibility-evidence-v2";
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) {
         return evaluate(candidate, CandidateFacts.confirmed(candidate), job, "unversioned", Instant.now());
@@ -60,7 +60,7 @@ public final class EligibilityEvaluator {
     }
 
     RuleResult evaluateAge(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
-        if (job.maximumAge() == null) return eligible("岗位未设置最高年龄");
+        if (job.maximumAge() == null) return uncertain("岗位年龄要求缺失或尚未明确，无法确认是否符合");
         if (job.ageReferenceDate() == null) return uncertain("岗位有年龄上限，但缺少年龄计算基准日");
         if (!facts.isConfirmed(BIRTH_DATE)) return uncertain("候选人出生日期尚未确认");
         int youngest = Period.between(candidate.birthDate().latest(), job.ageReferenceDate()).getYears();
@@ -101,7 +101,8 @@ public final class EligibilityEvaluator {
     }
 
     RuleResult evaluateExperience(CandidateProfile candidate, CandidateFacts facts, JobPosting job, LocalDate asOf) {
-        if (job.minimumExperienceYears() == null || job.minimumExperienceYears() == 0) return eligible("岗位无最低工作年限要求");
+        if (job.minimumExperienceYears() == null) return uncertain("岗位工作年限要求缺失或尚未明确，无法确认是否符合");
+        if (job.minimumExperienceYears() == 0) return eligible("岗位无最低工作年限要求");
         if (asOf == null) return uncertain("岗位缺少官方资格计算截止日，无法核定工作年限");
         var verifiedYears = CandidateEmploymentExperience.completedYears(candidate, facts, asOf);
         if (verifiedYears.isEmpty()) return uncertain("缺少已确认、逐段核验的全职工作经历");

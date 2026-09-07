@@ -136,7 +136,8 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
 
     private static String evaluatorIdentity(JobContext context) {
         LocalDate cutoff = context.event().applicationEndsOn();
-        return VERSION + "@qualification=" + (cutoff == null ? "unknown" : cutoff);
+        return VERSION + "|" + EligibilityEvaluator.VERSION
+            + "@cutoff=" + (cutoff == null ? "unknown" : cutoff);
     }
 
     private static boolean excluded(EligibilityStatus status) { return status == EligibilityStatus.INELIGIBLE || status == EligibilityStatus.LIKELY_INELIGIBLE; }
