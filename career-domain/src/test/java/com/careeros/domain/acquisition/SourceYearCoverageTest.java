@@ -31,8 +31,9 @@ class SourceYearCoverageTest {
     @Test
     void onlyCompletedDiscoveryCanSupportAnAbsenceConclusion() {
         assertThat(coverage(ACCESS_FAILED, 0, null).supportsAbsenceConclusion()).isFalse();
-        assertThat(coverage(COMPLETE, 3, "年度索引3份公告均已解析").supportsAbsenceConclusion()).isTrue();
-        assertThat(coverage(NO_TARGET_RECORDS, 0, "年度索引已核对，无目标技术岗位").supportsAbsenceConclusion()).isTrue();
+        assertThat(coverage(COMPLETE, 3, "年度索引3份公告均已解析").supportsAbsenceConclusion()).isFalse();
+        assertThat(coverage(COMPLETE, 3, "年度索引3份公告均已解析").hasLegacyCompletionRecord()).isTrue();
+        assertThat(coverage(NO_TARGET_RECORDS, 0, "年度索引已核对，无目标技术岗位").supportsAbsenceConclusion()).isFalse();
     }
 
     @Test

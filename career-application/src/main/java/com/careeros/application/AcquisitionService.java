@@ -268,7 +268,7 @@ public final class AcquisitionService {
             Set<Integer> requiredYears = Set.of(2024, 2025, 2026);
             boolean allYearsConclusive = requiredYears.stream().allMatch(year ->
                 store.findSourceYearCoverage(source.id(), year).stream()
-                    .anyMatch(SourceYearCoverage::supportsAbsenceConclusion));
+                    .anyMatch(SourceYearCoverage::hasLegacyCompletionRecord));
             if (status == RunStatus.SUCCEEDED && allYearsConclusive) {
                 verifyCheckpoint(source.id(), Checkpoint.BACKFILL_COMPLETE,
                     "verified years=" + requiredYears);
@@ -456,7 +456,7 @@ public final class AcquisitionService {
             YearCounts values = entry.getValue();
             SourceYearCoverage previous = store.findSourceYearCoverage(sourceId, year).stream()
                 .findFirst().orElse(null);
-            if (previous != null && (previous.supportsAbsenceConclusion()
+            if (previous != null && (previous.hasLegacyCompletionRecord()
                 || previous.status() == SourceYearCoverage.CoverageStatus.PARTIAL
                     && !"INCREMENTAL_WINDOW_ONLY".equals(previous.stopReason()))) {
                 continue;
@@ -929,7 +929,7 @@ public final class AcquisitionService {
     private void retainSuccessfulCoverageOrMarkFailed(UUID sourceId, Set<Integer> years) {
         for (int year : years) {
             boolean retained = store.findSourceYearCoverage(sourceId, year).stream()
-                .anyMatch(SourceYearCoverage::supportsAbsenceConclusion);
+                .anyMatch(SourceYearCoverage::hasLegacyCompletionRecord);
             if (!retained) {
                 saveCoverage(sourceId, Set.of(year), SourceYearCoverage.CoverageStatus.ACCESS_FAILED,
                     Map.of(), null, null);

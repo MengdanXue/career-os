@@ -221,22 +221,18 @@ public final class CareerPlanService {
             List<TargetSource> routeTargets = targetSources.stream()
                 .filter(source -> source.routeCode().equals(routeCode)).toList();
             if (routeTargets.isEmpty()) return RouteRankingState.NOT_COVERED;
-            boolean marketComplete = routeTargets.stream()
-                .allMatch(source -> source.connectionStatus() == ConnectionStatus.CONNECTED);
+            // Connection health is operational telemetry only; an independent
+            // source/year audit is required before absence or full coverage is
+            // asserted by the planner.
+            boolean marketComplete = false;
             if (jobs.isEmpty()) {
-                boolean completedAbsence = marketComplete && routeTargets.stream().allMatch(source ->
-                    coverage.stream().filter(signal -> signal.sourceCode().equals(source.code()))
-                        .findAny().filter(CareerPlanService::complete).isPresent());
-                return completedAbsence ? RouteRankingState.NO_TARGET_RECORDS : RouteRankingState.NOT_COVERED;
+                return RouteRankingState.NOT_COVERED;
             }
             if (!marketComplete) return RouteRankingState.LIMITED;
         } else if (jobs.isEmpty()) {
             return RouteRankingState.NOT_COVERED;
         }
-        boolean complete = !coverage.isEmpty() && coverage.stream()
-            .allMatch(signal -> signal.status() == CoverageStatus.COMPLETE
-                || signal.status() == CoverageStatus.NO_TARGET_RECORDS);
-        return complete ? RouteRankingState.RANKED : RouteRankingState.LIMITED;
+        return RouteRankingState.LIMITED;
     }
 
     private static String rankingReason(RouteRankingState state) {
@@ -833,10 +829,6 @@ public final class CareerPlanService {
             .filter(value -> value != null && !value.isBlank()).distinct().count(),
             (int) jobs.stream().map(HistoricalJob::eventId).distinct().count(), jobs.size(),
             (int) jobs.stream().filter(HistoricalJob::evidenceComplete).count(), analyzedLoadedAt);
-    }
-
-    private static boolean complete(CoverageSignal signal) {
-        return signal.status() == CoverageStatus.COMPLETE || signal.status() == CoverageStatus.NO_TARGET_RECORDS;
     }
 
     private static List<Risk> risks(CandidateProfile candidate, DataCoverage coverage) {

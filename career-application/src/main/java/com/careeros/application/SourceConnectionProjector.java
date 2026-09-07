@@ -30,7 +30,7 @@ public final class SourceConnectionProjector {
             .filter(value -> value.recruitmentYear() >= 2024 && value.recruitmentYear() <= 2026)
             .toList();
         boolean completeYears = annual.size() == 3
-            && annual.stream().allMatch(SourceYearCoverage::supportsAbsenceConclusion);
+            && annual.stream().allMatch(SourceYearCoverage::hasLegacyCompletionRecord);
         var latestRun = store.findLatestRun(sourceId);
         boolean freshSuccess = latestRun
             .filter(run -> run.status() == RunStatus.SUCCEEDED)

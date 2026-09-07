@@ -53,7 +53,7 @@ public record SourceYearCoverage(
             && earliestPublishedOn.isAfter(latestPublishedOn)) {
             throw new IllegalArgumentException("earliestPublishedOn cannot be after latestPublishedOn");
         }
-        if (supportsAbsenceConclusion(status)) {
+        if (hasLegacyCompletionRecord(status)) {
             if (completionBasis == null) throw new IllegalArgumentException("completionBasis is required");
             if (completedAt == null) throw new IllegalArgumentException("completedAt is required");
         } else if (completedAt != null) {
@@ -81,9 +81,18 @@ public record SourceYearCoverage(
             null, null, null);
     }
 
-    public boolean supportsAbsenceConclusion() { return supportsAbsenceConclusion(status); }
+    /**
+     * Whether this legacy operational row carries the fields required by its
+     * historical completion contract.  This is deliberately separate from the
+     * six-level audit conclusion: an old COMPLETE row is an observation, not
+     * independently assessed evidence that a source/year had no opportunities.
+     */
+    public boolean hasLegacyCompletionRecord() { return hasLegacyCompletionRecord(status); }
 
-    private static boolean supportsAbsenceConclusion(CoverageStatus value) {
+    /** Legacy rows are never sufficient for the independent audit absence gate. */
+    public boolean supportsAbsenceConclusion() { return false; }
+
+    private static boolean hasLegacyCompletionRecord(CoverageStatus value) {
         return value == CoverageStatus.COMPLETE || value == CoverageStatus.NO_TARGET_RECORDS;
     }
 

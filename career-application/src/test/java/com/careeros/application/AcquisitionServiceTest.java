@@ -102,7 +102,7 @@ class AcquisitionServiceTest {
         fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
 
         assertThat(fixture.store.coverages.get(2026)).isEqualTo(verified);
-        assertThat(verified.supportsAbsenceConclusion()).isTrue();
+        assertThat(verified.hasLegacyCompletionRecord()).isTrue();
     }
 
     @Test
@@ -625,7 +625,7 @@ class AcquisitionServiceTest {
 
         assertThat(fixture.store.coverages.values())
             .extracting(SourceYearCoverage::recruitmentYear, SourceYearCoverage::status,
-                SourceYearCoverage::targetJobCount, SourceYearCoverage::supportsAbsenceConclusion)
+                SourceYearCoverage::targetJobCount, SourceYearCoverage::hasLegacyCompletionRecord)
             .containsExactlyInAnyOrder(
                 org.assertj.core.groups.Tuple.tuple(2024, SourceYearCoverage.CoverageStatus.COMPLETE, 3, true),
                 org.assertj.core.groups.Tuple.tuple(2025, SourceYearCoverage.CoverageStatus.PARTIAL, 0, false),
@@ -645,7 +645,7 @@ class AcquisitionServiceTest {
         SourceYearCoverage coverage = fixture.store.coverages.get(2023);
         assertThat(coverage.status()).isEqualTo(SourceYearCoverage.CoverageStatus.NO_TARGET_RECORDS);
         assertThat(coverage.discoveredCount()).isZero();
-        assertThat(coverage.supportsAbsenceConclusion()).isTrue();
+            assertThat(coverage.hasLegacyCompletionRecord()).isTrue();
     }
 
     @Test
@@ -689,7 +689,7 @@ class AcquisitionServiceTest {
 
         fixture.service.backfill(SOURCE_ID, Set.of(2026));
 
-        assertThat(fixture.store.coverages.get(2026).supportsAbsenceConclusion()).isTrue();
+            assertThat(fixture.store.coverages.get(2026).hasLegacyCompletionRecord()).isTrue();
         assertThat(fixture.store.checkpoints).doesNotContainKey(
             com.careeros.domain.acquisition.SourceOnboardingCheckpoint.Checkpoint.BACKFILL_COMPLETE);
     }
@@ -706,7 +706,7 @@ class AcquisitionServiceTest {
 
         assertThat(fixture.store.coverages.get(2025)).isEqualTo(verified);
         assertThat(verified.status()).isEqualTo(SourceYearCoverage.CoverageStatus.COMPLETE);
-        assertThat(verified.supportsAbsenceConclusion()).isTrue();
+        assertThat(verified.hasLegacyCompletionRecord()).isTrue();
     }
 
     @Test
