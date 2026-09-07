@@ -159,6 +159,9 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                 "Verified proposal source evidence is not part of the extraction");
         }
         rejectInterpretedFacts(proposal);
+        // ageReferenceDate 是独立的政策事实（通常是公告日或公告明写的计算基准日），
+        // 不能用报名截止日冒充：它会被 EligibilityEvaluator 逐日计算，直接翻转年龄合格与否。
+        // 抽取模型目前不提供该事实，因此留空，让 evaluateAge 返回 UNCERTAIN 而不是给出无证据的结论。
         if (eventSourceLock != null) eventSourceLock.lock(proposal.source().sourceUrl());
         JpaModels.OrganizationEntity organization = organizations.findFirstByName(proposal.organization().name())
             .orElseGet(() -> createOrganization(proposal));
@@ -172,7 +175,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                 job.jobFamily(), valueOr(job.employmentType(), EmploymentType.UNKNOWN), job.location(),
                 required(job.headcount(), "headcount"), valueOr(job.minimumEducation(), EducationLevel.UNKNOWN),
                 splitMajors(valueOr(job.majorText(), null)), valueOr(job.acceptedGraduationYears(), Set.of()),
-                valueOr(job.maximumAge(), null), valueOr(proposal.recruitmentEvent().applicationEndsOn(), null),
+                valueOr(job.maximumAge(), null), null,
                 valueOr(job.minimumExperienceYears(), null), Set.of(), job.duties(), proposal.source().sourceUrl(),
                 evidenceIds))
             .toList();

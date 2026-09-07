@@ -144,6 +144,19 @@ class DefaultJobUpsertServiceTest {
     }
 
     @Test
+    void verifiedProposalNeverDerivesAgeReferenceDateFromTheApplicationDeadline() {
+        stubExistingOrganizationAndEvent();
+        RecruitmentExtractionProposal proposal = proposal();
+        assertThat(proposal.recruitmentEvent().applicationEndsOn().value()).isNotNull();
+
+        service.write(proposal, List.of(proposal.source().evidenceId()));
+
+        // 报名截止日不是年龄计算基准日。抽取结果不提供该事实时必须留空，
+        // 让 EligibilityEvaluator 返回 UNCERTAIN，而不是给出一个没有证据的年龄结论。
+        assertThat(stored.values()).isNotEmpty().allMatch(entity -> entity.ageReferenceDate == null);
+    }
+
+    @Test
     void verifiedRepeatRefreshesEventFieldsAndAppendsEvidence() {
         RecruitmentExtractionProposal proposal = proposal();
         var organization = new JpaModels.OrganizationEntity();
