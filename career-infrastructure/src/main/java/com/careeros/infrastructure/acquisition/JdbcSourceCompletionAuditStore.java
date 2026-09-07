@@ -9,7 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public final class JdbcSourceCompletionAuditStore implements AuditSnapshots {
+public class JdbcSourceCompletionAuditStore implements AuditSnapshots {
     private final JdbcTemplate jdbc;
     public JdbcSourceCompletionAuditStore(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
@@ -19,7 +19,7 @@ public final class JdbcSourceCompletionAuditStore implements AuditSnapshots {
         jdbc.update("""
             insert into source_completion_audit_snapshot
             (audit_snapshot_id,parent_snapshot_id,registry_snapshot_id,schema_version,assessor_version,registry_hash,from_year,to_year,coverage_through,cutoff_at,assessed_at,payload)
-            values (?,?,?,?,?,?,?,?,?,?,?,?::jsonb)
+            values (?,?,?,?,?,?,?, ?, ?::date, ?, ?, ?::jsonb)
             """, id, parentId, registrySnapshotId, 1, assessorVersion, registryHash, fromYear, toYear,
             coverageThrough, Timestamp.from(cutoffAt), Timestamp.from(assessedAt), payload);
     }

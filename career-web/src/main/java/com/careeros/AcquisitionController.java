@@ -47,10 +47,10 @@ final class AcquisitionController {
     }
 
     @GetMapping(value="/audit-snapshots/{snapshotId}", produces=MediaType.APPLICATION_JSON_VALUE)
-    String auditSnapshot(@PathVariable UUID snapshotId) { return auditService.get(snapshotId); }
+    String auditSnapshot(@PathVariable("snapshotId") UUID snapshotId) { return auditService.get(snapshotId); }
 
     @GetMapping(value="/audit-snapshots/latest", produces=MediaType.APPLICATION_JSON_VALUE)
-    String latestAuditSnapshot(@RequestParam int fromYear, @RequestParam int toYear) {
+    String latestAuditSnapshot(@RequestParam("fromYear") int fromYear, @RequestParam("toYear") int toYear) {
         return auditService.latest(fromYear, toYear);
     }
 
