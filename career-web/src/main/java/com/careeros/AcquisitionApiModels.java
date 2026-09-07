@@ -32,7 +32,8 @@ final class AcquisitionApiModels {
         long lifecycleDocumentCount, long matchedLifecycleCount,
         long unmatchedLifecycleCount, long ambiguousLifecycleCount,
         List<CoverageResponse> coverage,
-        List<CheckpointResponse> checkpoints, long historicalFailureCount
+        List<CheckpointResponse> checkpoints, long historicalFailureCount,
+        java.util.Map<String,Object> completion
     ) {
         static SourceResponse from(
             RecruitmentSource value, TargetSourceRegistration target, AcquisitionStore store
@@ -43,7 +44,7 @@ final class AcquisitionApiModels {
                     null, null, null, 0, target.connectionStatus().name(), target.scopeLevel(),
                     target.scopeCode(), target.priorityTier(), target.coverageRole(), "NOT_CONFIGURED", 0,
                     0, 0, 0, 0,
-                    List.of(), List.of(), 0);
+                    List.of(), List.of(), 0, null);
             }
             long documentIssues = store.countDocumentImportFailures(value.id());
             var lifecycle = store.lifecycleCounts(value.id());
@@ -58,7 +59,7 @@ final class AcquisitionApiModels {
                     .sorted(java.util.Comparator.comparingInt(SourceYearCoverage::recruitmentYear))
                     .map(CoverageResponse::from).toList(),
                 store.findCheckpoints(value.id()).stream().map(CheckpointResponse::from).toList(),
-                store.countImportFailures(value.id()));
+                store.countImportFailures(value.id()), null);
         }
 
         private static String accessStatus(RecruitmentSource value, AcquisitionStore store) {
