@@ -8,6 +8,10 @@ export type AcquisitionCoverage = {
   earliestPublishedOn: string | null; latestPublishedOn: string | null; stopReason: string | null
 }
 
+export type CompletionAssessment = {
+  level?: number; status: 'PASS' | 'FAIL' | 'UNKNOWN'; reasonCodes?: string[]; evidenceRefs?: string[]
+}
+
 export type AcquisitionCheckpoint = {
   sourceId: string; checkpoint: string; status: string; evidence: string | null; verifiedAt: string
 }
@@ -21,7 +25,8 @@ export type AcquisitionSource = {
   coverageRole: 'PRIMARY' | 'SUPPLEMENTAL' | 'DISCOVERY';
   accessStatus: 'ACCESSIBLE' | 'ACCESS_FAILED' | 'NOT_CONFIGURED' | 'UNKNOWN'; documentIssueCount: number;
   lifecycleDocumentCount: number; matchedLifecycleCount: number; unmatchedLifecycleCount: number; ambiguousLifecycleCount: number;
-  coverage: AcquisitionCoverage[]; checkpoints: AcquisitionCheckpoint[]; historicalFailureCount: number
+  coverage: AcquisitionCoverage[]; checkpoints: AcquisitionCheckpoint[]; historicalFailureCount: number;
+  completion?: CompletionAssessment | null
 }
 
 export type AcquisitionRun = {

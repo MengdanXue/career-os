@@ -10,8 +10,8 @@ const connectionPresentation = {
 }
 
 const coverageLabels: Record<string, string> = {
-  COMPLETE: '完成',
-  NO_TARGET_RECORDS: '已核实无目标岗位',
+  COMPLETE: '历史记录（未独立审计）',
+  NO_TARGET_RECORDS: '历史记录（未独立审计）',
   PARTIAL: '部分完成',
   ACCESS_FAILED: '访问失败',
   NOT_DISCOVERED: '未采集',
@@ -41,6 +41,7 @@ function SourceRow({ source }: { source: AcquisitionSource }) {
   const run = useMutation({ mutationFn: () => triggerSource(source.id!) })
   const connection = connectionPresentation[source.connectionStatus] ?? connectionPresentation.NOT_CONNECTED
   const coverage = [...(source.coverage ?? [])].sort((left, right) => left.year - right.year)
+  const assessment = source.completion
   return <article className="source-row">
     <div className="source-identity">
       <div><StatusChip tone={connection.tone}>{connection.label}</StatusChip><span>{source.priorityTier} · {scopeLabel(source)}</span></div>
@@ -55,6 +56,7 @@ function SourceRow({ source }: { source: AcquisitionSource }) {
       </div>
       {coverage.some(item => item.stopReason === 'FIXED_EVIDENCE_SET') && <span className="coverage-limitation">固定公告证据不能证明该年度官网列表已完整遍历</span>}
       <div className="source-health">
+        <span>六级审计：{assessment?.status === 'PASS' ? `通过（L${assessment.level ?? 0}）` : assessment?.status === 'FAIL' ? '失败' : '未知，尚未形成独立证明'}</span>
         <span>{accessLabels[source.accessStatus]}{source.documentIssueCount > 0 ? ` · 历史附件问题记录 ${source.documentIssueCount} 条` : ''}</span>
         {source.id && <span>后续公告 {source.lifecycleDocumentCount} · 已关联 {source.matchedLifecycleCount} · 待关联 {source.unmatchedLifecycleCount} · 歧义 {source.ambiguousLifecycleCount}</span>}
         {source.historicalFailureCount > 0 && <span>历史采集失败记录 {source.historicalFailureCount} 条</span>}
@@ -67,5 +69,5 @@ function SourceRow({ source }: { source: AcquisitionSource }) {
 }
 
 export function SourceList({ sources }: { sources: AcquisitionSource[] }) {
-  return <div className="source-list">{sources.map(source => <SourceRow key={source.id} source={source} />)}</div>
+  return <div className="source-list">{sources.map(source => <SourceRow key={source.code} source={source} />)}</div>
 }
