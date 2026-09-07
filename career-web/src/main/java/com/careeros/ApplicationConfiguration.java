@@ -155,6 +155,10 @@ class ApplicationConfiguration {
     @Bean SourceConnectionProjector sourceConnectionProjector(AcquisitionStore store) {
         return new SourceConnectionProjector(store, Duration.ofHours(48));
     }
+    @Bean SourceCompletionAuditService sourceCompletionAuditService(
+        AcquisitionStore store, SourceCompletionAuditPorts.AuditSnapshots snapshots, Clock clock) {
+        return new SourceCompletionAuditService(store, snapshots, clock);
+    }
     @Bean AcquisitionService acquisitionService(
         AcquisitionStore store, SourceRunLock sourceRunLock, SourceDiscoverer sourceDiscoverer,
         SourceListingReader sourceListingReader, DocumentFetcher acquisitionDocumentFetcher,

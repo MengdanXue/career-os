@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -21,11 +22,40 @@ import org.springframework.web.bind.annotation.*;
 final class AcquisitionController {
     private final AcquisitionStore store;
     private final AcquisitionService service;
+    private final com.careeros.application.SourceCompletionAuditService auditService;
 
     AcquisitionController(AcquisitionStore store, AcquisitionService service) {
+        this(store, service, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    AcquisitionController(AcquisitionStore store, AcquisitionService service,
+        com.careeros.application.SourceCompletionAuditService auditService) {
         this.store=java.util.Objects.requireNonNull(store);
         this.service=java.util.Objects.requireNonNull(service);
+        this.auditService=auditService;
     }
+
+    @PostMapping(value="/audit-snapshots", consumes=MediaType.APPLICATION_JSON_VALUE,
+        produces=MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> createAuditSnapshot(@RequestBody(required=false) AuditSnapshotRequest request) {
+        if (auditService == null) throw new IllegalStateException("audit service is not configured");
+        var value = request == null ? new AuditSnapshotRequest(null, null, null, null, null) : request;
+        var created = auditService.create(value.fromYear(), value.toYear(), value.coverageThrough(), value.selectedCodes(), value.runIds());
+        return ResponseEntity.status(201).contentType(MediaType.APPLICATION_JSON)
+            .header("Location", "/api/acquisition/audit-snapshots/" + created.id()).body(created.payload());
+    }
+
+    @GetMapping(value="/audit-snapshots/{snapshotId}", produces=MediaType.APPLICATION_JSON_VALUE)
+    String auditSnapshot(@PathVariable UUID snapshotId) { return auditService.get(snapshotId); }
+
+    @GetMapping(value="/audit-snapshots/latest", produces=MediaType.APPLICATION_JSON_VALUE)
+    String latestAuditSnapshot(@RequestParam int fromYear, @RequestParam int toYear) {
+        return auditService.latest(fromYear, toYear);
+    }
+
+    record AuditSnapshotRequest(Integer fromYear, Integer toYear, java.time.LocalDate coverageThrough,
+        List<String> selectedCodes, List<UUID> runIds) {}
 
     @GetMapping("/sources")
     List<SourceResponse> sources() {

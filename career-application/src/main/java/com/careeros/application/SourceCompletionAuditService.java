@@ -1,0 +1,63 @@
+package com.careeros.application;
+
+import com.careeros.application.AcquisitionPorts.AcquisitionStore;
+import com.careeros.application.SourceCompletionAuditPorts.AuditSnapshots;
+import com.careeros.domain.acquisition.RecruitmentSource;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.UUID;
+
+/** Captures a reproducible assessment envelope; gate evidence remains UNKNOWN until independently observed. */
+public final class SourceCompletionAuditService {
+    public static final String ASSESSOR_VERSION = "source-completion-v1";
+    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
+    private final AcquisitionStore acquisition;
+    private final AuditSnapshots snapshots;
+    private final Clock clock;
+
+    public SourceCompletionAuditService(AcquisitionStore acquisition, AuditSnapshots snapshots, Clock clock) {
+        this.acquisition = acquisition; this.snapshots = snapshots; this.clock = clock;
+    }
+
+    public SnapshotResult create(Integer requestedFrom, Integer requestedTo, LocalDate requestedThrough,
+        List<String> selectedCodes, List<UUID> runIds) {
+        int from = requestedFrom == null ? 2024 : requestedFrom;
+        int to = requestedTo == null ? Math.max(from, LocalDate.now(clock.withZone(SHANGHAI)).getYear()) : requestedTo;
+        validateYears(from, to);
+        List<RecruitmentSource> sources = acquisition.findSources();
+        if (selectedCodes != null) selectedCodes.forEach(code -> { if (sources.stream().noneMatch(s -> s.code().equals(code))) throw new IllegalArgumentException("unknown source code: " + code); });
+        Instant assessedAt = Instant.now(clock);
+        LocalDate today = LocalDate.now(clock.withZone(SHANGHAI));
+        LocalDate through = requestedThrough == null ? today : requestedThrough;
+        if (through.isAfter(today)) through = today;
+        if (through.isAfter(LocalDate.of(to, 12, 31))) through = LocalDate.of(to, 12, 31);
+        UUID id = UUID.randomUUID(), registryId = UUID.randomUUID();
+        String hash = Integer.toHexString(sources.stream().map(RecruitmentSource::code).sorted().toList().hashCode());
+        String payload = payload(id, null, registryId, from, to, through, assessedAt, hash, sources, selectedCodes, runIds);
+        snapshots.append(id, null, registryId, from, to, through.toString(), assessedAt, assessedAt, hash, ASSESSOR_VERSION, payload);
+        return new SnapshotResult(id, payload);
+    }
+
+    public String get(UUID id) { return snapshots.find(id).orElseThrow(() -> new java.util.NoSuchElementException("audit snapshot not found: " + id)); }
+    public String latest(int from, int to) { return snapshots.findLatest(from, to).orElseThrow(() -> new java.util.NoSuchElementException("audit snapshot not found")); }
+
+    private static void validateYears(int from, int to) { if (from < 2000 || to > 2100 || from > to) throw new IllegalArgumentException("invalid audit year range"); }
+    private static String payload(UUID id, UUID parent, UUID registry, int from, int to, LocalDate through, Instant assessed,
+        String hash, List<RecruitmentSource> sources, List<String> selected, List<UUID> runIds) {
+        StringBuilder json = new StringBuilder("{\"schemaVersion\":1,\"assessorVersion\":\"").append(ASSESSOR_VERSION)
+            .append("\",\"auditSnapshotId\":\"").append(id).append("\",\"parentSnapshotId\":").append(parent == null ? "null" : quote(parent.toString()))
+            .append(",\"registrySnapshotId\":\"").append(registry).append("\",\"fromYear\":").append(from).append(",\"toYear\":").append(to)
+            .append(",\"coverageThrough\":").append(quote(through.toString())).append(",\"assessedAt\":").append(quote(assessed.toString()))
+            .append(",\"registryHash\":").append(quote(hash)).append(",\"selectionMode\":").append(quote(selected == null ? "ALL_PLANNED" : "SUBSET"))
+            .append(",\"selectedCodes\":").append(array(selected == null ? List.of() : selected)).append(",\"runIds\":").append(array(runIds == null ? List.of() : runIds.stream().map(UUID::toString).toList()))
+            .append(",\"sources\":[");
+        for (int i = 0; i < sources.size(); i++) { if (i > 0) json.append(','); RecruitmentSource s = sources.get(i); json.append("{\"code\":").append(quote(s.code())).append(",\"sourceId\":").append(quote(s.id().toString())).append(",\"name\":").append(quote(s.name())).append(",\"registryEnabled\":true,\"acquisitionEnabled\":").append(s.enabled()).append(",\"completion\":{\"level\":0,\"status\":\"UNKNOWN\",\"reasonCodes\":[\"NO_INDEPENDENT_ASSESSMENT\"]}}"); }
+        return json.append("]}").toString();
+    }
+    private static String quote(String value) { return value == null ? "null" : "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; }
+    private static String array(List<?> values) { return values.stream().map(v -> quote(String.valueOf(v))).collect(java.util.stream.Collectors.joining(",", "[", "]")); }
+    public record SnapshotResult(UUID id, String payload) {}
+}
