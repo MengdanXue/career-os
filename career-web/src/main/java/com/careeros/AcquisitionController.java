@@ -40,7 +40,15 @@ final class AcquisitionController {
         produces=MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> createAuditSnapshot(@RequestBody(required=false) AuditSnapshotRequest request) {
         if (auditService == null) throw new IllegalStateException("audit service is not configured");
-        var value = request == null ? new AuditSnapshotRequest(null, null, null, null, null) : request;
+        var value = request == null ? new AuditSnapshotRequest(null, null, null, null, null, null) : request;
+        if (value.baseSnapshotId() != null) {
+            if (value.fromYear() != null || value.toYear() != null || value.coverageThrough() != null || value.selectedCodes() != null) {
+                throw new IllegalArgumentException("append requests may only contain baseSnapshotId and runIds");
+            }
+            var appended = auditService.append(value.baseSnapshotId(), value.runIds());
+            return ResponseEntity.status(201).contentType(MediaType.APPLICATION_JSON)
+                .header("Location", "/api/acquisition/audit-snapshots/" + appended.id()).body(appended.payload());
+        }
         var created = auditService.create(value.fromYear(), value.toYear(), value.coverageThrough(), value.selectedCodes(), value.runIds());
         return ResponseEntity.status(201).contentType(MediaType.APPLICATION_JSON)
             .header("Location", "/api/acquisition/audit-snapshots/" + created.id()).body(created.payload());
@@ -55,7 +63,7 @@ final class AcquisitionController {
     }
 
     record AuditSnapshotRequest(Integer fromYear, Integer toYear, java.time.LocalDate coverageThrough,
-        List<String> selectedCodes, List<UUID> runIds) {}
+        List<String> selectedCodes, List<UUID> runIds, UUID baseSnapshotId) {}
 
     @GetMapping("/sources")
     List<SourceResponse> sources() {

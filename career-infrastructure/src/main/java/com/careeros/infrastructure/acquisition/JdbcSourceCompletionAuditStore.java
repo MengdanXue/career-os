@@ -1,6 +1,7 @@
 package com.careeros.infrastructure.acquisition;
 
 import com.careeros.application.SourceCompletionAuditPorts.AuditSnapshots;
+import com.careeros.application.SourceCompletionAuditPorts.AuditSnapshots.SnapshotEnvelope;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
@@ -29,5 +30,12 @@ public class JdbcSourceCompletionAuditStore implements AuditSnapshots {
     }
     @Override public Optional<String> findLatest(int fromYear, int toYear) {
         return jdbc.query("select payload::text from source_completion_audit_snapshot where from_year = ? and to_year = ? order by assessed_at desc, audit_snapshot_id desc limit 1", rs -> rs.next() ? Optional.of(rs.getString(1)) : Optional.empty(), fromYear, toYear);
+    }
+
+    @Override public Optional<SnapshotEnvelope> findEnvelope(UUID id) {
+        return jdbc.query("select audit_snapshot_id,parent_snapshot_id,registry_snapshot_id,from_year,to_year,coverage_through,cutoff_at,assessed_at,registry_hash,assessor_version,payload::text from source_completion_audit_snapshot where audit_snapshot_id = ?", rs -> rs.next() ? Optional.of(new SnapshotEnvelope(
+            rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getObject(3, UUID.class), rs.getInt(4), rs.getInt(5),
+            rs.getObject(6, java.time.LocalDate.class).toString(), rs.getTimestamp(7).toInstant(), rs.getTimestamp(8).toInstant(),
+            rs.getString(9), rs.getString(10), rs.getString(11))) : Optional.empty(), id);
     }
 }

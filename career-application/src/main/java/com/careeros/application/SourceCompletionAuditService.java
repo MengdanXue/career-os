@@ -44,6 +44,17 @@ public final class SourceCompletionAuditService {
     public String get(UUID id) { return snapshots.find(id).orElseThrow(() -> new java.util.NoSuchElementException("audit snapshot not found: " + id)); }
     public String latest(int from, int to) { return snapshots.findLatest(from, to).orElseThrow(() -> new java.util.NoSuchElementException("audit snapshot not found")); }
 
+    public SnapshotResult append(UUID baseId, List<UUID> runIds) {
+        var base = snapshots.findEnvelope(baseId).orElseThrow(() -> new java.util.NoSuchElementException("audit snapshot not found: " + baseId));
+        UUID id = UUID.randomUUID();
+        String payload = base.payload().replace("\"auditSnapshotId\":\"" + base.id() + "\"", "\"auditSnapshotId\":\"" + id + "\"")
+            .replace("\"parentSnapshotId\":null", "\"parentSnapshotId\":\"" + base.id() + "\"");
+        Instant now = Instant.now(clock);
+        snapshots.append(id, base.id(), base.registrySnapshotId(), base.fromYear(), base.toYear(), base.coverageThrough(), base.cutoffAt(), now,
+            base.registryHash(), base.assessorVersion(), payload);
+        return new SnapshotResult(id, payload);
+    }
+
     private static void validateYears(int from, int to) { if (from < 2000 || to > 2100 || from > to) throw new IllegalArgumentException("invalid audit year range"); }
     private static String payload(UUID id, UUID parent, UUID registry, int from, int to, LocalDate through, Instant assessed,
         String hash, List<RecruitmentSource> sources, List<String> selected, List<UUID> runIds) {
