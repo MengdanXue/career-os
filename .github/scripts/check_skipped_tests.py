@@ -33,6 +33,16 @@ ALLOWED_SKIPS = {
     "com.careeros.infrastructure.acquisition.WestlakeOfficialLiveSmokeTest.officialEngineeringDatasetExposesRelevant2024Through2026RecruitmentDetails":
         "Environment variable [CAREER_OS_LIVE_SMOKE] does not exist",
 }
+# Some Surefire/JUnit combinations omit an AssumptionFailure message from
+# the XML report.  These are the same five repository-external fixture tests
+# above; an empty reason is acceptable only for this exact allow-list.
+ALLOWED_EMPTY_REASON = {
+    "com.careeros.CareerOsApplicationTest.actualHangzhouUnifiedWorkbookCanBeImportedWhenFixtureIsAvailable",
+    "com.careeros.CareerOsApplicationTest.actual2026UniversityWorkbookCanBeImportedWhenFixtureIsAvailable",
+    "com.careeros.ExtractionEndToEndTest.realPdfGuideProducesEvidenceAndDoesNotCreateFormalJobs",
+    "com.careeros.ExtractionEndToEndTest.repeatRealHtmlReusesTheSameExtractionRun",
+    "com.careeros.ExtractionEndToEndTest.concurrentIdenticalOfficialHtmlCreatesOnePostgresRun",
+}
 
 
 def main(root: pathlib.Path) -> int:
@@ -71,7 +81,7 @@ def main(root: pathlib.Path) -> int:
                 if skip is not None:
                     skipped_count += 1
                     reason = skip.get("message") or "no reason given"
-                    if ALLOWED_SKIPS.get(name) != reason:
+                    if ALLOWED_SKIPS.get(name) != reason and not (name in ALLOWED_EMPTY_REASON and reason == "no reason given"):
                         errors.append(f"{name}: unexpected skip ({reason})")
                     else:
                         print(f"allowed skip: {name} ({reason})")
