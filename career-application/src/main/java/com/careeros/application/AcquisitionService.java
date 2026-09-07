@@ -636,9 +636,17 @@ public final class AcquisitionService {
         }
         counts.fetched++;
         observer.document(source.code(), transition.type().name());
-        boolean parsed = document.lastProcessedFingerprint() != null
-            && document.lastProcessedFingerprint().equals(document.contentFingerprint());
+        boolean parsed = processing == null
+            ? fullyProcessed(document)
+            : processing.status() == AcquiredDocumentProcessor.ProcessingStatus.PROCESSED;
         return new DocumentOutcome(document, response, processing, parsed);
+    }
+
+    private static boolean fullyProcessed(AcquiredDocument document) {
+        return document.lastProcessedFingerprint() != null
+            && document.lastProcessedFingerprint().equals(document.contentFingerprint())
+            && document.lastProcessorVersion() != null
+            && !document.lastProcessorVersion().endsWith(":partial");
     }
 
     private void recordDiscovery(

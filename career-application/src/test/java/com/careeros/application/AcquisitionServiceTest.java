@@ -386,6 +386,10 @@ class AcquisitionServiceTest {
         assertThat(fixture.artifacts.values).isNotEmpty();
         assertThat(fixture.store.coverages.get(2026).status())
             .isEqualTo(SourceYearCoverage.CoverageStatus.PARTIAL);
+        assertThat(fixture.store.coverages.get(2026).parsedCount()).isEqualTo(1);
+        assertThat(fixture.store.discoveryEvents).filteredOn(value -> value.canonicalUri().equals(IMAGE))
+            .last().extracting(ArtifactDiscovery::status)
+            .isEqualTo(ArtifactDiscovery.DiscoveryStatus.PARSE_FAILED);
         assertThat(fixture.store.changes).filteredOn(change -> change.documentId()
                 .equals(fixture.store.documents.get(IMAGE).id()))
             .singleElement().satisfies(change -> assertThat(change.jobDeltaSummary())
