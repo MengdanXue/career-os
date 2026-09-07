@@ -43,6 +43,24 @@ class ArtifactDiscoveryTest {
     }
 
     @Test
+    void validatesOptionalRawFetchMetadata() {
+        var value = new ArtifactDiscovery(ID, SOURCE, RUN, null,
+            URI.create("https://example.test/jobs/1"), URI.create("https://example.test/jobs/1"),
+            "Recruitment announcement", AcquiredDocument.DocumentKind.ANNOUNCEMENT,
+            null, ArtifactDiscovery.DiscoveryStatus.FETCHED, null, NOW, NOW, 1,
+            "text/html", "a".repeat(64), 42);
+
+        assertThat(value.mediaType()).isEqualTo("text/html");
+        assertThat(value.rawChecksum()).isEqualTo("a".repeat(64));
+        assertThat(value.sizeBytes()).isEqualTo(42);
+        assertThatIllegalArgumentException().isThrownBy(() -> new ArtifactDiscovery(ID, SOURCE, RUN, null,
+            URI.create("https://example.test/jobs/1"), URI.create("https://example.test/jobs/1"),
+            "Recruitment announcement", AcquiredDocument.DocumentKind.ANNOUNCEMENT,
+            null, ArtifactDiscovery.DiscoveryStatus.FETCHED, null, NOW, NOW, 1,
+            "text/html", "not-a-checksum", 42));
+    }
+
+    @Test
     void processedRowsCannotCarryAnError() {
         assertThatIllegalArgumentException().isThrownBy(() -> new ArtifactDiscovery(ID, SOURCE, RUN, null,
             URI.create("https://example.test/jobs/1"), URI.create("https://example.test/jobs/1"),

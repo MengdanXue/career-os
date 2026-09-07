@@ -173,23 +173,33 @@ class JpaAcquisitionStoreTest {
         URI uri = URI.create("https://official.example/2026/jobs.xlsx");
         ArtifactDiscovery discovered = new ArtifactDiscovery(UUID.randomUUID(), SOURCE_ID, run.id(), null,
             uri, uri, "2026 岗位表", DocumentKind.ATTACHMENT, LocalDate.of(2026, 4, 1),
-            ArtifactDiscovery.DiscoveryStatus.DISCOVERED, null, NOW, NOW, 1);
+            ArtifactDiscovery.DiscoveryStatus.DISCOVERED, null, NOW, NOW, 1,
+            null, null, 0);
         store.saveArtifactDiscovery(discovered);
+
+        ArtifactDiscovery fetched = new ArtifactDiscovery(discovered.id(), SOURCE_ID, run.id(), null,
+            uri, uri, discovered.title(), discovered.kind(), discovered.publishedOn(),
+            ArtifactDiscovery.DiscoveryStatus.FETCHED, null, NOW.plusSeconds(1),
+            NOW.plusSeconds(1), 1, "application/vnd.ms-excel", "a".repeat(64), 2048);
+        store.saveArtifactDiscovery(fetched);
 
         ArtifactDiscovery failed = new ArtifactDiscovery(discovered.id(), SOURCE_ID, run.id(), null,
             uri, uri, discovered.title(), discovered.kind(), discovered.publishedOn(),
-            ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED, "HTTP_429", NOW.plusSeconds(1),
-            NOW.plusSeconds(1), 1);
+            ArtifactDiscovery.DiscoveryStatus.PARSE_FAILED, "PARSE_FAILED", NOW.plusSeconds(2),
+            NOW.plusSeconds(2), 1);
         ArtifactDiscovery saved = store.saveArtifactDiscovery(failed);
 
         assertThat(store.findArtifactDiscoveries(SOURCE_ID, run.id())).singleElement().satisfies(value -> {
-            assertThat(value.status()).isEqualTo(ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED);
-            assertThat(value.errorCode()).isEqualTo("HTTP_429");
+            assertThat(value.status()).isEqualTo(ArtifactDiscovery.DiscoveryStatus.PARSE_FAILED);
+            assertThat(value.errorCode()).isEqualTo("PARSE_FAILED");
             assertThat(value.attemptCount()).isEqualTo(1);
             assertThat(value.firstSeenAt()).isEqualTo(NOW);
+            assertThat(value.mediaType()).isEqualTo("application/vnd.ms-excel");
+            assertThat(value.rawChecksum()).isEqualTo("a".repeat(64));
+            assertThat(value.sizeBytes()).isEqualTo(2048);
         });
         assertThat(store.countUnresolvedArtifactDiscoveries(SOURCE_ID)).isEqualTo(1);
-        assertThat(saved.status()).isEqualTo(ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED);
+        assertThat(saved.status()).isEqualTo(ArtifactDiscovery.DiscoveryStatus.PARSE_FAILED);
         assertThat(saved.attemptCount()).isEqualTo(1);
     }
 

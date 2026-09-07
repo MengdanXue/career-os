@@ -168,14 +168,15 @@ final class AcquisitionApiModels {
         UUID id, UUID sourceId, UUID runId, UUID parentDocumentId,
         String canonicalUri, String fetchUri, String title, String documentKind,
         LocalDate publishedOn, String status, String errorCode, Instant firstSeenAt,
-        Instant lastAttemptAt, int attemptCount, boolean unresolved
+        Instant lastAttemptAt, int attemptCount, boolean unresolved,
+        String mediaType, String rawChecksum, long sizeBytes
     ) {
         static ArtifactDiscoveryResponse from(ArtifactDiscovery value) {
             return new ArtifactDiscoveryResponse(value.id(), value.sourceId(), value.runId(),
                 value.parentDocumentId(), value.canonicalUri().toString(), value.fetchUri().toString(),
                 value.title(), value.kind().name(), value.publishedOn(), value.status().name(),
                 value.errorCode(), value.firstSeenAt(), value.lastAttemptAt(), value.attemptCount(),
-                value.unresolved());
+                value.unresolved(), value.mediaType(), value.rawChecksum(), value.sizeBytes());
         }
     }
 

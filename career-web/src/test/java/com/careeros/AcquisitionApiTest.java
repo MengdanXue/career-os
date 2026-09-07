@@ -178,7 +178,7 @@ class AcquisitionApiTest {
             URI.create("https://official.example/2026/jobs.xlsx"), "2026 岗位表",
             com.careeros.domain.acquisition.AcquiredDocument.DocumentKind.ATTACHMENT,
             java.time.LocalDate.of(2026, 4, 1), ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED,
-            "HTTP_429", NOW, NOW, 1);
+            "HTTP_429", NOW, NOW, 1, "application/vnd.ms-excel", "a".repeat(64), 2048);
         when(store.findArtifactDiscoveries(SOURCE_ID, RUN_ID)).thenReturn(List.of(discovery));
         when(store.countUnresolvedArtifactDiscoveries(SOURCE_ID)).thenReturn(1L);
 
@@ -187,6 +187,9 @@ class AcquisitionApiTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$[0].canonicalUri").value(discovery.canonicalUri().toString()))
             .andExpect(jsonPath("$[0].status").value("FETCH_FAILED"))
+            .andExpect(jsonPath("$[0].mediaType").value("application/vnd.ms-excel"))
+            .andExpect(jsonPath("$[0].rawChecksum").value("a".repeat(64)))
+            .andExpect(jsonPath("$[0].sizeBytes").value(2048))
             .andExpect(jsonPath("$[0].unresolved").value(true));
         mvc.perform(get("/api/acquisition/sources/{id}/discovery-health", SOURCE_ID))
             .andExpect(status().isOk())

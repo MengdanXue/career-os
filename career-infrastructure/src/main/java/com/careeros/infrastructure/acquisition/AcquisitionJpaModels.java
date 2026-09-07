@@ -218,6 +218,9 @@ final class AcquisitionJpaModels {
         @Column(name = "first_seen_at", nullable = false) Instant firstSeenAt;
         @Column(name = "last_attempt_at", nullable = false) Instant lastAttemptAt;
         @Column(name = "attempt_count", nullable = false) int attemptCount;
+        @Column(name = "media_type") String mediaType;
+        @Column(name = "raw_checksum", length = 64) String rawChecksum;
+        @Column(name = "size_bytes", nullable = false) long sizeBytes;
         protected ArtifactDiscoveryEntity() {}
     }
 }

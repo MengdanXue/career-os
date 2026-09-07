@@ -27,8 +27,25 @@ public record ArtifactDiscovery(
     String errorCode,
     Instant firstSeenAt,
     Instant lastAttemptAt,
-    int attemptCount
+    int attemptCount,
+    String mediaType,
+    String rawChecksum,
+    long sizeBytes
 ) {
+    private static final java.util.regex.Pattern SHA256 =
+        java.util.regex.Pattern.compile("[0-9a-f]{64}");
+
+    public ArtifactDiscovery(
+        UUID id, UUID sourceId, UUID runId, UUID parentDocumentId,
+        URI canonicalUri, URI fetchUri, String title, AcquiredDocument.DocumentKind kind,
+        LocalDate publishedOn, DiscoveryStatus status, String errorCode,
+        Instant firstSeenAt, Instant lastAttemptAt, int attemptCount
+    ) {
+        this(id, sourceId, runId, parentDocumentId, canonicalUri, fetchUri, title, kind,
+            publishedOn, status, errorCode, firstSeenAt, lastAttemptAt, attemptCount,
+            null, null, 0);
+    }
+
     public ArtifactDiscovery {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(sourceId, "sourceId");
@@ -51,6 +68,13 @@ public record ArtifactDiscovery(
         if (status == DiscoveryStatus.PROCESSED && errorCode != null) {
             throw new IllegalArgumentException("processed discovery cannot have an error code");
         }
+        if (mediaType != null && mediaType.isBlank()) {
+            throw new IllegalArgumentException("mediaType must not be blank");
+        }
+        if (rawChecksum != null && !SHA256.matcher(rawChecksum).matches()) {
+            throw new IllegalArgumentException("rawChecksum must be lowercase SHA-256 hex");
+        }
+        if (sizeBytes < 0) throw new IllegalArgumentException("sizeBytes cannot be negative");
     }
 
     private static void requireUri(URI uri, String name) {

@@ -518,8 +518,11 @@ public final class AcquisitionService {
                 ArtifactDiscovery.DiscoveryStatus.FETCH_FAILED, "DOCUMENT_GONE");
             return new DocumentOutcome(null, response, null, false);
         }
+        String rawChecksum = response.content().length == 0 ? null : sha256(response.content());
         recordDiscovery(source, runId, link, parent, kind,
-            ArtifactDiscovery.DiscoveryStatus.FETCHED, null);
+            ArtifactDiscovery.DiscoveryStatus.FETCHED, null,
+            response.content().length == 0 ? null : response.mediaType(),
+            rawChecksum, response.content().length);
         FetchObservation observation = observation(contentPolicies, response, link.uri());
         DocumentTransition transition;
         try {
@@ -656,12 +659,21 @@ public final class AcquisitionService {
         RecruitmentSource source, UUID runId, DiscoveredLink link, AcquiredDocument parent,
         DocumentKind kind, ArtifactDiscovery.DiscoveryStatus status, String errorCode
     ) {
+        recordDiscovery(source, runId, link, parent, kind, status, errorCode, null, null, 0);
+    }
+
+    private void recordDiscovery(
+        RecruitmentSource source, UUID runId, DiscoveredLink link, AcquiredDocument parent,
+        DocumentKind kind, ArtifactDiscovery.DiscoveryStatus status, String errorCode,
+        String mediaType, String rawChecksum, long sizeBytes
+    ) {
         Instant now = clock.instant();
         UUID id = UUID.nameUUIDFromBytes(("artifact-discovery|" + source.id() + "|" + link.uri())
             .getBytes(StandardCharsets.UTF_8));
         store.saveArtifactDiscovery(new ArtifactDiscovery(id, source.id(), runId,
             parent == null ? null : parent.id(), link.uri(), link.fetchUri(), link.title(), kind,
-            link.publishedOn(), status, errorCode, now, now, 1));
+            link.publishedOn(), status, errorCode, now, now, 1,
+            mediaType, rawChecksum, sizeBytes));
     }
 
     private FetchedDocument fetchTimed(RecruitmentSource source, FetchRequest request) {

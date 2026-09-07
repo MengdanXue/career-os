@@ -262,6 +262,13 @@ public class JpaAcquisitionStore implements AcquisitionStore {
             entity.firstSeenAt = previous.firstSeenAt;
             entity.attemptCount = value.status() == ArtifactDiscovery.DiscoveryStatus.DISCOVERED
                 ? previous.attemptCount + 1 : previous.attemptCount;
+            // A status-only retry (for example PARSE_FAILED after FETCHED) must
+            // retain the bytes' provenance captured by the successful fetch.
+            if (value.rawChecksum() == null && value.mediaType() == null && value.sizeBytes() == 0) {
+                entity.mediaType = previous.mediaType;
+                entity.rawChecksum = previous.rawChecksum;
+                entity.sizeBytes = previous.sizeBytes;
+            }
         }
         return toDomain(discoveries.saveAndFlush(entity));
     }
@@ -496,7 +503,8 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         entity.fetchUri = value.fetchUri().toString(); entity.title = value.title(); entity.kind = value.kind();
         entity.publishedOn = value.publishedOn(); entity.status = value.status(); entity.errorCode = value.errorCode();
         entity.firstSeenAt = value.firstSeenAt(); entity.lastAttemptAt = value.lastAttemptAt();
-        entity.attemptCount = value.attemptCount();
+        entity.attemptCount = value.attemptCount(); entity.mediaType = value.mediaType();
+        entity.rawChecksum = value.rawChecksum(); entity.sizeBytes = value.sizeBytes();
         return entity;
     }
 
@@ -504,6 +512,6 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         return new ArtifactDiscovery(value.id, value.sourceId, value.runId, value.parentDocumentId,
             URI.create(value.canonicalUri), URI.create(value.fetchUri), value.title, value.kind,
             value.publishedOn, value.status, value.errorCode, value.firstSeenAt, value.lastAttemptAt,
-            value.attemptCount);
+            value.attemptCount, value.mediaType, value.rawChecksum, value.sizeBytes);
     }
 }

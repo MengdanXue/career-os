@@ -66,6 +66,13 @@ class AcquisitionServiceTest {
             .contains(ArtifactDiscovery.DiscoveryStatus.DISCOVERED,
                 ArtifactDiscovery.DiscoveryStatus.FETCHED,
                 ArtifactDiscovery.DiscoveryStatus.PROCESSED);
+        assertThat(fixture.store.discoveryEvents).filteredOn(value ->
+                value.status() == ArtifactDiscovery.DiscoveryStatus.FETCHED)
+            .singleElement().satisfies(value -> {
+                assertThat(value.mediaType()).isEqualTo("text/html");
+                assertThat(value.rawChecksum()).isEqualTo(sha256(fixture.fetcher.detail));
+                assertThat(value.sizeBytes()).isEqualTo(fixture.fetcher.detail.length);
+            });
 
         fixture.fetcher.failedUris.add(DETAIL);
         fixture.service.run(SOURCE_ID, RunTrigger.MANUAL);
