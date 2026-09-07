@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.careeros.application.AcquisitionPorts.*;
 import com.careeros.application.AcquisitionService;
+import com.careeros.application.SourceCompletionAuditService;
 import com.careeros.domain.acquisition.AcquisitionChange;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.RecruitmentSource;
@@ -27,12 +28,14 @@ import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class AcquisitionApiTest {
     private static final UUID SOURCE_ID = UUID.fromString("01992f09-0000-7000-8000-000000000301");
     private static final UUID RUN_ID = UUID.fromString("01992f09-0000-7000-8000-000000000501");
+    private static final UUID SNAPSHOT_ID = UUID.fromString("01992f09-0000-7000-8000-000000000701");
     private static final Instant NOW = Instant.parse("2026-08-15T00:00:00Z");
     private AcquisitionStore store;
     private AcquisitionService service;
@@ -166,6 +169,41 @@ class AcquisitionApiTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.items[0].changeType").value("ADDED"))
             .andExpect(jsonPath("$.nextCursor", not(blankOrNullString())));
+    }
+
+    @Test void attachesPinnedAuditCompletionToSourcesAndCoverage() throws Exception {
+        when(store.findSources()).thenReturn(List.of(source()));
+        when(store.findTargetSources()).thenReturn(List.of());
+        when(store.findTargetSourceStatus("ZJ_HRSS_INSTITUTION"))
+            .thenReturn(com.careeros.domain.acquisition.TargetSource.ConnectionStatus.PARTIAL);
+        when(store.findSourceYearCoverage(SOURCE_ID, null)).thenReturn(List.of(
+            new SourceYearCoverage(SOURCE_ID, 2025, CoverageStatus.PARTIAL,
+                1, 1, 1, 1, null, null, NOW)));
+        when(store.findSourceYearCoverage(SOURCE_ID, 2025)).thenReturn(List.of(
+            new SourceYearCoverage(SOURCE_ID, 2025, CoverageStatus.PARTIAL,
+                1, 1, 1, 1, null, null, NOW)));
+        when(store.findCheckpoints(SOURCE_ID)).thenReturn(List.of());
+        when(store.countImportFailures(SOURCE_ID)).thenReturn(0L);
+        when(store.countDocumentImportFailures(SOURCE_ID)).thenReturn(0L);
+        when(store.lifecycleCounts(SOURCE_ID)).thenReturn(LifecycleCounts.none());
+        SourceCompletionAuditService audit = mock(SourceCompletionAuditService.class);
+        when(audit.get(SNAPSHOT_ID)).thenReturn("""
+            {"sources":[{"code":"ZJ_HRSS_INSTITUTION","completion":
+            {"auditSnapshotId":"01992f09-0000-7000-8000-000000000701","completionLevel":0,
+            "years":[{"year":2025,"conclusion":"UNKNOWN","supportsAbsenceConclusion":false}]}}]}
+            """);
+        var pinnedMvc = MockMvcBuilders.standaloneSetup(new AcquisitionController(
+            store, service, audit, new ObjectMapper().findAndRegisterModules()))
+            .setControllerAdvice(new ApiExceptionHandler()).build();
+
+        pinnedMvc.perform(get("/api/acquisition/sources").param("auditSnapshotId", SNAPSHOT_ID.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].completion.auditSnapshotId").value(SNAPSHOT_ID.toString()));
+        pinnedMvc.perform(get("/api/acquisition/coverage").param("sourceId", SOURCE_ID.toString())
+                .param("year", "2025").param("auditSnapshotId", SNAPSHOT_ID.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].assessment.year").value(2025))
+            .andExpect(jsonPath("$[0].assessment.conclusion").value("UNKNOWN"));
     }
 
     @Test void invalidCursorAndOversizedPageReturnProblemDetails() throws Exception {

@@ -35,6 +35,14 @@ final class AcquisitionApiModels {
         List<CheckpointResponse> checkpoints, long historicalFailureCount,
         java.util.Map<String,Object> completion
     ) {
+        SourceResponse withCompletion(java.util.Map<String,Object> value) {
+            return new SourceResponse(id, code, name, entryUri, sourceType, region, crawlMode, enabled,
+                cronExpression, timeZone, lastSuccessAt, lastFailureAt, nextDueAt, consecutiveFailureCount,
+                connectionStatus, scopeLevel, scopeCode, priorityTier, coverageRole, accessStatus,
+                documentIssueCount, lifecycleDocumentCount, matchedLifecycleCount, unmatchedLifecycleCount,
+                ambiguousLifecycleCount, coverage, checkpoints, historicalFailureCount, value);
+        }
+
         static SourceResponse from(
             RecruitmentSource value, TargetSourceRegistration target, AcquisitionStore store
         ) {
@@ -115,14 +123,21 @@ final class AcquisitionApiModels {
         int parsedCount, int targetJobCount, String completionBasis, Instant completedAt,
         Instant updatedAt, boolean supportsAbsenceConclusion, int listingPageCount,
         int filteredCount, int failedCount, LocalDate earliestPublishedOn,
-        LocalDate latestPublishedOn, String stopReason
+        LocalDate latestPublishedOn, String stopReason, java.util.Map<String,Object> assessment
     ) {
         static CoverageResponse from(SourceYearCoverage value) {
             return new CoverageResponse(value.sourceId(), value.recruitmentYear(), value.status().name(),
                 value.discoveredCount(), value.fetchedCount(), value.parsedCount(), value.targetJobCount(),
                 value.completionBasis(), value.completedAt(), value.updatedAt(), value.supportsAbsenceConclusion(),
                 value.listingPageCount(), value.filteredCount(), value.failedCount(),
-                value.earliestPublishedOn(), value.latestPublishedOn(), value.stopReason());
+                value.earliestPublishedOn(), value.latestPublishedOn(), value.stopReason(), null);
+        }
+
+        CoverageResponse withAssessment(java.util.Map<String,Object> value) {
+            return new CoverageResponse(sourceId, year, status, discoveredCount, fetchedCount, parsedCount,
+                targetJobCount, completionBasis, completedAt, updatedAt, supportsAbsenceConclusion,
+                listingPageCount, filteredCount, failedCount, earliestPublishedOn, latestPublishedOn, stopReason,
+                value);
         }
     }
 

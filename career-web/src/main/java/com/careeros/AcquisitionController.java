@@ -8,9 +8,15 @@ import com.careeros.application.AcquisitionService;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunStatus;
 import com.careeros.domain.acquisition.SourceCrawlRun.RunTrigger;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -23,17 +29,24 @@ final class AcquisitionController {
     private final AcquisitionStore store;
     private final AcquisitionService service;
     private final com.careeros.application.SourceCompletionAuditService auditService;
+    private final ObjectMapper json;
 
     AcquisitionController(AcquisitionStore store, AcquisitionService service) {
-        this(store, service, null);
+        this(store, service, null, null);
+    }
+
+    AcquisitionController(AcquisitionStore store, AcquisitionService service,
+        com.careeros.application.SourceCompletionAuditService auditService) {
+        this(store, service, auditService, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     AcquisitionController(AcquisitionStore store, AcquisitionService service,
-        com.careeros.application.SourceCompletionAuditService auditService) {
+        com.careeros.application.SourceCompletionAuditService auditService, ObjectMapper json) {
         this.store=java.util.Objects.requireNonNull(store);
         this.service=java.util.Objects.requireNonNull(service);
         this.auditService=auditService;
+        this.json=json;
     }
 
     @PostMapping(value="/audit-snapshots", consumes=MediaType.APPLICATION_JSON_VALUE,
@@ -66,19 +79,28 @@ final class AcquisitionController {
         List<String> selectedCodes, List<UUID> runIds, UUID baseSnapshotId) {}
 
     @GetMapping("/sources")
-    List<SourceResponse> sources() {
+    List<SourceResponse> sources(
+        @RequestParam(name="auditSnapshotId", required=false) UUID auditSnapshotId
+    ) {
         var actual = store.findSources().stream().collect(java.util.stream.Collectors.toMap(
             com.careeros.domain.acquisition.RecruitmentSource::code, value -> value));
         var targets = store.findTargetSources();
+        List<SourceResponse> responses;
         if (targets.isEmpty()) {
-            return actual.values().stream().sorted(java.util.Comparator.comparing(
+            responses = actual.values().stream().sorted(java.util.Comparator.comparing(
                     com.careeros.domain.acquisition.RecruitmentSource::code))
                 .map(source -> SourceResponse.from(source, new com.careeros.application.AcquisitionPorts.TargetSourceRegistration(
                     source.code(), source.name(), source.region(), source.baseUri().toString(),
                     store.findTargetSourceStatus(source.code()), source.id(), source.enabled(),
                     "CITY", "HANGZHOU", "P0", "PRIMARY"), store)).toList();
+        } else {
+            responses = targets.stream().map(target -> SourceResponse.from(actual.get(target.code()), target, store)).toList();
         }
-        return targets.stream().map(target -> SourceResponse.from(actual.get(target.code()), target, store)).toList();
+        JsonNode snapshot = resolveSnapshot(auditSnapshotId);
+        if (snapshot == null) return responses;
+        Map<String, JsonNode> completions = sourceCompletions(snapshot);
+        return responses.stream().map(response -> response.withCompletion(
+            toMap(completions.get(response.code()), null))).toList();
     }
 
     @PostMapping("/sources/{sourceId}/runs")
@@ -138,12 +160,75 @@ final class AcquisitionController {
     @GetMapping("/coverage")
     List<CoverageResponse> coverage(
         @RequestParam(name="sourceId", required=false) UUID sourceId,
-        @RequestParam(name="year", required=false) Integer year
+        @RequestParam(name="year", required=false) Integer year,
+        @RequestParam(name="auditSnapshotId", required=false) UUID auditSnapshotId
     ) {
         if (year != null && (year < 2000 || year > 2100)) {
             throw new IllegalArgumentException("year must be between 2000 and 2100");
         }
-        return store.findSourceYearCoverage(sourceId, year).stream().map(CoverageResponse::from).toList();
+        List<CoverageResponse> responses = store.findSourceYearCoverage(sourceId, year).stream()
+            .map(CoverageResponse::from).toList();
+        JsonNode snapshot = resolveSnapshot(auditSnapshotId);
+        if (snapshot == null || responses.isEmpty()) return responses;
+        Map<UUID, String> sourceCodes = store.findSources().stream().collect(java.util.stream.Collectors.toMap(
+            com.careeros.domain.acquisition.RecruitmentSource::id,
+            com.careeros.domain.acquisition.RecruitmentSource::code,
+            (left, right) -> left));
+        Map<String, JsonNode> completions = sourceCompletions(snapshot);
+        return responses.stream().map(response -> {
+            String code = sourceCodes.get(response.sourceId());
+            JsonNode completion = code == null ? null : completions.get(code);
+            return response.withAssessment(toMap(findYear(completion, response.year()), null));
+        }).toList();
+    }
+
+    private JsonNode resolveSnapshot(UUID requestedId) {
+        if (auditService == null) {
+            if (requestedId != null) throw new NoSuchElementException("audit snapshot not found: " + requestedId);
+            return null;
+        }
+        try {
+            String payload = requestedId == null
+                ? auditService.latest(2024, LocalDate.now(ZoneId.of("Asia/Shanghai")).getYear())
+                : auditService.get(requestedId);
+            return parse(payload);
+        } catch (NoSuchElementException missing) {
+            if (requestedId != null) throw missing;
+            return null;
+        }
+    }
+
+    private JsonNode parse(String payload) {
+        if (json == null) throw new IllegalStateException("audit JSON mapper is not configured");
+        try { return json.readTree(payload); }
+        catch (java.io.IOException exception) { throw new IllegalStateException("invalid persisted audit snapshot", exception); }
+    }
+
+    private static Map<String, JsonNode> sourceCompletions(JsonNode snapshot) {
+        Map<String, JsonNode> values = new java.util.HashMap<>();
+        JsonNode sources = snapshot == null ? null : snapshot.get("sources");
+        if (sources != null && sources.isArray()) {
+            for (JsonNode source : sources) {
+                String code = source.path("code").asText(null);
+                if (code != null && source.has("completion")) values.put(code, source.get("completion"));
+            }
+        }
+        return values;
+    }
+
+    private static JsonNode findYear(JsonNode completion, int year) {
+        if (completion == null) return null;
+        JsonNode years = completion.get("years");
+        if (years == null || !years.isArray()) return null;
+        for (JsonNode value : years) if (value.path("year").asInt(Integer.MIN_VALUE) == year) return value;
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String,Object> toMap(JsonNode value, String nestedField) {
+        if (value == null || value.isNull() || json == null) return null;
+        JsonNode target = nestedField == null ? value : value.get(nestedField);
+        return target == null || target.isNull() ? null : json.convertValue(target, Map.class);
     }
 
     @GetMapping("/sources/{sourceId}/failures")
