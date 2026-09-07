@@ -190,6 +190,7 @@ class AcquisitionApiTest {
             .andExpect(jsonPath("$[0].mediaType").value("application/vnd.ms-excel"))
             .andExpect(jsonPath("$[0].rawChecksum").value("a".repeat(64)))
             .andExpect(jsonPath("$[0].sizeBytes").value(2048))
+            .andExpect(jsonPath("$[0].classification").value("UNKNOWN"))
             .andExpect(jsonPath("$[0].unresolved").value(true));
         mvc.perform(get("/api/acquisition/sources/{id}/discovery-health", SOURCE_ID))
             .andExpect(status().isOk())

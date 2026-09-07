@@ -169,14 +169,15 @@ final class AcquisitionApiModels {
         String canonicalUri, String fetchUri, String title, String documentKind,
         LocalDate publishedOn, String status, String errorCode, Instant firstSeenAt,
         Instant lastAttemptAt, int attemptCount, boolean unresolved,
-        String mediaType, String rawChecksum, long sizeBytes
+        String mediaType, String rawChecksum, long sizeBytes, String classification
     ) {
         static ArtifactDiscoveryResponse from(ArtifactDiscovery value) {
             return new ArtifactDiscoveryResponse(value.id(), value.sourceId(), value.runId(),
                 value.parentDocumentId(), value.canonicalUri().toString(), value.fetchUri().toString(),
                 value.title(), value.kind().name(), value.publishedOn(), value.status().name(),
                 value.errorCode(), value.firstSeenAt(), value.lastAttemptAt(), value.attemptCount(),
-                value.unresolved(), value.mediaType(), value.rawChecksum(), value.sizeBytes());
+                value.unresolved(), value.mediaType(), value.rawChecksum(), value.sizeBytes(),
+                value.classification().name());
         }
     }
 

@@ -673,7 +673,8 @@ public final class AcquisitionService {
         store.saveArtifactDiscovery(new ArtifactDiscovery(id, source.id(), runId,
             parent == null ? null : parent.id(), link.uri(), link.fetchUri(), link.title(), kind,
             link.publishedOn(), status, errorCode, now, now, 1,
-            mediaType, rawChecksum, sizeBytes));
+            mediaType, rawChecksum, sizeBytes,
+            ArtifactDiscovery.classify(link.title(), link.uri(), kind)));
     }
 
     private FetchedDocument fetchTimed(RecruitmentSource source, FetchRequest request) {

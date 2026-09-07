@@ -61,6 +61,34 @@ class ArtifactDiscoveryTest {
     }
 
     @Test
+    void classifiesKnownAttachmentFamiliesAndLeavesAmbiguousItemsUnknown() {
+        URI workbook = URI.create("https://example.test/files/2026岗位计划.xlsx");
+        URI catalog = URI.create("https://example.test/files/专业目录及代码.pdf");
+        URI form = URI.create("https://example.test/files/报名表.docx");
+        URI results = URI.create("https://example.test/files/面试名单.pdf");
+        URI unclear = URI.create("https://example.test/files/附件.pdf");
+
+        assertThat(ArtifactDiscovery.classify("2026年招聘岗位计划", workbook,
+            AcquiredDocument.DocumentKind.ATTACHMENT))
+            .isEqualTo(ArtifactDiscovery.Classification.JOB_TABLE);
+        assertThat(ArtifactDiscovery.classify("2026年专业目录及代码", catalog,
+            AcquiredDocument.DocumentKind.ATTACHMENT))
+            .isEqualTo(ArtifactDiscovery.Classification.MAJOR_CATALOG);
+        assertThat(ArtifactDiscovery.classify("报名表", form,
+            AcquiredDocument.DocumentKind.ATTACHMENT))
+            .isEqualTo(ArtifactDiscovery.Classification.REGISTRATION_FORM);
+        assertThat(ArtifactDiscovery.classify("面试名单", results,
+            AcquiredDocument.DocumentKind.ATTACHMENT))
+            .isEqualTo(ArtifactDiscovery.Classification.RESULTS_OR_LIFECYCLE);
+        assertThat(ArtifactDiscovery.classify("附件", unclear,
+            AcquiredDocument.DocumentKind.ATTACHMENT))
+            .isEqualTo(ArtifactDiscovery.Classification.UNKNOWN);
+        assertThat(ArtifactDiscovery.classify("公告", unclear,
+            AcquiredDocument.DocumentKind.ANNOUNCEMENT))
+            .isEqualTo(ArtifactDiscovery.Classification.ANNOUNCEMENT);
+    }
+
+    @Test
     void processedRowsCannotCarryAnError() {
         assertThatIllegalArgumentException().isThrownBy(() -> new ArtifactDiscovery(ID, SOURCE, RUN, null,
             URI.create("https://example.test/jobs/1"), URI.create("https://example.test/jobs/1"),

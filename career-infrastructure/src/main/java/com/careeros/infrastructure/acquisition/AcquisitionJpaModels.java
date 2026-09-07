@@ -5,6 +5,7 @@ import com.careeros.domain.acquisition.AcquiredDocument.DocumentState;
 import com.careeros.domain.acquisition.AcquiredDocument.TransportRisk;
 import com.careeros.domain.acquisition.AcquisitionChange.ChangeType;
 import com.careeros.domain.acquisition.ArtifactImportFailure.FailureStage;
+import com.careeros.domain.acquisition.ArtifactDiscovery;
 import com.careeros.domain.acquisition.ArtifactDiscovery.DiscoveryStatus;
 import com.careeros.domain.acquisition.RecruitmentSource.CrawlMode;
 import com.careeros.domain.acquisition.RecruitmentSource.SourceType;
@@ -221,6 +222,7 @@ final class AcquisitionJpaModels {
         @Column(name = "media_type") String mediaType;
         @Column(name = "raw_checksum", length = 64) String rawChecksum;
         @Column(name = "size_bytes", nullable = false) long sizeBytes;
+        @Enumerated(EnumType.STRING) @Column(nullable = false) ArtifactDiscovery.Classification classification;
         protected ArtifactDiscoveryEntity() {}
     }
 }

@@ -72,6 +72,7 @@ class AcquisitionServiceTest {
                 assertThat(value.mediaType()).isEqualTo("text/html");
                 assertThat(value.rawChecksum()).isEqualTo(sha256(fixture.fetcher.detail));
                 assertThat(value.sizeBytes()).isEqualTo(fixture.fetcher.detail.length);
+                assertThat(value.classification()).isEqualTo(ArtifactDiscovery.Classification.ANNOUNCEMENT);
             });
 
         fixture.fetcher.failedUris.add(DETAIL);

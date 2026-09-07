@@ -268,6 +268,9 @@ public class JpaAcquisitionStore implements AcquisitionStore {
                 entity.mediaType = previous.mediaType;
                 entity.rawChecksum = previous.rawChecksum;
                 entity.sizeBytes = previous.sizeBytes;
+                if (value.classification() == ArtifactDiscovery.Classification.UNKNOWN) {
+                    entity.classification = previous.classification;
+                }
             }
         }
         return toDomain(discoveries.saveAndFlush(entity));
@@ -505,6 +508,7 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         entity.firstSeenAt = value.firstSeenAt(); entity.lastAttemptAt = value.lastAttemptAt();
         entity.attemptCount = value.attemptCount(); entity.mediaType = value.mediaType();
         entity.rawChecksum = value.rawChecksum(); entity.sizeBytes = value.sizeBytes();
+        entity.classification = value.classification();
         return entity;
     }
 
@@ -512,6 +516,6 @@ public class JpaAcquisitionStore implements AcquisitionStore {
         return new ArtifactDiscovery(value.id, value.sourceId, value.runId, value.parentDocumentId,
             URI.create(value.canonicalUri), URI.create(value.fetchUri), value.title, value.kind,
             value.publishedOn, value.status, value.errorCode, value.firstSeenAt, value.lastAttemptAt,
-            value.attemptCount, value.mediaType, value.rawChecksum, value.sizeBytes);
+            value.attemptCount, value.mediaType, value.rawChecksum, value.sizeBytes, value.classification);
     }
 }

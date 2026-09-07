@@ -180,7 +180,8 @@ class JpaAcquisitionStoreTest {
         ArtifactDiscovery fetched = new ArtifactDiscovery(discovered.id(), SOURCE_ID, run.id(), null,
             uri, uri, discovered.title(), discovered.kind(), discovered.publishedOn(),
             ArtifactDiscovery.DiscoveryStatus.FETCHED, null, NOW.plusSeconds(1),
-            NOW.plusSeconds(1), 1, "application/vnd.ms-excel", "a".repeat(64), 2048);
+            NOW.plusSeconds(1), 1, "application/vnd.ms-excel", "a".repeat(64), 2048,
+            ArtifactDiscovery.Classification.JOB_TABLE);
         store.saveArtifactDiscovery(fetched);
 
         ArtifactDiscovery failed = new ArtifactDiscovery(discovered.id(), SOURCE_ID, run.id(), null,
@@ -197,6 +198,7 @@ class JpaAcquisitionStoreTest {
             assertThat(value.mediaType()).isEqualTo("application/vnd.ms-excel");
             assertThat(value.rawChecksum()).isEqualTo("a".repeat(64));
             assertThat(value.sizeBytes()).isEqualTo(2048);
+            assertThat(value.classification()).isEqualTo(ArtifactDiscovery.Classification.JOB_TABLE);
         });
         assertThat(store.countUnresolvedArtifactDiscoveries(SOURCE_ID)).isEqualTo(1);
         assertThat(saved.status()).isEqualTo(ArtifactDiscovery.DiscoveryStatus.PARSE_FAILED);
