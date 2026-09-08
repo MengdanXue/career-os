@@ -28,6 +28,23 @@ class MediaTypeDetectorTest {
             .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
+    @Test void detectsDocxFromOfficeZipEntries() throws Exception {
+        assertThat(detector.detect(URI.create("https://host/file"), "application/octet-stream", docxBytes()))
+            .isEqualTo("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    }
+
+    @Test void detectsGenericZipWhenItIsNotAnOfficeDocument() throws Exception {
+        var bytes = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(bytes)) {
+            zip.putNextEntry(new ZipEntry("readme.txt"));
+            zip.write("附件".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+
+        assertThat(detector.detect(URI.create("https://host/attachments"), "application/octet-stream", bytes.toByteArray()))
+            .isEqualTo("application/zip");
+    }
+
     @Test void htmlErrorPageNamedXlsxRemainsHtml() {
         byte[] html = "<!doctype html><title>error</title>".getBytes(StandardCharsets.UTF_8);
         assertThat(detector.detect(URI.create("https://host/jobs.xlsx"), "application/octet-stream", html))
@@ -56,6 +73,19 @@ class MediaTypeDetectorTest {
             zip.closeEntry();
             zip.putNextEntry(new ZipEntry("xl/workbook.xml"));
             zip.write("workbook".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return bytes.toByteArray();
+    }
+
+    private static byte[] docxBytes() throws Exception {
+        var bytes = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(bytes)) {
+            zip.putNextEntry(new ZipEntry("[Content_Types].xml"));
+            zip.write("types".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("word/document.xml"));
+            zip.write("document".getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
         }
         return bytes.toByteArray();

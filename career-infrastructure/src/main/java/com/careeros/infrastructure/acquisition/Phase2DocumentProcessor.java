@@ -1,6 +1,7 @@
 package com.careeros.infrastructure.acquisition;
 
 import com.careeros.application.AcquiredDocumentProcessor;
+import com.careeros.application.AcquiredDocumentProcessor.ProcessingStatus;
 import com.careeros.application.ExtractionPorts.SubmitExtractionCommand;
 import com.careeros.application.ExtractionService;
 import com.careeros.domain.RecruitmentLifecycle;
@@ -10,10 +11,17 @@ import com.careeros.infrastructure.persistence.OfficialAnnouncementFactService;
 import com.careeros.infrastructure.persistence.HospitalOfficialJobImportService;
 import com.careeros.infrastructure.persistence.OfficialLifecycleDocumentService;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.zip.ZipException;
+import java.util.zip.ZipInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -21,7 +29,10 @@ import org.springframework.stereotype.Component;
 @Component
 public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor {
     private static final Logger LOG = LoggerFactory.getLogger(Phase2DocumentProcessor.class);
-    public static final String PROCESSOR_VERSION = "official-fact-fusion-v15";
+    public static final String PROCESSOR_VERSION = "official-fact-fusion-v16";
+    static final int MAX_ARCHIVE_ENTRIES = 32;
+    static final long MAX_ARCHIVE_ENTRY_BYTES = 10 * 1024 * 1024;
+    static final long MAX_ARCHIVE_TOTAL_BYTES = 25 * 1024 * 1024;
     private static final Pattern ANNOUNCEMENT_YEAR = Pattern.compile("20\\d{2}年");
     private static final Pattern ORGANIZATION_SUFFIX = Pattern.compile(
         ".*(中心|医院|大学|学院|学校|中学|研究院|研究所|集团|公司|协会|图书馆|博物馆|艺术馆|乐团|运动队|厅|局|委员会|院|所|站|馆|社|室)$");
@@ -30,6 +41,7 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
     private final OfficialAnnouncementFactService announcementFacts;
     private final HospitalOfficialJobImportService hospitalJobs;
     private final OfficialLifecycleDocumentService lifecycleDocuments;
+    private final MediaTypeDetector mediaTypes = new MediaTypeDetector();
     private final OfficialAnnouncementFactParser announcementParser = new OfficialAnnouncementFactParser();
     private final HospitalOfficialPageParser hospitalParser = new HospitalOfficialPageParser();
 
@@ -74,8 +86,10 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
     public ProcessingResult process(ProcessDocumentCommand command) {
         try {
             return switch (command.mediaType()) {
-                case MediaTypeDetector.HTML, "application/xhtml+xml", MediaTypeDetector.PDF -> extract(command);
+                case MediaTypeDetector.HTML, "application/xhtml+xml", MediaTypeDetector.PDF,
+                    MediaTypeDetector.DOCX -> extract(command);
                 case MediaTypeDetector.XLS, MediaTypeDetector.XLSX -> importWorkbook(command);
+                case MediaTypeDetector.ZIP -> importArchive(command);
                 case MediaTypeDetector.PNG, MediaTypeDetector.JPEG -> ProcessingResult.ocrRequired();
                 default -> ProcessingResult.unsupported();
             };
@@ -185,6 +199,92 @@ public final class Phase2DocumentProcessor implements AcquiredDocumentProcessor 
         }
         return ProcessingResult.imported(result.recruitmentEventId(), result.inserted(), result.updated(),
             result.unchanged(), result.deactivated());
+    }
+
+    private ProcessingResult importArchive(ProcessDocumentCommand command) {
+        if (command.content().length < 22) return ProcessingResult.failed("ARCHIVE_MALFORMED");
+        List<ProcessingResult> children = new java.util.ArrayList<>();
+        long totalBytes = 0;
+        int entryCount = 0;
+        try (var zip = new ZipInputStream(new ByteArrayInputStream(command.content()))) {
+            for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                if (entry.isDirectory()) continue;
+                if (++entryCount > MAX_ARCHIVE_ENTRIES) return ProcessingResult.failed("ARCHIVE_ENTRY_COUNT_EXCEEDED");
+                byte[] content = readEntry(zip);
+                totalBytes += content.length;
+                if (totalBytes > MAX_ARCHIVE_TOTAL_BYTES) return ProcessingResult.failed("ARCHIVE_TOTAL_SIZE_EXCEEDED");
+                URI childUri = childUri(command.documentUri(), entry.getName());
+                String mediaType = mediaTypes.detect(childUri, null, content);
+                if (MediaTypeDetector.ZIP.equals(mediaType)) return ProcessingResult.failed("ARCHIVE_NESTED_UNSUPPORTED");
+                if (!isSupportedArchiveChild(mediaType)) return ProcessingResult.failed("ARCHIVE_CHILD_UNSUPPORTED");
+                children.add(process(new ProcessDocumentCommand(content, mediaType, childUri,
+                    command.parentAnnouncementUri(), command.announcementTitle(), command.capturedAt(),
+                    command.recruitmentYear(), command.publishedOn(), command.defaultLocation(), command.eventType())));
+            }
+        } catch (ArchiveLimitException exception) {
+            return ProcessingResult.failed(exception.code);
+        } catch (ZipException exception) {
+            return ProcessingResult.failed("ARCHIVE_MALFORMED");
+        } catch (IOException exception) {
+            return ProcessingResult.failed("ARCHIVE_READ_FAILED");
+        }
+        if (children.isEmpty()) return ProcessingResult.failed("ARCHIVE_EMPTY");
+        return mergeArchiveResults(children);
+    }
+
+    private static boolean isSupportedArchiveChild(String mediaType) {
+        return MediaTypeDetector.HTML.equals(mediaType) || "application/xhtml+xml".equals(mediaType)
+            || MediaTypeDetector.PDF.equals(mediaType) || MediaTypeDetector.DOCX.equals(mediaType)
+            || MediaTypeDetector.XLS.equals(mediaType) || MediaTypeDetector.XLSX.equals(mediaType)
+            || MediaTypeDetector.PNG.equals(mediaType) || MediaTypeDetector.JPEG.equals(mediaType);
+    }
+
+    private static byte[] readEntry(ZipInputStream zip) throws IOException {
+        var output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = zip.read(buffer)) >= 0) {
+            if (read == 0) continue;
+            if (output.size() + (long) read > MAX_ARCHIVE_ENTRY_BYTES) {
+                throw new ArchiveLimitException("ARCHIVE_ENTRY_SIZE_EXCEEDED");
+            }
+            output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
+    }
+
+    private static URI childUri(URI parent, String entryName) {
+        return URI.create(parent + "#entry=" + URLEncoder.encode(entryName, StandardCharsets.UTF_8)
+            .replace("+", "%20"));
+    }
+
+    private static ProcessingResult mergeArchiveResults(List<ProcessingResult> children) {
+        boolean failed = children.stream().anyMatch(value -> value.status() == ProcessingStatus.FAILED
+            || value.status() == ProcessingStatus.UNSUPPORTED);
+        if (failed) return ProcessingResult.failed("ARCHIVE_CHILD_FAILED");
+        UUID eventId = children.stream().map(ProcessingResult::recruitmentEventId)
+            .filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        UUID extractionRunId = children.stream().map(ProcessingResult::extractionRunId)
+            .filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        int inserted = children.stream().mapToInt(ProcessingResult::inserted).sum();
+        int updated = children.stream().mapToInt(ProcessingResult::updated).sum();
+        int unchanged = children.stream().mapToInt(ProcessingResult::unchanged).sum();
+        int deactivated = children.stream().mapToInt(ProcessingResult::deactivated).sum();
+        List<ProcessingIssue> issues = children.stream().flatMap(value -> value.issues().stream()).toList();
+        boolean partial = children.stream().anyMatch(value -> value.status() == ProcessingStatus.PROCESSED_WITH_ERRORS
+            || value.status() == ProcessingStatus.OCR_REQUIRED);
+        if (partial) return new ProcessingResult(ProcessingStatus.PROCESSED_WITH_ERRORS, extractionRunId, eventId,
+            inserted, updated, unchanged, deactivated, "ARCHIVE_CHILD_WARNINGS", issues);
+        if (children.stream().allMatch(value -> value.status() == ProcessingStatus.IGNORED)) {
+            return ProcessingResult.ignored("ARCHIVE_CHILDREN_IGNORED");
+        }
+        return new ProcessingResult(ProcessingStatus.PROCESSED, extractionRunId, eventId,
+            inserted, updated, unchanged, deactivated, null, issues);
+    }
+
+    private static final class ArchiveLimitException extends IOException {
+        private final String code;
+        private ArchiveLimitException(String code) { this.code = code; }
     }
 
     private static boolean isNonJobWorkbook(java.net.URI uri) {

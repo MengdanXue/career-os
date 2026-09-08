@@ -104,7 +104,7 @@ class ApplicationConfiguration {
     }
     @Bean CareerDecisionService careerDecisionService(RepositoryPorts.JobPostings jobs,RepositoryPorts.Opportunities opportunities,JobAdmissionPorts.JobAdmissions admissions) { return new CareerDecisionService(jobs,opportunities,admissions); }
     @Bean ArtifactStore artifactStore(@Value("${career-os.artifacts.root:${user.dir}/var/artifacts}") String root) { return new FileSystemArtifactStore(Path.of(root)); }
-    @Bean DocumentParser documentParser() { return new MediaTypeDocumentParser(List.of(new JsoupDocumentParser(),new PdfBoxDocumentParser())); }
+    @Bean DocumentParser documentParser() { return new MediaTypeDocumentParser(List.of(new JsoupDocumentParser(),new PdfBoxDocumentParser(),new com.careeros.infrastructure.extraction.DocxDocumentParser())); }
     @Bean DocumentEnrichmentPort documentEnrichment() { return new NoOpDocumentEnrichment(); }
     @Bean EvidenceVerifier evidenceVerifier() { return new DefaultEvidenceVerifier(); }
     @Bean ReviewPolicy reviewPolicy(@Value("${career-os.extraction.auto-accept-confidence:0.90}") double threshold) { return new ReviewPolicy(threshold); }

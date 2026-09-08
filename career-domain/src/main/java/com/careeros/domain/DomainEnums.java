@@ -17,7 +17,7 @@ public final class DomainEnums {
     public enum EligibilityStatus { ELIGIBLE, LIKELY_ELIGIBLE, UNCERTAIN, LIKELY_INELIGIBLE, INELIGIBLE }
     public enum EvidenceType { OFFICIAL_NOTICE, OFFICIAL_ATTACHMENT, ORGANIZATION_PAGE, POLICY, MANUAL_NOTE }
     public enum OpportunityStatus { NEW, REVIEWING, SHORTLISTED, APPLIED, CLOSED, REJECTED, ARCHIVED }
-    public enum ExtractionSourceType { HTML, PDF }
+    public enum ExtractionSourceType { HTML, PDF, DOCX }
     public enum DataQualityStatus { RAW, PARSED, NORMALIZED, REVIEW_REQUIRED, VERIFIED, REJECTED, FAILED }
     public enum TargetScopeStatus { INCLUDED, EXCLUDED, NEEDS_REVIEW }
     public enum JobAdmissionReason {
@@ -36,7 +36,7 @@ public final class DomainEnums {
         CONFLICTING_SOURCES, PARSER_FAILURE, LOW_TEXT_QUALITY,
         SCHEMA_INVALID, RESTRICTIVE_FACT_FROM_LLM
     }
-    public enum LocatorType { HTML, PDF }
+    public enum LocatorType { HTML, PDF, DOCX }
     public enum AssessmentFactStatus { EXPLICIT, INTERPRETED, UNKNOWN }
     public enum AssessmentDimensionType {
         MAJOR_FIT, SKILL_FIT, EXPERIENCE_FIT, RESEARCH_FIT, PROFESSIONAL_TITLE_FIT, PREFERENCE_FIT,

@@ -13,6 +13,8 @@ public final class MediaTypeDetector {
     public static final String PDF = "application/pdf";
     public static final String XLS = "application/vnd.ms-excel";
     public static final String XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    public static final String DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    public static final String ZIP = "application/zip";
     public static final String PNG = "image/png";
     public static final String JPEG = "image/jpeg";
 
@@ -22,15 +24,19 @@ public final class MediaTypeDetector {
         if (startsWith(content, new byte[] {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A})) return PNG;
         if (startsWith(content, new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF})) return JPEG;
         if (looksLikeHtml(content)) return HTML;
+        if (isDocx(content)) return DOCX;
         if (isXlsx(content)) return XLSX;
+        if (startsWith(content, new byte[] {'P', 'K'})) return ZIP;
         String normalizedHeader = header == null ? "" : header.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
-        if (Set.of(HTML, "application/xhtml+xml", PDF, XLS, XLSX, PNG, JPEG).contains(normalizedHeader)) {
+        if (Set.of(HTML, "application/xhtml+xml", PDF, XLS, XLSX, DOCX, ZIP, PNG, JPEG).contains(normalizedHeader)) {
             return normalizedHeader;
         }
         String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(Locale.ROOT);
         if (path.endsWith(".pdf")) return PDF;
         if (path.endsWith(".xls")) return XLS;
         if (path.endsWith(".xlsx")) return XLSX;
+        if (path.endsWith(".docx")) return DOCX;
+        if (path.endsWith(".zip")) return ZIP;
         if (path.endsWith(".png")) return PNG;
         if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return JPEG;
         return normalizedHeader.isBlank() ? "application/octet-stream" : normalizedHeader;
@@ -50,6 +56,22 @@ public final class MediaTypeDetector {
             for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
                 names.add(entry.getName());
                 if (names.contains("[Content_Types].xml") && names.contains("xl/workbook.xml")) return true;
+            }
+        } catch (Exception ignored) {
+            return false;
+        }
+        return false;
+    }
+
+    private static boolean isDocx(byte[] content) {
+        if (!startsWith(content, new byte[] {'P', 'K'})) return false;
+        boolean contentTypes = false;
+        boolean document = false;
+        try (var zip = new ZipInputStream(new ByteArrayInputStream(content))) {
+            for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                contentTypes |= "[Content_Types].xml".equals(entry.getName());
+                document |= "word/document.xml".equals(entry.getName());
+                if (contentTypes && document) return true;
             }
         } catch (Exception ignored) {
             return false;

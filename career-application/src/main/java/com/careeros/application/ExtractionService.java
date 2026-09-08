@@ -276,6 +276,7 @@ public final class ExtractionService {
         return switch (mediaType) {
             case "text/html", "application/xhtml+xml" -> ExtractionSourceType.HTML;
             case "application/pdf" -> ExtractionSourceType.PDF;
+            case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> ExtractionSourceType.DOCX;
             default -> throw new ExtractionExceptions.UnsupportedDocumentException("Unsupported media type: " + mediaType);
         };
     }

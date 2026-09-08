@@ -28,6 +28,9 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+import java.io.ByteArrayOutputStream;
 import org.junit.jupiter.api.Test;
 
 class Phase2DocumentProcessorTest {
@@ -235,12 +238,84 @@ class Phase2DocumentProcessorTest {
     }
 
     @Test
-    void unsupportedMediaReturnsFailureWithoutJobData() {
+    void malformedArchiveReturnsExplicitFailureWithoutJobData() {
         var result = processor.process(command("application/zip", new byte[] {'P','K'}));
 
-        assertThat(result.status()).isEqualTo(ProcessingStatus.UNSUPPORTED);
+        assertThat(result.status()).isEqualTo(ProcessingStatus.FAILED);
         assertThat(result.inserted()).isZero();
-        assertThat(result.errorCode()).isEqualTo("UNSUPPORTED_MEDIA_TYPE");
+        assertThat(result.errorCode()).isEqualTo("ARCHIVE_MALFORMED");
+    }
+
+    @Test
+    void docxAttachmentUsesEvidenceExtractionPipeline() {
+        ExtractionRun run = mock(ExtractionRun.class);
+        when(run.id()).thenReturn(RUN_ID);
+        when(run.evidenceId()).thenReturn(UUID.randomUUID());
+        when(extractions.submit(any())).thenReturn(new ExtractionResult(run, Optional.empty(), false));
+
+        var result = processor.process(command(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            new byte[] {'P', 'K', 3, 4},
+            URI.create("https://official.example/files/jobs.docx"), "2026年招聘岗位附件"));
+
+        assertThat(result.status()).isEqualTo(ProcessingStatus.PROCESSED);
+        assertThat(result.extractionRunId()).isEqualTo(RUN_ID);
+        verify(extractions).submit(any());
+    }
+
+    @Test
+    void zipAttachmentProcessesSupportedChildrenThroughParentReferencingUris() throws Exception {
+        UUID eventId = UUID.randomUUID();
+        when(workbooks.importWorkbook(any(), any())).thenReturn(new ImportResult(eventId, 2, 0, 0, 0, List.of()));
+        var result = processor.process(command("application/zip", zipWithXlsxChild(),
+            URI.create("https://official.example/files/attachments.zip"), "2026年招聘附件包"));
+
+        assertThat(result.status()).isEqualTo(ProcessingStatus.PROCESSED);
+        assertThat(result.recruitmentEventId()).isEqualTo(eventId);
+        assertThat(result.inserted()).isEqualTo(2);
+        var importCommand = org.mockito.ArgumentCaptor.forClass(OfficialExcelImportService.ImportCommand.class);
+        verify(workbooks).importWorkbook(any(), importCommand.capture());
+        assertThat(importCommand.getValue().workbookSourceUrl()).contains("attachments.zip#entry=");
+    }
+
+    @Test
+    void oversizedArchiveEntryRemainsAnExplicitFailure() throws Exception {
+        var output = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(output)) {
+            zip.putNextEntry(new ZipEntry("oversized.txt"));
+            zip.write(new byte[Phase2DocumentProcessor.MAX_ARCHIVE_ENTRY_BYTES + 1 > Integer.MAX_VALUE
+                ? Integer.MAX_VALUE : (int) Phase2DocumentProcessor.MAX_ARCHIVE_ENTRY_BYTES + 1]);
+            zip.closeEntry();
+        }
+
+        var result = processor.process(command("application/zip", output.toByteArray(),
+            URI.create("https://official.example/files/oversized.zip"), "2026年招聘附件包"));
+
+        assertThat(result.status()).isEqualTo(ProcessingStatus.FAILED);
+        assertThat(result.errorCode()).isEqualTo("ARCHIVE_ENTRY_SIZE_EXCEEDED");
+    }
+
+    private static byte[] zipWithXlsxChild() throws Exception {
+        var output = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(output)) {
+            zip.putNextEntry(new ZipEntry("岗位计划.xlsx"));
+            zip.write(xlsxBytes());
+            zip.closeEntry();
+        }
+        return output.toByteArray();
+    }
+
+    private static byte[] xlsxBytes() throws Exception {
+        var output = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(output)) {
+            zip.putNextEntry(new ZipEntry("[Content_Types].xml"));
+            zip.write("types".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("xl/workbook.xml"));
+            zip.write("workbook".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return output.toByteArray();
     }
 
     @Test
