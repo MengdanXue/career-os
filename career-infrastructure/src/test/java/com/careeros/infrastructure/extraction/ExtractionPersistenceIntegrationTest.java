@@ -123,10 +123,11 @@ class ExtractionPersistenceIntegrationTest {
         ExtractionBundle bundle = bundle("e", "1".repeat(64));
         extractions.save(bundle);
         UUID actionId = UUID.randomUUID();
+        // V6 之前的行没有操作人，迁移把它们回填成 'unknown-legacy'；这里照此模拟。
         jdbc.update("""
             insert into review_action
-                (id, review_item_id, decision, expected_version, original_payload, note, acted_at)
-            values (?, ?, 'NEED_MORE_EVIDENCE', 0, cast(? as jsonb), 'legacy', ?)
+                (id, review_item_id, decision, expected_version, original_payload, note, actor, acted_at)
+            values (?, ?, 'NEED_MORE_EVIDENCE', 0, cast(? as jsonb), 'legacy', 'unknown-legacy', ?)
             """,
             actionId,
             bundle.review().id(),
@@ -138,6 +139,7 @@ class ExtractionPersistenceIntegrationTest {
         assertThat(legacy.originalPayload().format())
             .isEqualTo(ReviewPayload.Format.LEGACY_SUMMARY_V0);
         assertThat(legacy.originalPayload().legacySummary()).containsEntry("jobCount", 1);
+        assertThat(legacy.actor()).isEqualTo("unknown-legacy");
     }
 
     private static ExtractionBundle bundle(String hashSeed, String fingerprint) {
@@ -174,7 +176,8 @@ class ExtractionPersistenceIntegrationTest {
     private static ReviewAction action(ReviewItem item, ReviewDecision decision, long version) {
         return new ReviewAction(
             UUID.randomUUID(), item.id(), decision, version,
-            ReviewPayload.full(item.proposal()), null, "集成测试", NOW.plusSeconds(10 + version));
+            ReviewPayload.full(item.proposal()), null, "集成测试", "integration-reviewer",
+            NOW.plusSeconds(10 + version));
     }
 
     @SpringBootConfiguration

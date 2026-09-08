@@ -292,6 +292,7 @@ public class JpaExtractionPersistence {
         entity.correctedPayload = action.correctedPayload() == null
             ? null : toJson(reviewPayloadValue(action.correctedPayload()));
         entity.note = action.note();
+        entity.actor = action.actor();
         entity.actedAt = action.actedAt();
         return entity;
     }
@@ -300,7 +301,7 @@ public class JpaExtractionPersistence {
         return new ReviewAction(
             entity.id, entity.reviewItemId, entity.decision, entity.expectedVersion,
             toReviewPayload(entity.originalPayload), toNullableReviewPayload(entity.correctedPayload),
-            entity.note, entity.actedAt);
+            entity.note, entity.actor, entity.actedAt);
     }
 
     private JsonNode toJson(Object value) {

@@ -49,6 +49,18 @@ mvn clean test
 mvn -DskipTests package
 ```
 
+所有 API 默认拒绝匿名访问（HTTP Basic）。未配置用户时，应用会为**本次进程**生成一次性
+随机口令的 `admin` 账号并打到 WARN 日志——方便本地起一次，但不能这样部署。部署前注入：
+
+```powershell
+$env:CAREER_OS_SECURITY_USERS_0_USERNAME='zhang'
+$env:CAREER_OS_SECURITY_USERS_0_PASSWORDHASH='$2y$12$...'   # htpasswd -nbBC 12 "" '<password>' | cut -d: -f2
+$env:CAREER_OS_SECURITY_USERS_0_ROLES_0='REVIEWER'
+```
+
+角色：`REVIEWER` 可处理复核动作；`ADMIN` 额外可删除资源与访问 `/actuator`。
+`/actuator/health` 不需要凭证，供存活探针使用。
+
 启动应用前设置数据库连接；Flyway 会自动迁移到当前 schema：
 
 ```powershell
@@ -60,7 +72,7 @@ java -jar career-web\target\career-web-0.1.0-SNAPSHOT.jar
 
 运行后可访问：
 
-- 健康检查：`http://localhost:8080/actuator/health`
+- 健康检查：`http://localhost:8080/actuator/health`（无需凭证）
 - OpenAPI：`http://localhost:8080/v3/api-docs`
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - 指标：`http://localhost:8080/actuator/metrics`

@@ -14,7 +14,7 @@ class ReviewServiceTest {
         Harness harness = new Harness(2L);
 
         ReviewDetails result = harness.service.act(new ApplyReviewActionCommand(
-            harness.reviewId(), ReviewDecision.CONFIRM, 2L, null, "证据已核对"));
+            harness.reviewId(), ReviewDecision.CONFIRM, 2L, null, "证据已核对", "reviewer-a"));
 
         assertThat(result.item().status()).isEqualTo(ReviewStatus.RESOLVED);
         assertThat(result.run().status()).isEqualTo(DataQualityStatus.VERIFIED);
@@ -27,7 +27,7 @@ class ReviewServiceTest {
         Harness harness = new Harness(1L);
 
         ReviewDetails result = harness.service.act(new ApplyReviewActionCommand(
-            harness.reviewId(), ReviewDecision.CORRECT, 1L, Fixtures.verifiedProposal(), "人工修正"));
+            harness.reviewId(), ReviewDecision.CORRECT, 1L, Fixtures.verifiedProposal(), "人工修正", "reviewer-a"));
 
         assertThat(result.item().status()).isEqualTo(ReviewStatus.RESOLVED);
         assertThat(harness.writer.calls).isEqualTo(1);
@@ -52,7 +52,7 @@ class ReviewServiceTest {
             valid.jobs(), valid.warnings(), valid.confidence(), valid.completeSnapshot());
 
         assertThatThrownBy(() -> harness.service.act(new ApplyReviewActionCommand(
-            harness.reviewId(), ReviewDecision.CORRECT, 0L, altered, "altered source")))
+            harness.reviewId(), ReviewDecision.CORRECT, 0L, altered, "altered source", "reviewer-a")))
             .isInstanceOf(ExtractionExceptions.InvalidProposalException.class)
             .hasMessageContaining("source");
         assertThat(harness.writer.calls).isZero();
@@ -63,7 +63,7 @@ class ReviewServiceTest {
         Harness harness = new Harness(0L);
 
         ReviewDetails result = harness.service.act(new ApplyReviewActionCommand(
-            harness.reviewId(), ReviewDecision.REJECT, 0L, null, "公告不在范围内"));
+            harness.reviewId(), ReviewDecision.REJECT, 0L, null, "公告不在范围内", "reviewer-a"));
 
         assertThat(result.item().status()).isEqualTo(ReviewStatus.RESOLVED);
         assertThat(result.run().status()).isEqualTo(DataQualityStatus.REJECTED);
@@ -75,7 +75,7 @@ class ReviewServiceTest {
         Harness harness = new Harness(3L);
 
         ReviewDetails result = harness.service.act(new ApplyReviewActionCommand(
-            harness.reviewId(), ReviewDecision.NEED_MORE_EVIDENCE, 3L, null, "补充用工性质原文"));
+            harness.reviewId(), ReviewDecision.NEED_MORE_EVIDENCE, 3L, null, "补充用工性质原文", "reviewer-a"));
 
         assertThat(result.item().status()).isEqualTo(ReviewStatus.PENDING);
         assertThat(result.item().version()).isEqualTo(4L);
@@ -88,7 +88,7 @@ class ReviewServiceTest {
         Harness harness = new Harness(4L);
 
         assertThatThrownBy(() -> harness.service.act(new ApplyReviewActionCommand(
-            harness.reviewId(), ReviewDecision.CONFIRM, 3L, null, "过期页面提交")))
+            harness.reviewId(), ReviewDecision.CONFIRM, 3L, null, "过期页面提交", "reviewer-a")))
             .isInstanceOf(ExtractionExceptions.ReviewConflictException.class);
         assertThat(harness.writer.calls).isZero();
         assertThat(harness.unitOfWork.calls).isZero();
@@ -99,7 +99,7 @@ class ReviewServiceTest {
         Harness harness = new Harness(0L);
 
         assertThatThrownBy(() -> harness.service.act(new ApplyReviewActionCommand(
-            harness.reviewId(), ReviewDecision.CORRECT, 0L, null, "缺少修正内容")))
+            harness.reviewId(), ReviewDecision.CORRECT, 0L, null, "缺少修正内容", "reviewer-a")))
             .isInstanceOf(ExtractionExceptions.InvalidProposalException.class);
     }
 
