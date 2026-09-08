@@ -109,6 +109,25 @@ class OpenAiStructuredExtractorTest {
             new NetworkntProposalValidator(), "fixture-model", "prompt-v1");
     }
 
+    private static OpenAiStructuredExtractor extractor(QueueGateway gateway, int maxPromptCharacters) {
+        return new OpenAiStructuredExtractor(
+            gateway, new ObjectMapper().findAndRegisterModules(),
+            new NetworkntProposalValidator(), "fixture-model", "prompt-v1", maxPromptCharacters);
+    }
+
+    private static ParsedDocument parsedWithFragments(int count, int charactersEach) {
+        List<EvidenceFragment> fragments = new java.util.ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            fragments.add(new EvidenceFragment(
+                UUID.nameUUIDFromBytes(("fragment-" + index).getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                EVIDENCE_ID, LocatorType.HTML, Map.of("cssSelector", "p:nth-child(" + index + ")"),
+                // 每条正文必须唯一，否则"这条是否被送进 prompt"根本无法区分
+                "岗位" + index + "说明".repeat(Math.max(1, charactersEach / 4)), "hash-" + index,
+                Instant.parse("2026-08-14T10:00:00Z")));
+        }
+        return new ParsedDocument("jsoup", "1.22.2", ParserQuality.ACCEPTABLE, fragments, List.of());
+    }
+
     private static OpenAiStructuredExtractor springAiExtractor(WireMockServer server) {
         OpenAiApi api = OpenAiApi.builder()
             .baseUrl(server.baseUrl())
@@ -151,6 +170,60 @@ class OpenAiStructuredExtractorTest {
             "https://example.gov.cn/notice/1", "2026年公开招聘公告", null,
             "artifact-hash", Instant.parse("2026-08-14T10:00:00Z"));
         return new ExtractionContext(evidence, null, null, false);
+    }
+
+    @Test
+    void oversizedDocumentIsTruncatedToTheBudgetAndFlaggedForReview() {
+        QueueGateway gateway = new QueueGateway(validJson());
+        // 每条片段约 400 字符，共 200 条 ≈ 80k 字符，预算 5000 只装得下一小部分
+        var result = extractor(gateway, 5_000).extract(parsedWithFragments(200, 400), context());
+
+        assertThat(gateway.lastUserPrompt.length()).isLessThan(6_000);
+        assertThat(gateway.lastUserPrompt).contains("this document was truncated");
+        assertThat(result.warnings()).hasSize(1);
+        assertThat(result.warnings().getFirst())
+            .contains("extraction budget")
+            .contains("were dropped");
+    }
+
+    @Test
+    void fragmentsAreDroppedWholeSoCitedEvidenceStaysVerbatim() {
+        QueueGateway gateway = new QueueGateway(validJson());
+        ParsedDocument document = parsedWithFragments(50, 400);
+
+        extractor(gateway, 5_000).extract(document, context());
+
+        // 送进去的每条片段都必须是完整原文，否则模型引用的 fragmentId
+        // 会对应半句话，证据校验就会拿残缺文本去比对。
+        long present = document.fragments().stream()
+            .filter(fragment -> gateway.lastUserPrompt.contains(fragment.verbatimText()))
+            .count();
+        long mentioned = document.fragments().stream()
+            .filter(fragment -> gateway.lastUserPrompt.contains(fragment.id().toString()))
+            .count();
+        assertThat(present).isEqualTo(mentioned).isPositive().isLessThan(document.fragments().size());
+    }
+
+    @Test
+    void documentWithinBudgetCarriesNoWarningAndNoTruncationNotice() {
+        QueueGateway gateway = new QueueGateway(validJson());
+
+        var result = extractor(gateway, 40_000).extract(parsed(), context());
+
+        assertThat(result.warnings()).isEmpty();
+        assertThat(gateway.lastUserPrompt).doesNotContain("truncated");
+    }
+
+    @Test
+    void repairPromptDoesNotEchoAnUnboundedInvalidResponse() {
+        String hugeInvalid = "x".repeat(50_000);
+        QueueGateway gateway = new QueueGateway(hugeInvalid, validJson());
+
+        extractor(gateway).extract(parsed(), context());
+
+        assertThat(gateway.calls).isEqualTo(2);
+        assertThat(gateway.lastUserPrompt).contains("[truncated");
+        assertThat(gateway.lastUserPrompt.length()).isLessThan(10_000);
     }
 
     private static String validJson() {

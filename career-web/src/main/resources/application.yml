@@ -44,8 +44,14 @@ career-os:
     auto-accept-confidence: 0.90
     lock-pool-size: ${CAREER_OS_EXTRACTION_LOCK_POOL_SIZE:8}
     lock-connection-timeout-ms: ${CAREER_OS_EXTRACTION_LOCK_CONNECTION_TIMEOUT_MS:5000}
+    # 相同指纹的并发提交在此等待前一次抽取完成（含模型往返）。
+    # 模型调用已不在数据库事务内，但仍在 advisory lock 内以保证只调用一次；
+    # 若使用较慢的模型，这个值需要大于模型的最坏往返时间。
     lock-wait-timeout-ms: ${CAREER_OS_EXTRACTION_LOCK_WAIT_TIMEOUT_MS:30000}
     llm:
       enabled: ${CAREER_OS_LLM_ENABLED:false}
       model: ${CAREER_OS_AI_MODEL:gpt-5-mini}
       prompt-version: 1.0.0
+      # 送入模型的证据片段字符预算。超出部分整条丢弃（不切断片段内部文本），
+      # 并产生 INPUT_TRUNCATED 复核项——截断过的抽取结果不允许自动核验。
+      max-prompt-characters: ${CAREER_OS_LLM_MAX_PROMPT_CHARACTERS:40000}

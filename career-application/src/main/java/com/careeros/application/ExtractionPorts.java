@@ -157,8 +157,23 @@ public final class ExtractionPorts {
         }
     }
 
-    public record ExtractionAttempt(RecruitmentExtractionProposal proposal, String rawResponse) {
-        public ExtractionAttempt { Objects.requireNonNull(proposal, "proposal"); }
+    /**
+     * @param warnings 抽取器自身发现的、会削弱结果可信度的问题（例如输入被预算截断）。
+     *                 非空时 ExtractionService 会强制该次抽取进入人工复核，不允许自动核验。
+     */
+    public record ExtractionAttempt(
+        RecruitmentExtractionProposal proposal,
+        String rawResponse,
+        List<String> warnings
+    ) {
+        public ExtractionAttempt {
+            Objects.requireNonNull(proposal, "proposal");
+            warnings = warnings == null ? List.of() : List.copyOf(warnings);
+        }
+
+        public ExtractionAttempt(RecruitmentExtractionProposal proposal, String rawResponse) {
+            this(proposal, rawResponse, List.of());
+        }
     }
 
     public record ExtractionContext(
