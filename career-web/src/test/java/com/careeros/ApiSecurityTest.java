@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -78,6 +79,23 @@ class ApiSecurityTest {
         verify(service).act(command.capture());
         // 请求体里自称的 actor 必须被忽略，否则任何人都能在审计记录里署别人的名字。
         assertThat(command.getValue().actor()).isEqualTo("reviewer-a");
+    }
+
+    @Test
+    void authenticationSurvivesRequestsIssuedFromVirtualThreads() throws Exception {
+        // 并发用例在 newVirtualThreadPerTaskExecutor 派生的线程里发请求。
+        // @WithMockUser 走的是 ThreadLocal，虚拟线程不继承，那些请求会拿 401；
+        // TestSecurityDefaults 把认证附在请求上，与发起线程无关。
+        when(service.find(ApiTestFixtures.REVIEW_ID)).thenReturn(ApiTestFixtures.details());
+
+        try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var fromVirtualThread = executor.submit(() -> mvc
+                .perform(get("/api/v1/reviews/" + ApiTestFixtures.REVIEW_ID)
+                    .with(user(TestSecurityDefaults.OPERATOR)
+                        .roles(SecurityConfiguration.ADMIN, SecurityConfiguration.REVIEWER)))
+                .andReturn().getResponse().getStatus());
+            assertThat(fromVirtualThread.get()).isEqualTo(200);
+        }
     }
 
     @Test
