@@ -88,3 +88,33 @@ Base path：`/api/v1`
 
 岗位族是每次请求从 `findAll()` 现算的投影，与 `GET /api/v1/jobs` 同一量级；数据量继续增长后
 需要改成分页或物化。
+
+## 每日变化摘要
+
+`POST /api/v1/imports/excel` 的响应现在是 `{"result":…,"digest":…}`：导入结果之外附带当天摘要。
+
+摘要只承载四类值得打扰人的事：
+
+| 原因 | 触发条件 |
+| --- | --- |
+| `NEW` | 本次采集新增 |
+| `UPDATED` | 内容指纹变化，硬条件需重新确认 |
+| `DEACTIVATED` | 在最新的完整快照中消失 |
+| `DEADLINE_APPROACHING` | 内容未变，但报名剩余天数在窗口内（默认 7 天） |
+
+**未变化且截止日期还远的岗位不进 `entries`**，只体现为 `suppressedUnchangedCount` 计数，
+用来说明“今天扫了多少条但没什么可说的”。每个岗位在一份摘要里最多出现一次；变化本身优先于
+截止提醒——今天新增、后天截止的岗位报为 `NEW`，但仍带着剩余天数，不会因为分类而漏掉紧迫性。
+
+```json
+{"reportDate":"2026-09-11","suppressedUnchangedCount":23,"deadlineWindowDays":7,
+ "entries":[{"reason":"NEW","title":"信息中心工作人员","organizationName":"杭州市儿童医院",
+             "applicationEndsOn":"2026-09-15","daysUntilDeadline":4,
+             "note":"本次采集新增岗位，报名还剩 4 天"}]}
+```
+
+报名已截止或截止日期未知时 `daysUntilDeadline` 为 null，不会出现“还剩 -3 天”这种提醒。
+
+摘要条目**不带推荐等级**：主干把它放在候选人维度的 `DecisionAssessment.recommendationStatus`
+上，而摘要报的是岗位变化，与具体候选人无关。要把两者合起来需要给摘要引入候选人参数，
+属于独立的设计改动。

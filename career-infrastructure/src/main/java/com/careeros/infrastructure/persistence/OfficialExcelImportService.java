@@ -171,7 +171,7 @@ public class OfficialExcelImportService {
             for(int index=0;index<Math.min(result.jobIds().size(),rowEvidence.size());index++){var located=rowEvidence.get(index);workbookEvidence.replaceJobFacts(workbookEvidenceId,result.jobIds().get(index),located.sheet(),located.row(),located.fields(),located.sourceColumns());}
         }
         admissions.classify(result.jobIds(), Instant.now());
-        return new ImportResult(event.id,result.inserted(),result.updated(),result.unchanged(),result.deactivated(),List.copyOf(errors),List.copyOf(warnings));
+        return new ImportResult(event.id,result.inserted(),result.updated(),result.unchanged(),result.deactivated(),List.copyOf(errors),List.copyOf(warnings),result);
     }
 
     private Optional<JpaModels.RecruitmentEventEntity> findWorkbookEvent(String sourceUrl,String identity){return events.findFirstByWorkbookIdentity(identity).or(()->events.findFirstBySourceUrl(sourceUrl)).or(()->events.findAll().stream().filter(value->identity.equals(OfficialWorkbookIdentity.of(value.sourceUrl))).findFirst());}
@@ -306,9 +306,13 @@ public class OfficialExcelImportService {
     }
     public record RowError(String sheet,int row,String message){}
     public record RowWarning(String sheet,int row,String field,String rawValue,String message){}
-    public record ImportResult(UUID recruitmentEventId,int inserted,int updated,int unchanged,int deactivated,List<RowError> errors,List<RowWarning> warnings){
+    /** 带上逐岗变化，调用方才能据此生成每日摘要；只有计数的话摘要无从知道“哪几条”变了。 */
+    public record ImportResult(UUID recruitmentEventId,int inserted,int updated,int unchanged,int deactivated,List<RowError> errors,List<RowWarning> warnings,JobUpsertService.JobUpsertResult upsert){
         public ImportResult(UUID recruitmentEventId,int inserted,int updated,int unchanged,int deactivated,List<RowError> errors){
-            this(recruitmentEventId,inserted,updated,unchanged,deactivated,errors,List.of());
+            this(recruitmentEventId,inserted,updated,unchanged,deactivated,errors,List.of(),null);
+        }
+        public ImportResult(UUID recruitmentEventId,int inserted,int updated,int unchanged,int deactivated,List<RowError> errors,List<RowWarning> warnings){
+            this(recruitmentEventId,inserted,updated,unchanged,deactivated,errors,warnings,null);
         }
         public ImportResult{errors=List.copyOf(errors);warnings=List.copyOf(warnings);}
     }
