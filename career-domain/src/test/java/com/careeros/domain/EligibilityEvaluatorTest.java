@@ -247,6 +247,96 @@ class EligibilityEvaluatorTest {
         assertThat(result.status()).isEqualTo(EligibilityStatus.INELIGIBLE);
     }
 
+    // --- 政治面貌：只认写死的硬性要求 ---
+
+    @Test void anExplicitPartyMembershipRequirementBlocksANonMember() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+            jobRequiring("政治面貌为中共党员", null));
+
+        assertRule(result, RuleType.POLITICAL_AFFILIATION, EligibilityStatus.INELIGIBLE);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.INELIGIBLE);
+    }
+
+    /** "党员优先"是偏好不是门槛。把偏好当门槛会凭空滤掉可报的岗位。 */
+    @Test void aPartyMembershipPreferenceIsNotAHardRequirement() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+            jobRequiring("中共党员优先", null));
+
+        assertRule(result, RuleType.POLITICAL_AFFILIATION, EligibilityStatus.ELIGIBLE);
+    }
+
+    /** 多数公告写"中共党员（含预备党员）"，也有只要正式党员的。公告没说清楚就不替它决定。 */
+    @Test void aProbationaryMemberNeedsTheNoticeToSayWhetherItCounts() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.CPC_PROBATIONARY, Gender.FEMALE),
+            jobRequiring("政治面貌为中共党员", null));
+
+        assertRule(result, RuleType.POLITICAL_AFFILIATION, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    @Test void aPartyMemberSatisfiesAnExplicitRequirement() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.CPC_MEMBER, Gender.FEMALE),
+            jobRequiring("政治面貌为中共党员", null));
+
+        assertRule(result, RuleType.POLITICAL_AFFILIATION, EligibilityStatus.ELIGIBLE);
+    }
+
+    @Test void anUnconfirmedAffiliationCannotSatisfyAnExplicitRequirement() {
+        var candidate = candidateWith(DomainEnums.PoliticalAffiliation.CPC_MEMBER, Gender.FEMALE);
+        var result = evaluator.evaluate(candidate,
+            CandidateFacts.resolve(candidate, List.of()),
+            jobRequiring("政治面貌为中共党员", null),
+            "verified", Instant.parse("2026-08-14T00:00:00Z"));
+
+        assertRule(result, RuleType.POLITICAL_AFFILIATION, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    // --- 性别：读公告已经写明的限定 ---
+
+    @Test void aPostRestrictedToMenBlocksAFemaleCandidate() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+            jobRequiring(null, "男"));
+
+        assertRule(result, RuleType.GENDER, EligibilityStatus.INELIGIBLE);
+    }
+
+    @Test void anUnrestrictedGenderFieldIsNotACondition() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+            jobRequiring(null, "不限"));
+
+        assertRule(result, RuleType.GENDER, EligibilityStatus.ELIGIBLE);
+    }
+
+    @Test void aMatchingGenderRestrictionIsSatisfied() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+            jobRequiring(null, "女"));
+
+        assertRule(result, RuleType.GENDER, EligibilityStatus.ELIGIBLE);
+    }
+
+    /** 写了限定但两性都提到（或都没提到）时无法解析，不猜。 */
+    @Test void anUnparseableGenderRestrictionNeedsConfirmation() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+            jobRequiring(null, "男女各一名"));
+
+        assertRule(result, RuleType.GENDER, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    private CandidateProfile candidateWith(DomainEnums.PoliticalAffiliation affiliation, Gender gender) {
+        return new CandidateProfile(UUID.randomUUID(), "test", PartialDate.month(1992, 12),
+            EducationLevel.MASTER, Set.of("计算机科学与技术"), 2027, 0, Set.of(), List.of("杭州"),
+            Set.of(EmploymentType.ESTABLISHMENT), "test-v1", Set.of(), Set.of(), Set.of(), Set.of(),
+            List.of(), gender, affiliation, List.of());
+    }
+
+    private JobPosting jobRequiring(String otherRequirements, String genderRequirement) {
+        return new JobPosting(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "TEST", "测试岗位",
+            JobFamily.SOFTWARE, EmploymentType.ESTABLISHMENT, "杭州", 1, EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(2027), 40, LocalDate.of(2027, 1, 1), 0, Set.of(), "",
+            "https://example.test/official", List.of(),
+            null, null, null, null, null, null, null, genderRequirement, null,
+            otherRequirements, null, null, null, null);
+    }
+
     private CandidateProfile candidateWithEducation(EducationRecord... records) {
         return new CandidateProfile(UUID.randomUUID(), "test", PartialDate.month(1992, 12),
             EducationLevel.MASTER, Set.of("计算机科学与技术"), 2027, 0, Set.of(), List.of("杭州"),
