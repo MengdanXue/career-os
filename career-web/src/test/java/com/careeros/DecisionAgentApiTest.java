@@ -27,7 +27,7 @@ class DecisionAgentApiTest {
 
     @Test void answersBoundedCareerQuestionWithoutModel() throws Exception {
         when(service.query(eq(CANDIDATE_ID),eq("杭州有哪些稳定的信息化岗位？"),eq(5),any()))
-            .thenReturn(new AgentQueryService.AgentResponse("杭州有哪些稳定的信息化岗位？","当前建议关注：信息中心技术岗",List.of(),false,false,"机会决策指数，不是录取概率"));
+            .thenReturn(new AgentQueryService.AgentResponse("杭州有哪些稳定的信息化岗位？","当前建议关注：信息中心技术岗",List.of(),false,false,"机会决策指数，不是录取概率",List.of()));
 
         mvc.perform(post("/api/v1/candidates/{candidateId}/agent-queries",CANDIDATE_ID)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -36,7 +36,23 @@ class DecisionAgentApiTest {
             .andExpect(jsonPath("$.answer").value("当前建议关注：信息中心技术岗"))
             .andExpect(jsonPath("$.modelPhrased").value(false))
             .andExpect(jsonPath("$.fallbackUsed").value(false))
-            .andExpect(jsonPath("$.disclaimer").value("机会决策指数，不是录取概率"));
+            .andExpect(jsonPath("$.disclaimer").value("机会决策指数，不是录取概率"))
+            .andExpect(jsonPath("$.violations").isArray());
+    }
+
+    /** 叙述被拒时，回落原因必须随回答一起返回——只在服务端知道等于没拦截。 */
+    @Test void aRejectedNarrativeSurfacesItsViolations() throws Exception {
+        when(service.query(eq(CANDIDATE_ID),eq("杭州有哪些稳定的信息化岗位？"),eq(5),any()))
+            .thenReturn(new AgentQueryService.AgentResponse("杭州有哪些稳定的信息化岗位？","1. 信息中心技术岗",List.of(),false,true,
+                "机会决策指数，不是录取概率",List.of("叙述包含数值；所有数值必须来自确定性事实块")));
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/agent-queries",CANDIDATE_ID)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"question\":\"杭州有哪些稳定的信息化岗位？\",\"limit\":5}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.fallbackUsed").value(true))
+            .andExpect(jsonPath("$.modelPhrased").value(false))
+            .andExpect(jsonPath("$.violations[0]").value("叙述包含数值；所有数值必须来自确定性事实块"));
     }
 
     @Test void invalidLimitReturnsProblemDetails() throws Exception {

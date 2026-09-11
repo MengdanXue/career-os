@@ -43,7 +43,22 @@ describe('AgentComposer', () => {
     await userEvent.type(screen.getByLabelText('向 Career OS 提问'), '为什么推荐这个岗位？')
     await userEvent.click(screen.getByRole('button', { name: '分析' }))
 
-    expect(await screen.findByText('已使用本地决策规则完成回答')).toBeInTheDocument()
+    expect(await screen.findByText('模型叙述未通过校验，以下为程序生成的确定性结论')).toBeInTheDocument()
     expect(screen.queryByText(/LLM|OpenAI|模型失败/i)).not.toBeInTheDocument()
+  })
+
+  // 拦截只写进服务端日志等于没拦截——用户必须看得见为什么这段叙述没展示。
+  it('shows why a model narrative was rejected', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      ...answer,
+      fallbackUsed: true,
+      violations: ['叙述包含数值；所有数值必须来自确定性事实块'],
+    })))
+    render(<AppProviders><AgentComposer expanded /></AppProviders>)
+
+    await userEvent.type(screen.getByLabelText('向 Career OS 提问'), '为什么推荐这个岗位？')
+    await userEvent.click(screen.getByRole('button', { name: '分析' }))
+
+    expect(await screen.findByText('叙述包含数值；所有数值必须来自确定性事实块')).toBeInTheDocument()
   })
 })
