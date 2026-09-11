@@ -133,7 +133,9 @@ public final class CandidateProfileService {
             value.graduationYear(), value.experienceYears(), value.professionalTitles(), value.preferredLocations(),
             value.acceptedEmploymentTypes(), version, value.skills(), value.researchKeywords(), value.targetJobFamilies(),
             value.preferredOrganizationTypes(), value.educationRecords(), value.gender(), value.politicalAffiliation(),
-            value.employmentRecords()
+            value.employmentRecords(),
+            // 不带上这两项，保存一次资料就会把报名时状态的声明静默重置成"未声明"。
+            value.employerSettlementAtApplication(), value.socialInsuranceAtApplication()
         );
     }
 

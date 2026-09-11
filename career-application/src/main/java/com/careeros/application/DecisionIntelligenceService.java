@@ -124,7 +124,9 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         var conflictingFields = fieldEvidence.coverage(context.job().id()).conflictFields();
         var eligibility = eligibilityAssessments.save(eligibilityEvaluator.evaluate(candidate, facts,
             context.job(), context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion(),
-            conflictingFields));
+            conflictingFields,
+            // 应届身份条款解析在招聘事件上，不在岗位上。为 null 表示公告里没有这类条款。
+            context.event() == null ? null : context.event().graduateEligibilityRule()));
         var fit = fitEvaluator.evaluate(candidate, facts, context.job(), context.organization(),
             context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion());
         var stabilityResult = stabilityEvaluator.evaluate(candidate, context.job(), context.organization(),

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ApiProblem } from '../../api/http'
-import type { CandidateEmploymentRecord, CandidateProfile, CandidateProfileUpdate, EducationRecord, Gender, PoliticalAffiliation } from './profileSchema'
+import type { CandidateEmploymentRecord, CandidateProfile, CandidateProfileUpdate, EducationRecord, Gender, PoliticalAffiliation, ApplicationTimeStatus } from './profileSchema'
 import { splitFacts } from './profileSchema'
 
 type Props = {
@@ -16,6 +16,8 @@ type Fields = {
   birthDate: string
   gender: Gender
   politicalAffiliation: PoliticalAffiliation
+  employerSettlementAtApplication: ApplicationTimeStatus
+  socialInsuranceAtApplication: ApplicationTimeStatus
   highestEducation: string
   majors: string
   graduationYear: string
@@ -42,6 +44,8 @@ function initialFields(candidate: CandidateProfile): Fields {
     birthDate: isoBirthDate(candidate),
     gender: candidate.gender ?? 'UNKNOWN',
     politicalAffiliation: candidate.politicalAffiliation ?? 'UNKNOWN',
+    employerSettlementAtApplication: candidate.employerSettlementAtApplication ?? 'UNDECLARED',
+    socialInsuranceAtApplication: candidate.socialInsuranceAtApplication ?? 'UNDECLARED',
     highestEducation: candidate.highestEducation,
     majors: candidate.majors.join(', '),
     graduationYear: candidate.graduationYear?.toString() ?? '',
@@ -76,6 +80,8 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
       birthDay,
       gender: fields.gender,
       politicalAffiliation: fields.politicalAffiliation,
+      employerSettlementAtApplication: fields.employerSettlementAtApplication,
+      socialInsuranceAtApplication: fields.socialInsuranceAtApplication,
       highestEducation: fields.highestEducation,
       majors: splitFacts(fields.majors),
       graduationYear: fields.graduationYear ? Number(fields.graduationYear) : null,
@@ -131,6 +137,10 @@ export function ProfileForm({ candidate, submitLabel, error, pending, onSubmit }
           <label>出生日期<input aria-label="出生日期" required type="date" value={fields.birthDate} onChange={event => set('birthDate', event.target.value)} /></label>
           <label>性别<select aria-label="性别" value={fields.gender} onChange={event => set('gender', event.target.value as Gender)}><option value="FEMALE">女</option><option value="MALE">男</option><option value="OTHER">其他</option><option value="UNKNOWN">待明确</option></select></label>
           <label id="political-affiliation">政治面貌<select aria-label="政治面貌" value={fields.politicalAffiliation} onChange={event => set('politicalAffiliation', event.target.value as PoliticalAffiliation)}><option value="UNKNOWN">待明确</option><option value="CPC_MEMBER">中共党员</option><option value="CPC_PROBATIONARY">中共预备党员</option><option value="NON_MEMBER">非中共党员</option></select></label>
+          {/* 这两项问的是报名当天的状态，而报名还没发生，所以是声明而不是事实。
+              声明"届时满足"只会得出条件式结论，不会被当成已经满足。 */}
+          <label id="employer-settlement-at-application">报名时是否未落实工作单位<select aria-label="报名时是否未落实工作单位" value={fields.employerSettlementAtApplication} onChange={event => set('employerSettlementAtApplication', event.target.value as ApplicationTimeStatus)}><option value="UNDECLARED">尚未声明</option><option value="DECLARED_MET">声明届时未落实工作单位</option><option value="DECLARED_NOT_MET">声明届时已落实工作单位</option></select></label>
+          <label id="social-insurance-at-application">报名时是否无社保缴纳记录<select aria-label="报名时是否无社保缴纳记录" value={fields.socialInsuranceAtApplication} onChange={event => set('socialInsuranceAtApplication', event.target.value as ApplicationTimeStatus)}><option value="UNDECLARED">尚未声明</option><option value="DECLARED_MET">声明届时无社保缴纳记录</option><option value="DECLARED_NOT_MET">声明届时有社保缴纳记录</option></select></label>
           <label>毕业年份<input inputMode="numeric" value={fields.graduationYear} onChange={event => set('graduationYear', event.target.value)} /></label>
           <label>相关经验（年）<input type="number" min="0" value={fields.experienceYears} onChange={event => set('experienceYears', event.target.value)} /></label>
         </div>

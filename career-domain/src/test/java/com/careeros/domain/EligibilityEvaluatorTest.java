@@ -321,6 +321,100 @@ class EligibilityEvaluatorTest {
         assertRule(result, RuleType.GENDER, EligibilityStatus.NEEDS_CONFIRMATION);
     }
 
+    // --- 应届身份：报名时状态是声明，不是既成事实 ---
+
+    /** 公告里没有应届条款时不构成限制，不能因为"没解析到"就把岗位打成待确认。 */
+    @Test void aNoticeWithoutAGraduateClauseDoesNotRestrict() {
+        var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.UNDECLARED), null);
+        assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.ELIGIBLE);
+    }
+
+    /** 有应届条款但不限定工作单位或社保时，同样不构成限制。 */
+    @Test void aGraduateClauseThatRestrictsNeitherIsNotACondition() {
+        var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.UNDECLARED),
+            graduateRule(false, false, GraduateEligibilityRule.EvidenceState.CONFIRMED));
+        assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.ELIGIBLE);
+    }
+
+    /**
+     * 声明"报名时将未落实工作单位"只能得出条件式结论。报名还没发生，把一个还没兑现的
+     * 未来当成既成事实，正是基线禁止的。
+     */
+    @Test void declaringThatTheRequirementWillBeMetIsConditionalNotEligible() {
+        var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.DECLARED_MET),
+            graduateRule(true, false, GraduateEligibilityRule.EvidenceState.CONFIRMED));
+
+        assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.CONDITIONAL);
+        assertThat(result.ruleResults().get(RuleType.FRESH_GRADUATE_STATUS).explanation())
+            .contains("报名时仍然");
+        assertThat(result.status()).isEqualTo(EligibilityStatus.CONDITIONAL);
+    }
+
+    /** 声明届时不满足是一个已经确定的事实，可以明确判不可报。 */
+    @Test void declaringThatTheRequirementWillNotBeMetIsIneligible() {
+        var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.DECLARED_NOT_MET),
+            graduateRule(true, false, GraduateEligibilityRule.EvidenceState.CONFIRMED));
+
+        assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.INELIGIBLE);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.INELIGIBLE);
+    }
+
+    @Test void anUndeclaredApplicationTimeStatusNeedsConfirmation() {
+        var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.UNDECLARED),
+            graduateRule(true, false, GraduateEligibilityRule.EvidenceState.CONFIRMED));
+        assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    /** 条款本身还没核实时不拿它判定，先让人核对公告原文。 */
+    @Test void anUnconfirmedGraduateClauseIsNotUsedToDecide() {
+        var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.DECLARED_NOT_MET),
+            graduateRule(true, false, GraduateEligibilityRule.EvidenceState.REVIEW_REQUIRED));
+        assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    /** 社保限定与工作单位限定各自独立，任一不满足即整条不满足。 */
+    @Test void theSocialInsuranceRestrictionIsCheckedIndependently() {
+        var candidate = declaring(ApplicationTimeStatus.DECLARED_MET, ApplicationTimeStatus.DECLARED_NOT_MET);
+        var result = evaluateWithGraduateRule(candidate,
+            graduateRule(true, true, GraduateEligibilityRule.EvidenceState.CONFIRMED));
+
+        assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.INELIGIBLE);
+        assertThat(result.ruleResults().get(RuleType.FRESH_GRADUATE_STATUS).explanation())
+            .contains("社保");
+    }
+
+    private EligibilityAssessment evaluateWithGraduateRule(
+        CandidateProfile candidate, GraduateEligibilityRule rule
+    ) {
+        return evaluator.evaluate(candidate, CandidateFacts.confirmed(candidate),
+            job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER, Set.of("计算机科学与技术"), Set.of(2027), 0),
+            "verified", LocalDate.of(2027, 1, 1), Instant.parse("2026-08-14T00:00:00Z"),
+            EligibilityEvaluator.VERSION, Set.of(), rule);
+    }
+
+    private static GraduateEligibilityRule graduateRule(
+        boolean requiresNoEmployer, boolean restrictsSocialInsurance,
+        GraduateEligibilityRule.EvidenceState evidenceState
+    ) {
+        return new GraduateEligibilityRule(2027, Set.of(2027),
+            Set.of(GraduateEligibilityRule.CohortScope.CURRENT_YEAR), true,
+            GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null,
+            GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null,
+            requiresNoEmployer, restrictsSocialInsurance, "应届条款原文", evidenceState);
+    }
+
+    private CandidateProfile declaring(ApplicationTimeStatus employer) {
+        return declaring(employer, employer);
+    }
+
+    private CandidateProfile declaring(ApplicationTimeStatus employer, ApplicationTimeStatus insurance) {
+        return new CandidateProfile(UUID.randomUUID(), "test", PartialDate.month(1992, 12),
+            EducationLevel.MASTER, Set.of("计算机科学与技术"), 2027, 0, Set.of(), List.of("杭州"),
+            Set.of(EmploymentType.ESTABLISHMENT), "test-v1", Set.of(), Set.of(), Set.of(), Set.of(),
+            List.of(), Gender.FEMALE, DomainEnums.PoliticalAffiliation.NON_MEMBER, List.of(),
+            employer, insurance);
+    }
+
     private CandidateProfile candidateWith(DomainEnums.PoliticalAffiliation affiliation, Gender gender) {
         return new CandidateProfile(UUID.randomUUID(), "test", PartialDate.month(1992, 12),
             EducationLevel.MASTER, Set.of("计算机科学与技术"), 2027, 0, Set.of(), List.of("杭州"),
