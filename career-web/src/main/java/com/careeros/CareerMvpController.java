@@ -2,6 +2,7 @@ package com.careeros;
 
 import com.careeros.application.CareerDecisionService;
 import com.careeros.application.OpportunityHistoryService;
+import com.careeros.application.DailyDigestService;
 import com.careeros.application.CandidateProfileService;
 import com.careeros.application.RepositoryPorts;
 import com.careeros.domain.*;
@@ -27,10 +28,11 @@ class CareerMvpController {
     private final CandidateProfileService candidateProfiles;
     private final CareerDecisionService decisions;
     private final OpportunityHistoryService history;
+    private final DailyDigestService digests;
     private final OfficialExcelImportService excelImports;
 
-    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CandidateProfileService candidateProfiles, CareerDecisionService decisions, OpportunityHistoryService history, OfficialExcelImportService excelImports) {
-        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.candidateProfiles=candidateProfiles; this.decisions=decisions; this.history=history; this.excelImports=excelImports;
+    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CandidateProfileService candidateProfiles, CareerDecisionService decisions, OpportunityHistoryService history, DailyDigestService digests, OfficialExcelImportService excelImports) {
+        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.candidateProfiles=candidateProfiles; this.decisions=decisions; this.history=history; this.digests=digests; this.excelImports=excelImports;
     }
 
     @GetMapping("/organizations") List<Organization> organizations() { return organizations.findAll(); }
@@ -73,7 +75,7 @@ class CareerMvpController {
     }
 
     @PostMapping(value="/imports/excel",consumes="multipart/form-data")
-    OfficialExcelImportService.ImportResult importExcel(
+    ImportWithDigest importExcel(
         @RequestPart("file") MultipartFile file,
         @RequestParam("announcementTitle") String announcementTitle,
         @RequestParam("sourceUrl") String sourceUrl,
@@ -84,8 +86,12 @@ class CareerMvpController {
         @RequestParam(defaultValue="PUBLIC_INSTITUTION") EventType eventType,
         @RequestParam(required=false) String defaultOrganizationName
     ) throws Exception {
-        return excelImports.importWorkbook(file.getInputStream(),new OfficialExcelImportService.ImportCommand(announcementTitle,sourceUrl,recruitmentYear,publishedOn,ageReferenceDate,defaultLocation,eventType,defaultOrganizationName));
+        var result=excelImports.importWorkbook(file.getInputStream(),new OfficialExcelImportService.ImportCommand(announcementTitle,sourceUrl,recruitmentYear,publishedOn,ageReferenceDate,defaultLocation,eventType,defaultOrganizationName));
+        return new ImportWithDigest(result,result.upsert()==null?DailyDigestService.empty(LocalDate.now()):digests.digestFor(result.upsert(),LocalDate.now()));
     }
+
+    /** 导入结果与当天摘要一起返回：§8 要求采集之后立刻只报值得关注的变化。 */
+    record ImportWithDigest(OfficialExcelImportService.ImportResult result,DailyDigest digest) {}
 
     private void validateReferences(JobRequest request) { required(events.findById(request.recruitmentEventId()),"RecruitmentEvent",request.recruitmentEventId()); required(organizations.findById(request.organizationId()),"Organization",request.organizationId()); }
     private static <T> T required(Optional<T> value,String type,UUID id) { return value.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,type+" not found: "+id)); }

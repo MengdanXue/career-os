@@ -50,6 +50,10 @@ public final class DomainEnums {
      * 因此这里只给可观测的模式，不给概率数字。
      */
     public enum RecurrenceSignal { RECURRING_ANNUAL, INTERMITTENT, SINGLE_OCCURRENCE, INSUFFICIENT_HISTORY }
+    /** 一次增量入库里单个岗位的变化类型。 */
+    public enum JobChangeKind { NEW, UPDATED, UNCHANGED, DEACTIVATED }
+    /** 产品需求 §10.7：每日只报新增、变更、下线和截止临近，四者之外一律不推送。 */
+    public enum DigestReason { NEW, UPDATED, DEACTIVATED, DEADLINE_APPROACHING }
     public enum OpportunityTier { T1, T2, T3, EXCLUDED }
     public enum RecommendationStatus { RECOMMENDED, REVIEW, NOT_RECOMMENDED, EXCLUDED }
 }
