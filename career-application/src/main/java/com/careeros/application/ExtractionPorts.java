@@ -124,17 +124,23 @@ public final class ExtractionPorts {
         }
     }
 
+    /**
+     * @param actor 已认证的复核人。由适配层从安全上下文取得，绝不从请求体读取——
+     *              否则调用方可以随意伪造审计记录里的操作人。
+     */
     public record ApplyReviewActionCommand(
         UUID reviewId,
         ReviewDecision decision,
         long expectedVersion,
         RecruitmentExtractionProposal correctedPayload,
-        String note
+        String note,
+        String actor
     ) {
         public ApplyReviewActionCommand {
             Objects.requireNonNull(reviewId, "reviewId");
             Objects.requireNonNull(decision, "decision");
             if (expectedVersion < 0) throw new IllegalArgumentException("expectedVersion must not be negative");
+            if (actor == null || actor.isBlank()) throw new IllegalArgumentException("actor is required");
         }
     }
 

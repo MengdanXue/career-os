@@ -56,13 +56,17 @@ final class ExtractionApiModels {
         RecruitmentExtractionProposal correctedPayload,
         String note
     ) {
-        ApplyReviewActionCommand toCommand(UUID reviewId) {
+        /**
+         * actor 由调用方的认证主体决定，不是请求体的一部分——
+         * 否则任何人都能在审计记录里署上别人的名字。
+         */
+        ApplyReviewActionCommand toCommand(UUID reviewId, String actor) {
             if (decision == null) throw new IllegalArgumentException("decision is required");
             if (decision == ReviewDecision.CORRECT && correctedPayload == null) {
                 throw new IllegalArgumentException("CORRECT requires correctedPayload");
             }
             return new ApplyReviewActionCommand(
-                reviewId, decision, expectedVersion, correctedPayload, note);
+                reviewId, decision, expectedVersion, correctedPayload, note, actor);
         }
     }
 
