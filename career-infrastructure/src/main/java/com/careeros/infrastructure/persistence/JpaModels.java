@@ -193,6 +193,8 @@ public final class JpaModels {
         @Column(name = "birth_day") Integer birthDay;
         @Enumerated(EnumType.STRING) @Column(name = "gender", nullable = false) Gender gender = Gender.UNKNOWN;
         @Enumerated(EnumType.STRING) @Column(name = "political_affiliation", nullable = false) PoliticalAffiliation politicalAffiliation = PoliticalAffiliation.UNKNOWN;
+        @Enumerated(EnumType.STRING) @Column(name = "employer_settlement_at_application", nullable = false) ApplicationTimeStatus employerSettlementAtApplication = ApplicationTimeStatus.UNDECLARED;
+        @Enumerated(EnumType.STRING) @Column(name = "social_insurance_at_application", nullable = false) ApplicationTimeStatus socialInsuranceAtApplication = ApplicationTimeStatus.UNDECLARED;
         @Enumerated(EnumType.STRING) @Column(name = "highest_education", nullable = false) EducationLevel highestEducation;
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "majors", columnDefinition = "jsonb", nullable = false) Set<String> majors = new LinkedHashSet<>();
         @Column(name = "graduation_year") Integer graduationYear;

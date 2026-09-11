@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 import static com.careeros.domain.CandidateFacts.CandidateFactKey.*;
 
 public final class EligibilityEvaluator {
-    public static final String VERSION = "eligibility-hard-verdict-v4";
+    public static final String VERSION = "eligibility-hard-verdict-v5";
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) {
         return evaluate(candidate, CandidateFacts.confirmed(candidate), job, "unversioned", Instant.now());
@@ -63,6 +63,19 @@ public final class EligibilityEvaluator {
                                           String jobContentFingerprint, LocalDate qualificationAsOf,
                                           Instant assessedAt, String evaluatorVersion,
                                           Set<String> conflictingOfficialFields) {
+        return evaluate(candidate, facts, job, jobContentFingerprint, qualificationAsOf, assessedAt,
+            evaluatorVersion, conflictingOfficialFields, null);
+    }
+
+    /**
+     * @param graduateRule 招聘事件上已解析的应届身份条款。为 null 表示公告里没有这类条款，
+     *        因此不构成限制；解析失败或未采集同样是 null，说明里会点明结论只基于已解析内容。
+     */
+    public EligibilityAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
+                                          String jobContentFingerprint, LocalDate qualificationAsOf,
+                                          Instant assessedAt, String evaluatorVersion,
+                                          Set<String> conflictingOfficialFields,
+                                          GraduateEligibilityRule graduateRule) {
         Set<String> conflicts = conflictingOfficialFields == null ? Set.of() : conflictingOfficialFields;
         var results = new EnumMap<RuleType, RuleResult>(RuleType.class);
         results.put(RuleType.AGE, orConflict(conflicts, "ageRequirementText",
@@ -76,6 +89,7 @@ public final class EligibilityEvaluator {
         results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, facts, job));
         results.put(RuleType.POLITICAL_AFFILIATION, evaluatePoliticalAffiliation(candidate, facts, job));
         results.put(RuleType.GENDER, evaluateGender(candidate, facts, job));
+        results.put(RuleType.FRESH_GRADUATE_STATUS, evaluateFreshGraduateStatus(candidate, facts, graduateRule));
         var overall = results.values().stream().map(RuleResult::status)
             .max(EligibilityEvaluator::compareSeverity).orElse(EligibilityStatus.NEEDS_CONFIRMATION);
         return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), evaluatorVersion, assessedAt, candidate.profileVersion(), jobContentFingerprint);
@@ -241,6 +255,54 @@ public final class EligibilityEvaluator {
             case MALE -> male ? eligible("性别满足公告限定") : ineligible("公告限定女性");
             case FEMALE -> female ? eligible("性别满足公告限定") : ineligible("公告限定男性");
             case OTHER, UNKNOWN -> needsConfirmation("候选人性别信息不足以对照公告限定");
+        };
+    }
+
+    /**
+     * 应届身份（产品需求 §2.2、§5 EligibilityRule）。
+     *
+     * <p>公告限定"未落实工作单位"或"无社保缴纳记录"时，要求的是**报名当天**的状态，
+     * 而报名还没发生。候选人今天无法确认一个未来时点的事实，只能声明一个打算，因此
+     * 声明满足只得出条件式结论——把还没兑现的未来当成既成事实，正是基线禁止的。
+     * 声明不满足才是明确不可报：那是一个已经确定的、不会再变回去的事实。
+     */
+    RuleResult evaluateFreshGraduateStatus(
+        CandidateProfile candidate, CandidateFacts facts, GraduateEligibilityRule rule
+    ) {
+        if (rule == null) return eligible("公告未解析出应届身份限制");
+        if (!rule.requiresNoEmployer() && !rule.restrictsSocialInsurance()) {
+            return eligible("公告的应届条款未限制工作单位或社保");
+        }
+        if (rule.evidenceState() != GraduateEligibilityRule.EvidenceState.CONFIRMED) {
+            return needsConfirmation("公告的应届身份条款尚未确认，需人工核对原文");
+        }
+        // 两项限定各自独立判定，取最严重的一条。不能判到第一条非 ELIGIBLE 就返回：
+        // 工作单位那条是 CONDITIONAL、社保那条是 INELIGIBLE 时，提前返回会把"明确不可报"
+        // 掩盖成"条件可报"。
+        var results = new java.util.ArrayList<RuleResult>();
+        if (rule.requiresNoEmployer()) {
+            results.add(declaration(facts, EMPLOYER_SETTLEMENT_AT_APPLICATION,
+                candidate.employerSettlementAtApplication(), "未落实工作单位"));
+        }
+        if (rule.restrictsSocialInsurance()) {
+            results.add(declaration(facts, SOCIAL_INSURANCE_AT_APPLICATION,
+                candidate.socialInsuranceAtApplication(), "报名时无社保缴纳记录"));
+        }
+        return results.stream()
+            .max((left, right) -> compareSeverity(left.status(), right.status()))
+            .filter(worst -> worst.status() != EligibilityStatus.ELIGIBLE)
+            .orElseGet(() -> eligible("公告的应届身份条款均已声明满足"));
+    }
+
+    private static RuleResult declaration(
+        CandidateFacts facts, CandidateFacts.CandidateFactKey key,
+        DomainEnums.ApplicationTimeStatus declared, String requirement
+    ) {
+        if (!facts.isConfirmed(key)) return needsConfirmation("尚未声明" + requirement + "的报名时状态");
+        return switch (declared) {
+            case DECLARED_MET -> conditional("可报取决于报名时仍然" + requirement);
+            case DECLARED_NOT_MET -> ineligible("公告要求" + requirement + "，已声明届时不满足");
+            case UNDECLARED -> needsConfirmation("尚未声明" + requirement + "的报名时状态");
         };
     }
 

@@ -166,6 +166,7 @@ public final class CandidateDecisionDiffService {
             case PROFESSIONAL_TITLE -> "职称";
             case POLITICAL_AFFILIATION -> "政治面貌";
             case GENDER -> "性别";
+            case FRESH_GRADUATE_STATUS -> "应届身份";
             case OTHER -> "其他条件";
         };
     }
