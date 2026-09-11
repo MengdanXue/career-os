@@ -76,12 +76,12 @@ class DecisionIntelligenceServiceTest {
         var reassessed = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW.plusSeconds(60));
         var repeated = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW.plusSeconds(120));
 
-        assertThat(reassessed.decision().eligibilityStatus()).isEqualTo(EligibilityStatus.UNCERTAIN);
+        assertThat(reassessed.decision().eligibilityStatus()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
         assertThat(reassessed.decision().recommendationStatus()).isEqualTo(RecommendationStatus.REVIEW);
         assertThat(reassessed.eligibility().ruleResults().get(RuleType.AGE).status())
-            .isEqualTo(EligibilityStatus.UNCERTAIN);
+            .isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
         assertThat(reassessed.eligibility().ruleResults().get(RuleType.EXPERIENCE).status())
-            .isEqualTo(EligibilityStatus.UNCERTAIN);
+            .isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
         assertThat(reassessed.decision().id()).isNotEqualTo(legacy.decision().id());
         assertThat(reassessed.decision().jobContentFingerprint()).isEqualTo(legacy.decision().jobContentFingerprint());
         assertThat(reassessed.decision().profileVersion()).isEqualTo(legacy.decision().profileVersion());
@@ -138,7 +138,7 @@ class DecisionIntelligenceServiceTest {
 
         var result = fixture.service.assess(fixture.candidateId, fixture.jobId, NOW);
 
-        assertThat(result.eligibility().status()).isEqualTo(EligibilityStatus.UNCERTAIN);
+        assertThat(result.eligibility().status()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
         assertThat(result.fit().score()).isZero();
     }
 
@@ -245,7 +245,7 @@ class DecisionIntelligenceServiceTest {
                 CandidateFacts.CandidateFactStatus.CONFIRMED, CandidateFacts.fingerprint(initialCandidate, key),
                 CandidateFacts.CandidateFactSource.USER_CONFIRMED, NOW, NOW));
         }
-        var service = new DecisionIntelligenceService(candidates, facts, assessments, contexts, organizationId1 -> List.of(), snapshots, admissions, inputLock, new EligibilityEvaluator(), new FitEvaluator(), new StabilityEvaluator());
+        var service = new DecisionIntelligenceService(candidates, facts, assessments, contexts, organizationId1 -> List.of(), snapshots, admissions, id -> new JobAdmissionPorts.FieldEvidenceCoverage(Set.of(), Set.of(), false, false, false), inputLock, new EligibilityEvaluator(), new FitEvaluator(), new StabilityEvaluator());
         return new Fixture(initialCandidate.id(), jobId, candidates, facts, contexts, snapshots, admissions, inputLock, service);
     }
 

@@ -18,8 +18,8 @@ class EligibilityEvaluatorTest {
         var result = evaluate(candidate, job(null, null, EducationLevel.MASTER,
             Set.of("计算机科学与技术"), Set.of(2027), 0));
 
-        assertRule(result, RuleType.AGE, EligibilityStatus.UNCERTAIN);
-        assertThat(result.status()).isEqualTo(EligibilityStatus.UNCERTAIN);
+        assertRule(result, RuleType.AGE, EligibilityStatus.NEEDS_CONFIRMATION);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
     }
 
     @Test void missingExperienceRequirementCannotEstablishUnrestrictedEligibility() {
@@ -28,8 +28,8 @@ class EligibilityEvaluatorTest {
         var result = evaluate(candidate, job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER,
             Set.of("计算机科学与技术"), Set.of(2027), null));
 
-        assertRule(result, RuleType.EXPERIENCE, EligibilityStatus.UNCERTAIN);
-        assertThat(result.status()).isEqualTo(EligibilityStatus.UNCERTAIN);
+        assertRule(result, RuleType.EXPERIENCE, EligibilityStatus.NEEDS_CONFIRMATION);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
     }
 
     @Test void explicitlyZeroExperienceRequirementAllowsCandidateWithoutWorkHistory() {
@@ -49,8 +49,8 @@ class EligibilityEvaluatorTest {
 
     @Test void partialBirthMonthIsUncertainInsideAgeBoundary() {
         var result = evaluator.evaluate(candidate(PartialDate.month(1992, 12), EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5), job(32, LocalDate.of(2025, 9, 1), EducationLevel.MASTER, Set.of(), Set.of(), null));
-        assertRule(result, RuleType.AGE, EligibilityStatus.UNCERTAIN);
-        assertThat(result.status()).isEqualTo(EligibilityStatus.UNCERTAIN);
+        assertRule(result, RuleType.AGE, EligibilityStatus.NEEDS_CONFIRMATION);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
     }
 
     @Test void ageIsIneligibleAfterAllPossibleBirthdays() {
@@ -86,14 +86,14 @@ class EligibilityEvaluatorTest {
         var restricted = job(null, null, EducationLevel.MASTER, Set.of(), Set.of(2025, 2026), null);
         assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2026, 0), restricted), RuleType.GRADUATE_YEAR, EligibilityStatus.ELIGIBLE);
         assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2024, 0), restricted), RuleType.GRADUATE_YEAR, EligibilityStatus.INELIGIBLE);
-        assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), null, 0), restricted), RuleType.GRADUATE_YEAR, EligibilityStatus.UNCERTAIN);
+        assertRule(evaluator.evaluate(candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), null, 0), restricted), RuleType.GRADUATE_YEAR, EligibilityStatus.NEEDS_CONFIRMATION);
     }
 
     @Test void legacyExperienceTotalNeverSatisfiesAHardRequirement() {
         var requiresTwo = job(null, null, EducationLevel.MASTER, Set.of(), Set.of(), 2);
         var candidate = candidate(PartialDate.month(1995, 1), EducationLevel.MASTER, Set.of(), 2020, 7);
         assertRule(evaluator.evaluate(candidate, CandidateFacts.resolve(candidate, List.of()), requiresTwo,
-            "legacy", Instant.parse("2026-08-23T00:00:00Z")), RuleType.EXPERIENCE, EligibilityStatus.UNCERTAIN);
+            "legacy", Instant.parse("2026-08-23T00:00:00Z")), RuleType.EXPERIENCE, EligibilityStatus.NEEDS_CONFIRMATION);
     }
 
     @Test void verifiedFullTimeIntervalsDetermineTheExperienceBoundary() {
@@ -117,7 +117,7 @@ class EligibilityEvaluatorTest {
         var result = evaluator.evaluate(candidate, CandidateFacts.confirmed(candidate), requiresTwo,
             "verified", null, Instant.parse("2026-08-23T12:34:56Z"));
 
-        assertRule(result, RuleType.EXPERIENCE, EligibilityStatus.UNCERTAIN);
+        assertRule(result, RuleType.EXPERIENCE, EligibilityStatus.NEEDS_CONFIRMATION);
         assertThat(result.assessedAt()).isEqualTo(Instant.parse("2026-08-23T12:34:56Z"));
     }
 
@@ -139,8 +139,119 @@ class EligibilityEvaluatorTest {
         var result = evaluator.evaluate(candidate, CandidateFacts.resolve(candidate, List.of()),
             job(40, LocalDate.of(2026, 1, 1), EducationLevel.MASTER, Set.of(), Set.of(), null));
 
-        assertRule(result, RuleType.AGE, EligibilityStatus.UNCERTAIN);
+        assertRule(result, RuleType.AGE, EligibilityStatus.NEEDS_CONFIRMATION);
         assertThat(result.ruleResults().get(RuleType.AGE).explanation()).contains("未确认");
+    }
+
+    // --- CONDITIONAL：结论只取决于一件尚未完成的事 ---
+
+    /**
+     * 产品需求 §6.1 的 CONDITIONAL 原型：以境外硕士身份报考，留服认证尚未完成。
+     * 这既不是“可报”（认证还没下来），也不是“待确认”（缺什么、什么时候能补上都很清楚）。
+     */
+    @Test void aMastersDegreeAwaitingOverseasCredentialVerificationIsConditionalNotEligible() {
+        var candidate = candidateWithEducation(new EducationRecord("示例海外大学", "示例国",
+            EducationLevel.MASTER, "计算机科学与技术", 2027, 6,
+            EducationRecord.CompletionStatus.COMPLETED,
+            EducationRecord.CredentialVerificationStatus.IN_PROGRESS));
+        var result = evaluate(candidate, job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(2027), 0));
+
+        assertRule(result, RuleType.EDUCATION, EligibilityStatus.CONDITIONAL);
+        assertThat(result.ruleResults().get(RuleType.EDUCATION).explanation()).contains("认证");
+        assertThat(result.status()).isEqualTo(EligibilityStatus.CONDITIONAL);
+    }
+
+    /** 学位本身还没拿到，同样是条件式结论，并且要说清楚在等哪个时间点。 */
+    @Test void anExpectedGraduationIsConditionalAndNamesTheDate() {
+        var candidate = candidateWithEducation(new EducationRecord("示例海外大学", "示例国",
+            EducationLevel.MASTER, "计算机科学与技术", 2027, 6,
+            EducationRecord.CompletionStatus.EXPECTED,
+            EducationRecord.CredentialVerificationStatus.PLANNED));
+        var result = evaluate(candidate, job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(2027), 0));
+
+        assertRule(result, RuleType.EDUCATION, EligibilityStatus.CONDITIONAL);
+        assertThat(result.ruleResults().get(RuleType.EDUCATION).explanation()).contains("2027 年 6 月");
+    }
+
+    /** 另有一段已毕业且无需认证的学历能单独满足要求时，就不存在这个条件。 */
+    @Test void aSettledDegreeThatAlreadyMeetsTheBarRemovesTheCondition() {
+        var candidate = candidateWithEducation(
+            new EducationRecord("示例海外大学", "示例国", EducationLevel.MASTER, "计算机科学与技术",
+                2027, 6, EducationRecord.CompletionStatus.EXPECTED,
+                EducationRecord.CredentialVerificationStatus.PLANNED),
+            new EducationRecord("浙江大学", "中国", EducationLevel.MASTER, "计算机科学与技术",
+                2018, 6, EducationRecord.CompletionStatus.COMPLETED,
+                EducationRecord.CredentialVerificationStatus.NOT_REQUIRED));
+        var result = evaluate(candidate, job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(2027), 0));
+
+        assertRule(result, RuleType.EDUCATION, EligibilityStatus.ELIGIBLE);
+    }
+
+    /** 境外学历是否需要认证都还没确认时，只能是待确认——不能替用户假设它不需要认证。 */
+    @Test void anUnknownVerificationRequirementNeedsConfirmationRatherThanAssumingNone() {
+        var candidate = candidateWithEducation(new EducationRecord("某海外院校", "其他",
+            EducationLevel.MASTER, "计算机科学与技术", 2026, 6,
+            EducationRecord.CompletionStatus.COMPLETED,
+            EducationRecord.CredentialVerificationStatus.UNKNOWN));
+        var result = evaluate(candidate, job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(2027), 0));
+
+        assertRule(result, RuleType.EDUCATION, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    /** 旧资料只有一个汇总学历字段，没填逐段明细不该把已经满足的学历降级成条件式结论。 */
+    @Test void aLegacyProfileWithoutEducationRecordsStaysEligible() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+        var result = evaluate(candidate, job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), Set.of(2027), 0));
+
+        assertRule(result, RuleType.EDUCATION, EligibilityStatus.ELIGIBLE);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.ELIGIBLE);
+    }
+
+    // --- CONFLICTING_EVIDENCE：岗位要求本身不可信 ---
+
+    /**
+     * 官方来源在学历要求上互相矛盾时，这条规则不产出判定。说“满足”或“不满足”
+     * 都是在替官方决定要求到底是什么。
+     */
+    @Test void aRuleWhoseOfficialFieldConflictsProducesNoVerdict() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+        var result = evaluator.evaluate(candidate, CandidateFacts.confirmed(candidate),
+            job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER, Set.of("计算机科学与技术"), Set.of(2027), 0),
+            "verified", LocalDate.of(2027, 1, 1), Instant.parse("2026-08-14T00:00:00Z"),
+            EligibilityEvaluator.VERSION, Set.of("educationRequirementText"));
+
+        assertRule(result, RuleType.EDUCATION, EligibilityStatus.CONFLICTING_EVIDENCE);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.CONFLICTING_EVIDENCE);
+        // 不受冲突影响的规则照常判定。
+        assertRule(result, RuleType.AGE, EligibilityStatus.ELIGIBLE);
+    }
+
+    /** 一项硬条件明确不满足时，其余条目再不确定也改变不了结果。 */
+    @Test void aDefiniteFailureOutranksEveryOtherUnsettledRule() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.BACHELOR,
+            Set.of("计算机科学与技术"), 2027, 0);
+        var result = evaluator.evaluate(candidate, CandidateFacts.confirmed(candidate),
+            job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER, Set.of("计算机科学与技术"), Set.of(2027), 0),
+            "verified", LocalDate.of(2027, 1, 1), Instant.parse("2026-08-14T00:00:00Z"),
+            EligibilityEvaluator.VERSION, Set.of("ageRequirementText"));
+
+        assertRule(result, RuleType.EDUCATION, EligibilityStatus.INELIGIBLE);
+        assertRule(result, RuleType.AGE, EligibilityStatus.CONFLICTING_EVIDENCE);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.INELIGIBLE);
+    }
+
+    private CandidateProfile candidateWithEducation(EducationRecord... records) {
+        return new CandidateProfile(UUID.randomUUID(), "test", PartialDate.month(1992, 12),
+            EducationLevel.MASTER, Set.of("计算机科学与技术"), 2027, 0, Set.of(), List.of("杭州"),
+            Set.of(EmploymentType.ESTABLISHMENT), "test-v1", Set.of(), Set.of(), Set.of(), Set.of(),
+            List.of(records));
     }
 
     private EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) { return evaluator.evaluate(candidate, job, Instant.parse("2026-08-14T00:00:00Z")); }

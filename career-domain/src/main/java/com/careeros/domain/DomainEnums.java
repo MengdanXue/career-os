@@ -14,7 +14,24 @@ public final class DomainEnums {
     public enum Gender { FEMALE, MALE, OTHER, UNKNOWN }
     public enum PoliticalAffiliation { CPC_MEMBER, CPC_PROBATIONARY, NON_MEMBER, UNKNOWN }
     public enum RuleType { AGE, EDUCATION, EXACT_MAJOR, GRADUATE_YEAR, EXPERIENCE, PROFESSIONAL_TITLE, OTHER }
-    public enum EligibilityStatus { ELIGIBLE, LIKELY_ELIGIBLE, UNCERTAIN, LIKELY_INELIGIBLE, INELIGIBLE }
+    /**
+     * 硬资格判定结果（产品需求 §6.1）。
+     *
+     * <p>刻意没有“大概可报”这一档：资格是硬判定，要么有证据满足，要么明确不满足，
+     * 要么说清楚缺什么。此前的 LIKELY_ELIGIBLE / LIKELY_INELIGIBLE 让“证据不足”
+     * 看起来像一个偏向性结论，正是基线禁止的那种表述。
+     *
+     * <ul>
+     *   <li>{@code ELIGIBLE}：所有硬条件都有已确认事实且满足；
+     *   <li>{@code CONDITIONAL}：满足与否只取决于一件尚未完成的事，例如留服认证或预计毕业；
+     *   <li>{@code NEEDS_CONFIRMATION}：公告或个人字段不足，无法判定；
+     *   <li>{@code CONFLICTING_EVIDENCE}：该条所依赖的官方字段存在来源冲突，判定不可信；
+     *   <li>{@code INELIGIBLE}：至少一项硬条件明确不满足。
+     * </ul>
+     *
+     * 只有 ELIGIBLE 和经用户确认后的 CONDITIONAL 才能进入“建议报名”。
+     */
+    public enum EligibilityStatus { ELIGIBLE, CONDITIONAL, NEEDS_CONFIRMATION, CONFLICTING_EVIDENCE, INELIGIBLE }
     public enum EvidenceType { OFFICIAL_NOTICE, OFFICIAL_ATTACHMENT, ORGANIZATION_PAGE, POLICY, MANUAL_NOTE }
     public enum OpportunityStatus { NEW, REVIEWING, SHORTLISTED, APPLIED, CLOSED, REJECTED, ARCHIVED }
     public enum ExtractionSourceType { HTML, PDF, DOCX }
@@ -25,7 +42,9 @@ public final class DomainEnums {
         DOCTOR_REQUIRED, TEACHING_ROLE, POSTDOCTORAL_ROLE, ADMINISTRATIVE_ROLE,
         SALES_ROLE, LABOR_DISPATCH, PROJECT_BASED, INTERNSHIP,
         NON_TECHNICAL_ROLE, AMBIGUOUS_DUTIES, EMPLOYMENT_IDENTITY_UNKNOWN,
-        OFFICIAL_WORKBOOK_PARSED, OFFICIAL_FACTS_INCOMPLETE, MISSING_FIELD_EVIDENCE
+        OFFICIAL_WORKBOOK_PARSED, OFFICIAL_FACTS_INCOMPLETE, MISSING_FIELD_EVIDENCE,
+        /** 官方来源在某个字段上互相矛盾。此前只体现为 REVIEW_REQUIRED，读不出原因。 */
+        CONFLICTING_FIELD_EVIDENCE
     }
     public enum ParserQuality { ACCEPTABLE, LOW_TEXT_QUALITY }
     public enum FactStatus { EXPLICIT, INTERPRETED, UNKNOWN }
