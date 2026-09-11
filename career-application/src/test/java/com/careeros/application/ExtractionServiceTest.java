@@ -152,7 +152,7 @@ class ExtractionServiceTest {
             UUID reviewId = UUID.randomUUID();
             var action = new ReviewAction(UUID.randomUUID(), reviewId, decision, 0,
                 ReviewPayload.full(originalProposal), decision == ReviewDecision.CORRECT ? ReviewPayload.full(proposal) : null,
-                "人工核验完成", Fixtures.NOW);
+                "人工核验完成", "reviewer-under-test", Fixtures.NOW);
             review = new ReviewItem(reviewId, run.id(), ReviewStatus.RESOLVED, 1, proposal,
                 List.of(), List.of(action), Fixtures.NOW.minusSeconds(60), Fixtures.NOW);
         }

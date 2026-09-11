@@ -6,6 +6,8 @@ import com.careeros.application.ExtractionPorts.ReviewDetails;
 import com.careeros.application.ReviewService;
 import com.careeros.domain.ReviewItem;
 import com.careeros.domain.DomainEnums.ReviewStatus;
+import java.security.Principal;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,7 +38,14 @@ final class ReviewController {
     ReviewDetails find(@PathVariable("id") UUID id) { return service.find(id); }
 
     @PostMapping("/{id}/actions")
-    ReviewDetails act(@PathVariable("id") UUID id, @RequestBody ApplyReviewActionRequest request) {
-        return service.act(request.toCommand(id));
+    ReviewDetails act(
+        @PathVariable("id") UUID id,
+        @RequestBody ApplyReviewActionRequest request,
+        Principal principal
+    ) {
+        // SecurityFilterChain 已要求该端点必须通过认证，principal 不应为空；
+        // 真为空说明安全配置被改坏了，此时宁可失败也不能写一条无主的复核记录。
+        Objects.requireNonNull(principal, "review actions require an authenticated principal");
+        return service.act(request.toCommand(id, principal.getName()));
     }
 }

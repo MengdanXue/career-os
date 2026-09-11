@@ -48,6 +48,7 @@ class ExtractionDomainTest {
             ReviewPayload.full(ExtractionFixtures.proposal()),
             null,
             "补充用工性质原文",
+            "reviewer-a",
             Instant.parse("2026-08-14T10:00:00Z"));
 
         ReviewItem changed = item.apply(action);
@@ -63,7 +64,8 @@ class ExtractionDomainTest {
         ReviewItem item = ExtractionFixtures.pendingReview(4L);
         ReviewAction stale = new ReviewAction(
             UUID.randomUUID(), item.id(), ReviewDecision.CONFIRM, 3L,
-            ReviewPayload.full(ExtractionFixtures.proposal()), null, "确认", Instant.parse("2026-08-14T10:00:00Z"));
+            ReviewPayload.full(ExtractionFixtures.proposal()), null, "确认", "reviewer-a",
+            Instant.parse("2026-08-14T10:00:00Z"));
 
         assertThatThrownBy(() -> item.apply(stale))
             .isInstanceOf(IllegalStateException.class)
