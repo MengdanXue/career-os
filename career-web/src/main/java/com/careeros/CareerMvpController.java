@@ -1,6 +1,7 @@
 package com.careeros;
 
 import com.careeros.application.CareerDecisionService;
+import com.careeros.application.OpportunityHistoryService;
 import com.careeros.application.CandidateProfileService;
 import com.careeros.application.RepositoryPorts;
 import com.careeros.domain.*;
@@ -25,10 +26,11 @@ class CareerMvpController {
     private final RepositoryPorts.Opportunities opportunities;
     private final CandidateProfileService candidateProfiles;
     private final CareerDecisionService decisions;
+    private final OpportunityHistoryService history;
     private final OfficialExcelImportService excelImports;
 
-    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CandidateProfileService candidateProfiles, CareerDecisionService decisions, OfficialExcelImportService excelImports) {
-        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.candidateProfiles=candidateProfiles; this.decisions=decisions; this.excelImports=excelImports;
+    CareerMvpController(RepositoryPorts.Organizations organizations, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.JobPostings jobs, RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.Opportunities opportunities, CandidateProfileService candidateProfiles, CareerDecisionService decisions, OpportunityHistoryService history, OfficialExcelImportService excelImports) {
+        this.organizations=organizations; this.events=events; this.jobs=jobs; this.candidates=candidates; this.opportunities=opportunities; this.candidateProfiles=candidateProfiles; this.decisions=decisions; this.history=history; this.excelImports=excelImports;
     }
 
     @GetMapping("/organizations") List<Organization> organizations() { return organizations.findAll(); }
@@ -61,6 +63,8 @@ class CareerMvpController {
         throw new ResponseStatusException(HttpStatus.GONE,
             "Legacy assessment endpoint is disabled; use /candidates/{candidateId}/job-decisions/{jobId}");
     }
+    @GetMapping("/job-lineages") List<JobFamilyLineage> jobLineages() { return history.lineages(); }
+    @GetMapping("/watchlist") List<OpportunityForecast> watchlist(@RequestParam(name="targetYear",defaultValue="2027") int targetYear) { return history.watchlist(targetYear); }
     @GetMapping("/opportunities") List<Opportunity> opportunities() { return decisions.visibleOpportunities(); }
     @PatchMapping("/opportunities/{id}/status") Opportunity updateOpportunityStatus(@PathVariable("id") UUID id,@RequestBody OpportunityStatusRequest request) {
         var current=required(opportunities.findById(id),"Opportunity",id);
