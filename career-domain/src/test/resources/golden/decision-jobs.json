@@ -1,6 +1,6 @@
 {
-  "datasetVersion": "phase4a-hangzhou-semi-public-v1",
-  "sourceNote": "人工冻结的决策边界样例；用于验证编制、半体制合同、派遣、排除和证据不足场景。",
+  "datasetVersion": "phase4a-hangzhou-semi-public-v2-graduate-clause",
+  "sourceNote": "人工冻结的决策边界样例；用于验证编制、半体制合同、派遣、排除和证据不足场景。v2 增加 announcementGraduateClause：这些用例冻结时，\"公告没提应届\"是评审人的隐含前提，此前应届未成规则所以不必写出来。现在它是一条规则，前提必须显式——\"公告处理过且没有应届条款\"(PROCESSED_NO_CLAUSE) 与 \"公告没采集到\"(NOT_COLLECTED) 结论相反。",
   "cases": [
     {
       "id": "t1-establishment",
@@ -11,7 +11,8 @@
       "jobMajor": "计算机科学与技术",
       "expectedEligibility": "ELIGIBLE",
       "expectedTier": "T1",
-      "expectedStabilityCoverage": 40
+      "expectedStabilityCoverage": 40,
+      "announcementGraduateClause": "PROCESSED_NO_CLAUSE"
     },
     {
       "id": "t2-university-contract",
@@ -22,7 +23,8 @@
       "jobMajor": "计算机科学与技术",
       "expectedEligibility": "ELIGIBLE",
       "expectedTier": "T2",
-      "expectedStabilityCoverage": 40
+      "expectedStabilityCoverage": 40,
+      "announcementGraduateClause": "PROCESSED_NO_CLAUSE"
     },
     {
       "id": "t3-dispatch",
@@ -33,7 +35,8 @@
       "jobMajor": "计算机科学与技术",
       "expectedEligibility": "ELIGIBLE",
       "expectedTier": "T3",
-      "expectedStabilityCoverage": 40
+      "expectedStabilityCoverage": 40,
+      "announcementGraduateClause": "PROCESSED_NO_CLAUSE"
     },
     {
       "id": "excluded-major-mismatch",
@@ -44,7 +47,8 @@
       "jobMajor": "临床医学",
       "expectedEligibility": "INELIGIBLE",
       "expectedTier": "EXCLUDED",
-      "expectedStabilityCoverage": 40
+      "expectedStabilityCoverage": 40,
+      "announcementGraduateClause": "PROCESSED_NO_CLAUSE"
     },
     {
       "id": "insufficient-employment-evidence",
@@ -55,7 +59,8 @@
       "jobMajor": "计算机科学与技术",
       "expectedEligibility": "ELIGIBLE",
       "expectedTier": "T3",
-      "expectedStabilityCoverage": 40
+      "expectedStabilityCoverage": 40,
+      "announcementGraduateClause": "PROCESSED_NO_CLAUSE"
     },
     {
       "id": "unknown-employment",
@@ -66,7 +71,20 @@
       "jobMajor": "计算机科学与技术",
       "expectedEligibility": "ELIGIBLE",
       "expectedTier": "T3",
-      "expectedStabilityCoverage": 0
+      "expectedStabilityCoverage": 0,
+      "announcementGraduateClause": "PROCESSED_NO_CLAUSE"
+    },
+    {
+      "id": "graduate-clause-not-collected",
+      "employmentType": "ESTABLISHMENT",
+      "organizationType": "PUBLIC_INSTITUTION",
+      "hasJobEvidence": true,
+      "candidateMajor": "计算机科学与技术",
+      "jobMajor": "计算机科学与技术",
+      "announcementGraduateClause": "NOT_COLLECTED",
+      "expectedEligibility": "NEEDS_CONFIRMATION",
+      "expectedTier": "T1",
+      "expectedStabilityCoverage": 40
     }
   ]
 }

@@ -4,6 +4,7 @@ import com.careeros.domain.DomainEnums.EducationLevel;
 import com.careeros.domain.EducationRecord.CompletionStatus;
 import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
 import com.careeros.domain.DomainEnums.EligibilityStatus;
+import com.careeros.domain.DomainEnums.Gender;
 import com.careeros.domain.DomainEnums.RuleType;
 import com.careeros.domain.EligibilityAssessment.RuleResult;
 import java.time.Instant;
@@ -20,7 +21,7 @@ import java.util.stream.Stream;
 import static com.careeros.domain.CandidateFacts.CandidateFactKey.*;
 
 public final class EligibilityEvaluator {
-    public static final String VERSION = "eligibility-hard-verdict-v6";
+    public static final String VERSION = "eligibility-hard-verdict-v7";
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) {
         return evaluate(candidate, CandidateFacts.confirmed(candidate), job, "unversioned", Instant.now());
@@ -199,7 +200,9 @@ public final class EligibilityEvaluator {
     }
 
     RuleResult evaluateMajor(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
-        if (job.exactMajors().isEmpty()) return eligible("岗位未限定精确专业目录");
+        if (job.exactMajors().isEmpty()) {
+            return unparsedOrUnrestricted(job.majorRequirementText(), "专业", "岗位未限定精确专业目录");
+        }
         if (!facts.isConfirmed(MAJORS)) return needsConfirmation("候选人专业尚未确认");
         if (candidate.majors().isEmpty()) return needsConfirmation("候选人专业信息缺失");
         Set<String> allowed = job.exactMajors().stream().map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
@@ -215,7 +218,9 @@ public final class EligibilityEvaluator {
     }
 
     RuleResult evaluateGraduation(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
-        if (job.acceptedGraduationYears().isEmpty()) return eligible("岗位无毕业届别限制");
+        if (job.acceptedGraduationYears().isEmpty()) {
+            return unparsedOrUnrestricted(job.candidateScope(), "招聘对象", "岗位无毕业届别限制");
+        }
         if (!facts.isConfirmed(GRADUATION_YEAR)) return needsConfirmation("候选人毕业年份尚未确认");
         if (candidate.graduationYear() == null) return needsConfirmation("候选人毕业年份缺失");
         return job.acceptedGraduationYears().contains(candidate.graduationYear()) ? eligible("毕业年份满足应届范围") : ineligible("毕业年份不在允许范围内");
@@ -233,7 +238,9 @@ public final class EligibilityEvaluator {
     }
 
     RuleResult evaluateProfessionalTitle(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
-        if (job.requiredProfessionalTitles().isEmpty()) return eligible("岗位无职称要求");
+        if (job.requiredProfessionalTitles().isEmpty()) {
+            return unparsedOrUnrestricted(job.otherRequirements(), "其他条件", "岗位无职称要求");
+        }
         if (!facts.isConfirmed(PROFESSIONAL_TITLES)) return needsConfirmation("候选人职称情况尚未确认");
         if (candidate.professionalTitles().isEmpty()) return ineligible("缺少岗位要求的职称");
         Set<String> candidateTitles = candidate.professionalTitles().stream().map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
@@ -274,18 +281,25 @@ public final class EligibilityEvaluator {
      */
     RuleResult evaluateGender(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
         String requirement = job.genderRequirement();
-        if (requirement == null || requirement.isBlank() || requirement.contains("不限")) {
-            return eligible("岗位未限定性别");
+        if (requirement == null || requirement.isBlank()) {
+            return eligible("公告未写性别要求");
         }
-        boolean male = requirement.contains("男");
-        boolean female = requirement.contains("女");
-        if (male == female) return needsConfirmation("岗位性别要求无法解析：" + requirement);
+        if (GENDER_CLASSIFIER.explicitlyUnrestricted(requirement)) {
+            // "不限"是事实，"男性优先"是倾向——两者都不构成报名门槛。
+            return eligible("公告未把性别设为门槛：" + requirement);
+        }
+        var restricted = GENDER_CLASSIFIER.hardRequirement(requirement);
+        if (restricted.isEmpty()) {
+            // 公告写了性别相关文字但读不懂限的是哪一边，这不是"没限制"。
+            return needsConfirmation("岗位性别要求无法判定，需核对原文：" + requirement);
+        }
         if (!facts.isConfirmed(GENDER)) return needsConfirmation("候选人性别尚未确认");
-        return switch (candidate.gender()) {
-            case MALE -> male ? eligible("性别满足公告限定") : ineligible("公告限定女性");
-            case FEMALE -> female ? eligible("性别满足公告限定") : ineligible("公告限定男性");
-            case OTHER, UNKNOWN -> needsConfirmation("候选人性别信息不足以对照公告限定");
-        };
+        if (candidate.gender() == Gender.OTHER || candidate.gender() == Gender.UNKNOWN) {
+            return needsConfirmation("候选人性别信息不足以对照公告限定");
+        }
+        return candidate.gender() == restricted.orElseThrow()
+            ? eligible("性别满足公告限定")
+            : ineligible("公告限定" + (restricted.orElseThrow() == Gender.MALE ? "男性" : "女性"));
     }
 
     /**
@@ -299,7 +313,16 @@ public final class EligibilityEvaluator {
     RuleResult evaluateFreshGraduateStatus(
         CandidateProfile candidate, CandidateFacts facts, GraduateEligibilityRule rule
     ) {
-        if (rule == null) return eligible("公告未解析出应届身份限制");
+        // 三种情况必须分开，压成一件就会把"没读到"说成"没限制"：
+        //   null                     —— 公告没采集或没解析，读不到就不能下结论
+        //   NOT_REQUIRED             —— 公告处理过、确实没有应届条款，这是可以下结论的事实
+        //   有条款但 evidenceState 未确认 —— 条款本身还没核实，先让人核对原文
+        if (rule == null) {
+            return needsConfirmation("公告的应届身份条款尚未解析，无法确认是否限定应届");
+        }
+        if (rule.evidenceState() == GraduateEligibilityRule.EvidenceState.NOT_REQUIRED) {
+            return eligible("公告已处理，未提出应届身份限制");
+        }
         if (!rule.requiresNoEmployer() && !rule.restrictsSocialInsurance()) {
             return eligible("公告的应届条款未限制工作单位或社保");
         }
@@ -335,6 +358,25 @@ public final class EligibilityEvaluator {
             case UNDECLARED -> needsConfirmation("尚未声明" + requirement + "的报名时状态");
         };
     }
+
+    /**
+     * 结构化字段为空时，区分"公告确实没限制"和"公告写了但没解析出来"。
+     *
+     * <p>这两者结论完全相反，而结构化字段为空本身分不出来。原文非空说明公告在这一栏写了
+     * 东西、只是没被解析成结构化限制——此时说"无限制"就是在替公告下结论。AGE 与 EXPERIENCE
+     * 一开始就按 null 落到待确认，这里把其余规则拉到同一口径。
+     */
+    private static RuleResult unparsedOrUnrestricted(
+        String rawRequirementText, String fieldLabel, String unrestrictedExplanation
+    ) {
+        if (rawRequirementText == null || rawRequirementText.isBlank()) {
+            return eligible(unrestrictedExplanation);
+        }
+        return needsConfirmation("公告「" + fieldLabel + "」栏有原文但未解析出结构化限制，需核对：" + rawRequirementText);
+    }
+
+    private static final GenderRequirementClassifier GENDER_CLASSIFIER =
+        new GenderRequirementClassifier();
 
     private static final PoliticalRequirementClassifier POLITICAL_CLASSIFIER =
         new PoliticalRequirementClassifier();

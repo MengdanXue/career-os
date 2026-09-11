@@ -20,7 +20,7 @@ class DecisionGoldenDatasetTest {
         try (var stream = getClass().getResourceAsStream("/golden/decision-jobs.json")) {
             assertThat(stream).isNotNull();
             JsonNode cases = new ObjectMapper().readTree(stream).path("cases");
-            assertThat(cases).hasSize(6);
+            assertThat(cases).hasSize(7);
 
             for (JsonNode fixture : cases) {
                 var candidate = candidate(fixture.path("candidateMajor").asText());
@@ -32,7 +32,11 @@ class DecisionGoldenDatasetTest {
                     fixture.path("hasJobEvidence").asBoolean()
                 );
 
-                var eligibility = new EligibilityEvaluator().evaluate(candidate, job, "a".repeat(64), NOW);
+                var eligibility = new EligibilityEvaluator().evaluate(
+                    candidate, CandidateFacts.confirmed(candidate), job, "a".repeat(64),
+                    LocalDate.ofInstant(NOW, java.time.ZoneOffset.UTC), NOW,
+                    EligibilityEvaluator.VERSION, Set.of(),
+                    graduateClause(fixture.path("announcementGraduateClause").asText()), java.util.Map.of());
                 var stability = new StabilityEvaluator().evaluate(candidate, job, organization, List.of(), "a".repeat(64), NOW);
                 OpportunityTier finalTier = eligibility.status() == EligibilityStatus.INELIGIBLE
                     ? OpportunityTier.EXCLUDED : stability.tier();
@@ -45,6 +49,18 @@ class DecisionGoldenDatasetTest {
                     .isEqualTo(fixture.path("expectedStabilityCoverage").asInt());
             }
         }
+    }
+
+    /**
+     * 这些用例冻结时，"公告没提应届"是评审人的隐含前提。应届成为一条规则之后，前提必须显式：
+     * 公告处理过且没有条款是可以下结论的事实，公告没采集到只能待确认——两者结论相反。
+     */
+    private static GraduateEligibilityRule graduateClause(String declared) {
+        if ("NOT_COLLECTED".equals(declared)) return null;
+        return new GraduateEligibilityRule(2026, Set.of(), Set.of(), false,
+            GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null,
+            GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null,
+            false, false, "", GraduateEligibilityRule.EvidenceState.NOT_REQUIRED);
     }
 
     private static CandidateProfile candidate(String major) {
