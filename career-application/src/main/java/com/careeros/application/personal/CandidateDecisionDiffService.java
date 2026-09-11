@@ -71,7 +71,7 @@ public final class CandidateDecisionDiffService {
             var beforeStatus = before.eligibility().status();
             var afterStatus = after.eligibility().status();
             if (!isEligible(beforeStatus) && isEligible(afterStatus)) newlyEligible++;
-            if (beforeStatus == EligibilityStatus.UNCERTAIN && afterStatus != EligibilityStatus.UNCERTAIN) {
+            if (unresolved(beforeStatus) && !unresolved(afterStatus)) {
                 resolvedUncertainty++;
             }
             if (!isIneligible(beforeStatus) && isIneligible(afterStatus)) newlyIneligible++;
@@ -130,19 +130,29 @@ public final class CandidateDecisionDiffService {
         return List.copyOf(reasons);
     }
 
+    /** 只有硬条件都满足才算“可报”；条件式结论要等那件事完成，此刻不算。 */
     private static boolean isEligible(EligibilityStatus value) {
-        return value == EligibilityStatus.ELIGIBLE || value == EligibilityStatus.LIKELY_ELIGIBLE;
+        return value == EligibilityStatus.ELIGIBLE;
     }
 
     private static boolean isIneligible(EligibilityStatus value) {
-        return value == EligibilityStatus.INELIGIBLE || value == EligibilityStatus.LIKELY_INELIGIBLE;
+        return value == EligibilityStatus.INELIGIBLE;
+    }
+
+    /** 结论仍悬着：既没判成可报，也没判成不可报。 */
+    private static boolean unresolved(EligibilityStatus value) {
+        return value == EligibilityStatus.NEEDS_CONFIRMATION
+            || value == EligibilityStatus.CONFLICTING_EVIDENCE
+            || value == EligibilityStatus.CONDITIONAL;
     }
 
     private static String status(EligibilityStatus value) {
         return switch (value) {
-            case ELIGIBLE, LIKELY_ELIGIBLE -> "可报";
-            case UNCERTAIN -> "待确认";
-            case INELIGIBLE, LIKELY_INELIGIBLE -> "不可报";
+            case ELIGIBLE -> "可报";
+            case CONDITIONAL -> "条件可报";
+            case NEEDS_CONFIRMATION -> "待确认";
+            case CONFLICTING_EVIDENCE -> "证据冲突";
+            case INELIGIBLE -> "不可报";
         };
     }
 

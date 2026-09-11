@@ -93,6 +93,11 @@ public class OfficialJobAdmissionService {
         if (!completeCriticalFacts) {
             reasons.add(JobAdmissionReason.OFFICIAL_FACTS_INCOMPLETE);
         }
+        // 冲突此前只体现为 REVIEW_REQUIRED，读的人看不出是"缺证据"还是"证据打架"，
+        // 而这两者要做的事完全不同：前者去补，后者要先核对来源。
+        if (!evidence.conflictFields().isEmpty()) {
+            reasons.add(JobAdmissionReason.CONFLICTING_FIELD_EVIDENCE);
+        }
         DataQualityStatus quality = !evidence.conflictFields().isEmpty()
             ? DataQualityStatus.REVIEW_REQUIRED
             : hasEvidence && completeCriticalFacts

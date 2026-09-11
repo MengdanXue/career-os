@@ -22,6 +22,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
     private final OrganizationStabilityFacts stabilityFacts;
     private final DecisionSnapshots snapshots;
     private final JobAdmissions admissions;
+    private final JobAdmissionPorts.JobFieldEvidence fieldEvidence;
     private final DecisionInputLock inputLock;
     private final EligibilityEvaluator eligibilityEvaluator;
     private final FitEvaluator fitEvaluator;
@@ -35,6 +36,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         OrganizationStabilityFacts stabilityFacts,
         DecisionSnapshots snapshots,
         JobAdmissions admissions,
+        JobAdmissionPorts.JobFieldEvidence fieldEvidence,
         DecisionInputLock inputLock,
         EligibilityEvaluator eligibilityEvaluator,
         FitEvaluator fitEvaluator,
@@ -47,6 +49,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         this.stabilityFacts = Objects.requireNonNull(stabilityFacts);
         this.snapshots = Objects.requireNonNull(snapshots);
         this.admissions = Objects.requireNonNull(admissions);
+        this.fieldEvidence = Objects.requireNonNull(fieldEvidence);
         this.inputLock = Objects.requireNonNull(inputLock);
         this.eligibilityEvaluator = Objects.requireNonNull(eligibilityEvaluator);
         this.fitEvaluator = Objects.requireNonNull(fitEvaluator);
@@ -116,8 +119,12 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
 
     private DecisionBundle evaluate(DecisionInputKey input, CandidateProfile candidate, CandidateFacts facts, JobContext context, Instant now) {
         LocalDate qualificationAsOf = context.event().applicationEndsOn();
+        // 官方来源在某个字段上互相矛盾时，依赖该字段的规则不产出判定：手里的岗位要求
+        // 本身就不可信，此时说"满足"或"不满足"都是在替官方做决定。
+        var conflictingFields = fieldEvidence.coverage(context.job().id()).conflictFields();
         var eligibility = eligibilityAssessments.save(eligibilityEvaluator.evaluate(candidate, facts,
-            context.job(), context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion()));
+            context.job(), context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion(),
+            conflictingFields));
         var fit = fitEvaluator.evaluate(candidate, facts, context.job(), context.organization(),
             context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion());
         var stabilityResult = stabilityEvaluator.evaluate(candidate, context.job(), context.organization(),
@@ -140,10 +147,18 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
             + "@cutoff=" + (cutoff == null ? "unknown" : cutoff);
     }
 
-    private static boolean excluded(EligibilityStatus status) { return status == EligibilityStatus.INELIGIBLE || status == EligibilityStatus.LIKELY_INELIGIBLE; }
+    /** 只有明确不满足才排除。证据不足不是排除理由，是复核理由。 */
+    private static boolean excluded(EligibilityStatus status) { return status == EligibilityStatus.INELIGIBLE; }
+
+    /**
+     * 产品需求 §6.1：只有 ELIGIBLE 和经用户确认后的 CONDITIONAL 才能进入“建议报名”。
+     * CONDITIONAL 在这里一律走 REVIEW——用户还没确认那件待完成的事，系统不能替他认定它会发生。
+     */
     private static RecommendationStatus recommendation(EligibilityStatus eligibility, OpportunityTier tier, int fitScore, int coverage) {
         if (excluded(eligibility)) return RecommendationStatus.EXCLUDED;
-        if (eligibility == EligibilityStatus.UNCERTAIN || coverage < 50 || tier == OpportunityTier.T3) return RecommendationStatus.REVIEW;
+        if (eligibility != EligibilityStatus.ELIGIBLE || coverage < 50 || tier == OpportunityTier.T3) {
+            return RecommendationStatus.REVIEW;
+        }
         return fitScore >= 60 ? RecommendationStatus.RECOMMENDED : RecommendationStatus.NOT_RECOMMENDED;
     }
 }

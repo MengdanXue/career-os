@@ -77,8 +77,9 @@ public class CandidateMatchService {
                 targetAdmissions.get(context.job().id()),
                 evidenceByJob.getOrDefault(context.job().id(),
                     new FieldEvidenceCoverage(Set.of(), Set.of(), false, false, false)), now))
-            .filter(value -> value.eligibilityStatus() != EligibilityStatus.INELIGIBLE
-                && value.eligibilityStatus() != EligibilityStatus.LIKELY_INELIGIBLE)
+            // 只滤掉明确不满足的。待确认、条件式和证据冲突都要留在列表里——
+            // 它们是需要人去处理的事项，不是可以静默丢弃的结论。
+            .filter(value -> value.eligibilityStatus() != EligibilityStatus.INELIGIBLE)
             .sorted(order()).toList();
         int from = (int)Math.min((long)query.page() * query.size(), matches.size());
         int to = Math.min(from + query.size(), matches.size());
@@ -164,9 +165,9 @@ public class CandidateMatchService {
     private static int severity(EligibilityStatus value) {
         return switch (value) {
             case ELIGIBLE -> 0;
-            case LIKELY_ELIGIBLE -> 1;
-            case UNCERTAIN -> 2;
-            case LIKELY_INELIGIBLE -> 3;
+            case CONDITIONAL -> 1;
+            case NEEDS_CONFIRMATION -> 2;
+            case CONFLICTING_EVIDENCE -> 3;
             case INELIGIBLE -> 4;
         };
     }

@@ -118,3 +118,44 @@ Base path：`/api/v1`
 摘要条目**不带推荐等级**：主干把它放在候选人维度的 `DecisionAssessment.recommendationStatus`
 上，而摘要报的是岗位变化，与具体候选人无关。要把两者合起来需要给摘要引入候选人参数，
 属于独立的设计改动。
+
+## 硬资格判定结果
+
+`EligibilityAssessment.status` 与 `decision_assessment.eligibility_status` 的取值：
+
+| 值 | 含义 |
+| --- | --- |
+| `ELIGIBLE` | 所有硬条件都有已确认事实且满足 |
+| `CONDITIONAL` | 满足与否只取决于一件尚未完成的事，例如境外学历认证或预计毕业 |
+| `NEEDS_CONFIRMATION` | 公告或个人字段不足，无法判定 |
+| `CONFLICTING_EVIDENCE` | 该条所依赖的官方字段存在来源冲突，判定不可信 |
+| `INELIGIBLE` | 至少一项硬条件明确不满足 |
+
+**没有“大概可报”这一档。** 早期的 `LIKELY_ELIGIBLE` / `LIKELY_INELIGIBLE` 把“证据不足”
+说成了一个带倾向的结论，V84 迁移已把它们连同 `UNCERTAIN` 一并并入 `NEEDS_CONFIRMATION`。
+`LIKELY_INELIGIBLE` 没有并入 `INELIGIBLE`：基线要求后者是“明确不满足”，宁可多一条待确认，
+也不静默丢掉一个其实可报的岗位。
+
+逐条规则结果取最严重的一条作为整体结论，严重度为
+`ELIGIBLE < CONDITIONAL < NEEDS_CONFIRMATION < CONFLICTING_EVIDENCE < INELIGIBLE`。
+`CONDITIONAL` 排在 `NEEDS_CONFIRMATION` 之前，因为它已经知道缺什么、什么时候能补上；
+`CONFLICTING_EVIDENCE` 排在其后，因为证据互相矛盾要先核对来源，比单纯缺证据更重。
+
+只有 `ELIGIBLE` 能进入“建议报名”。`CONDITIONAL` 一律走复核——用户还没确认那件待完成的事，
+系统不能替他认定它会发生。排除只看 `INELIGIBLE`：证据不足不是排除理由，是复核理由。
+
+### CONDITIONAL 从哪来
+
+学历达标之后还要看支撑它的那段学历是否已经落定：`EducationRecord.completionStatus`
+为 `EXPECTED`，或 `credentialVerificationStatus` 为 `PLANNED` / `IN_PROGRESS`，都会得出
+条件式结论并在说明里点出在等什么。只要另有一段已毕业且认证已完成（或无需认证）的学历
+能单独满足要求，这个条件就不存在。没有逐段学历记录的旧资料按 `highestEducation` 判定，
+不会因为没填明细被降级。
+
+### CONFLICTING_EVIDENCE 从哪来
+
+`OfficialJobAdmissionService` 发现官方来源在某字段上互相矛盾时，除了把质量标成
+`REVIEW_REQUIRED`，还会记一条 `CONFLICTING_FIELD_EVIDENCE` 原因码。决策评估会把冲突字段集
+传给资格评估器，依赖这些字段的规则（`educationRequirementText`、`majorRequirementText`、
+`ageRequirementText`）不产出判定——手里的岗位要求本身就不可信，此时说“满足”或“不满足”
+都是在替官方做决定。

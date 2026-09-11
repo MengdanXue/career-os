@@ -30,8 +30,8 @@ class CandidateDecisionDiffServiceTest {
         UUID newlyIneligible = UUID.randomUUID();
         UUID changedReason = UUID.randomUUID();
         var old = List.of(
-            bundle(newlyEligible, "old-v1", EligibilityStatus.UNCERTAIN,
-                Map.of(RuleType.EXPERIENCE, rule(EligibilityStatus.UNCERTAIN, "工作年限待确认"))),
+            bundle(newlyEligible, "old-v1", EligibilityStatus.NEEDS_CONFIRMATION,
+                Map.of(RuleType.EXPERIENCE, rule(EligibilityStatus.NEEDS_CONFIRMATION, "工作年限待确认"))),
             bundle(newlyIneligible, "old-v1", EligibilityStatus.ELIGIBLE,
                 Map.of(RuleType.EXACT_MAJOR, rule(EligibilityStatus.ELIGIBLE, "专业满足"))),
             bundle(changedReason, "old-v1", EligibilityStatus.INELIGIBLE,
@@ -87,7 +87,7 @@ class CandidateDecisionDiffServiceTest {
         var observed = new AtomicReference<Instant>();
         var current = bundle(jobId, "current-v2", EligibilityStatus.ELIGIBLE, Map.of());
         var service = new CandidateDecisionDiffService(candidates("current-v2"),
-            snapshots(List.of(bundle(jobId, "old-v1", EligibilityStatus.UNCERTAIN, Map.of()))),
+            snapshots(List.of(bundle(jobId, "old-v1", EligibilityStatus.NEEDS_CONFIRMATION, Map.of()))),
             (candidateId, ignored, assessedAt) -> { observed.set(assessedAt); return current; }, CLOCK);
 
         service.recompute(CANDIDATE_ID, "old-v1", AS_OF);
@@ -98,7 +98,7 @@ class CandidateDecisionDiffServiceTest {
     @Test
     void refusesToAttributeJobOrQualificationSnapshotChangesToTheProfileEdit() {
         UUID jobId = UUID.randomUUID();
-        var old = bundle(jobId, "old-v1", EligibilityStatus.UNCERTAIN, Map.of(),
+        var old = bundle(jobId, "old-v1", EligibilityStatus.NEEDS_CONFIRMATION, Map.of(),
             "a".repeat(64), "decision-v3@qualification=2026-09-01");
         var changedJob = bundle(jobId, "current-v2", EligibilityStatus.ELIGIBLE, Map.of(),
             "b".repeat(64), "decision-v3@qualification=2026-09-15");
@@ -122,7 +122,7 @@ class CandidateDecisionDiffServiceTest {
         var profiles = candidates(() -> reads.getAndIncrement() == 0 ? "current-v2" : "concurrent-v3");
         var current = bundle(jobId, "current-v2", EligibilityStatus.ELIGIBLE, Map.of());
         var service = new CandidateDecisionDiffService(profiles,
-            snapshots(List.of(bundle(jobId, "old-v1", EligibilityStatus.UNCERTAIN, Map.of()))),
+            snapshots(List.of(bundle(jobId, "old-v1", EligibilityStatus.NEEDS_CONFIRMATION, Map.of()))),
             (candidateId, ignored, assessedAt) -> current, CLOCK);
 
         assertThatThrownBy(() -> service.recompute(CANDIDATE_ID, "old-v1", AS_OF))
