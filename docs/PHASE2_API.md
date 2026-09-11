@@ -143,9 +143,28 @@ curl -X POST http://localhost:8080/api/v1/reviews/<review-uuid>/actions \
 
 相同 `inputFingerprint` 的并发提交由 Postgres advisory lock 串行化，模型只会被调用一次。
 
-模型调用**不在数据库事务内**：事务边界下沉到各持久化步骤自身，等待模型期间不占用主连接池的
-连接。但模型调用仍在 advisory lock 内，因此 `career-os.extraction.lock-wait-timeout-ms`
-（默认 30000）必须大于模型的最坏往返时间，否则并发提交相同文档会锁超时。
+模型调用仍在数据库事务内，也在 advisory lock 内，因此
+`career-os.extraction.lock-wait-timeout-ms`（默认 30000）必须大于模型的最坏往返时间，
+否则并发提交相同文档会锁超时。
+
+**已知问题：等待模型往返期间会一直占着主连接池的一条连接。** 默认池 10，十几个并发上传
+就能把池打满；虚拟线程帮不上忙，瓶颈是连接数。
+
+曾尝试把模型调用移出事务（去掉 `PostgresFingerprintLock` 的 `TransactionTemplate`，
+让事务边界下沉到各持久化步骤自身），在 CI 上被两处结构性依赖挡回：
+
+1. `PostgresFingerprintLock` 同时实现 `FingerprintLock` 和 `DecisionInputLock`，两个接口
+   的 `execute` 签名完全一致，同一个实现方法服务两个角色。`DecisionIntelligenceService`
+   把整条决策流程包在 `inputLock.execute(...)` 里，内部的 `select … for no key update`
+   依赖这个外层读写事务；去掉后报 `cannot execute SELECT FOR NO KEY UPDATE in a
+   read-only transaction`。
+2. `JpaExtractionPersistence.save` 自身带 `@Transactional`。有外层事务时它加入外层，
+   失败能整体回滚；没有外层事务时它先行提交，随后 `saveFailure` 写 FAILED 诊断会撞上
+   同一 `input_fingerprint` 的已提交成功记录。`CareerOsApplicationTest`
+   的 `failureAfterBundleFlushRollsBackBeforePersistingDiagnostic` 锁的正是这条语义。
+
+真正的修复需要先把这个锁的两个角色拆开（抽取路径要的是"不持有连接"，决策路径要的是
+"一个读写事务"），并重新安排抽取流程的事务边界，属于独立的设计改动。
 
 ## 错误与可观测性
 
