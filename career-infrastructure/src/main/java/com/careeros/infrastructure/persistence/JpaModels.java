@@ -276,6 +276,24 @@ public final class JpaModels {
         protected ProfileConfirmationLedgerEntity() {}
     }
 
+    /** last_job_ids 顺序敏感：序号要按位置解析，所以存列表而不是集合。 */
+    @Entity @Table(name = "agent_session")
+    public static class AgentSessionEntity extends UuidEntity {
+        @Column(name = "candidate_profile_id", nullable = false) UUID candidateProfileId;
+        @Column(name = "filter_tier", length = 16) String filterTier;
+        @Column(name = "filter_location", length = 80) String filterLocation;
+        @Column(name = "filter_job_family", length = 48) String filterJobFamily;
+        @Column(name = "filter_limit", nullable = false) int filterLimit;
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "last_job_ids", columnDefinition = "jsonb", nullable = false)
+        List<String> lastJobIds = new ArrayList<>();
+        @JdbcTypeCode(SqlTypes.JSON)
+        @Column(name = "pending_confirmations", columnDefinition = "jsonb", nullable = false)
+        List<Map<String, String>> pendingConfirmations = new ArrayList<>();
+        @Column(name = "profile_version", nullable = false, length = 80) String profileVersion;
+        @Column(name = "updated_at", nullable = false) Instant updatedAt;
+        protected AgentSessionEntity() {}
+    }
+
     @Entity @Table(name = "policy_rule")
     public static class PolicyRuleEntity extends UuidEntity {
         @Enumerated(EnumType.STRING) @Column(name = "rule_type", nullable = false) RuleType ruleType;
