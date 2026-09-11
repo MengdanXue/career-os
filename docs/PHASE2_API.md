@@ -126,6 +126,27 @@ curl -X POST http://localhost:8080/api/v1/reviews/<review-uuid>/actions \
 
 `CONFIRM` 和 `CORRECT` 仅会写入通过 schema、证据与硬事实校验的岗位；`REJECT` 关闭该审核项；`NEED_MORE_EVIDENCE` 保留待审核状态并记录不可变审核动作。
 
+## 输入预算与截断
+
+送入模型的证据片段有字符预算（`career-os.extraction.llm.max-prompt-characters`，默认 40000，
+环境变量 `CAREER_OS_LLM_MAX_PROMPT_CHARACTERS`）。上传上限是 25MB，若不设预算，一份大 PDF
+必然超出模型上下文。
+
+- 超预算时**整条丢弃**尾部片段，绝不截断片段内部文本——模型引用的 `evidenceFragmentId`
+  必须始终对应完整 verbatim 原文，否则证据校验会拿残缺文本去比对。
+- prompt 中会明确告知模型输入已截断，避免它把片段当成公告全文。
+- 截断会产生一条 `INPUT_TRUNCATED` 复核项，该次抽取**不允许自动核验**，
+  即使提案本身证据齐全、置信度达标，也必须进入人工复核。
+- 修复轮回显的无效响应同样有上限，不会把一份超长坏响应整个塞回模型。
+
+## 并发与事务边界
+
+相同 `inputFingerprint` 的并发提交由 Postgres advisory lock 串行化，模型只会被调用一次。
+
+模型调用**不在数据库事务内**：事务边界下沉到各持久化步骤自身，等待模型期间不占用主连接池的
+连接。但模型调用仍在 advisory lock 内，因此 `career-os.extraction.lock-wait-timeout-ms`
+（默认 30000）必须大于模型的最坏往返时间，否则并发提交相同文档会锁超时。
+
 ## 错误与可观测性
 
 错误使用 `application/problem+json`：不支持格式为 `415`、文件过大为 `413`、提案无效为 `422`、并发版本冲突为 `409`、资源不存在为 `404`、强制模型但模型不可用为 `503`。

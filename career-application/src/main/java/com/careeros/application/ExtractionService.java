@@ -168,6 +168,16 @@ public final class ExtractionService {
                 issue.id(), resolvedReviewId, issue.reasonCode(), issue.fieldPath(), issue.message(), issue.evidenceFragmentId()))
                 .forEach(issues::add);
         }
+        // 抽取器自报的削弱信号（当前只有输入截断）同样必须落成复核项：
+        // 只覆盖了部分原文的抽取结果绝不能走自动核验直接写进正式岗位库。
+        if (!attempt.warnings().isEmpty()) {
+            if (reviewId == null) reviewId = UUID.randomUUID();
+            UUID resolvedReviewId = reviewId;
+            attempt.warnings().stream()
+                .map(warning -> new ReviewIssue(
+                    UUID.randomUUID(), resolvedReviewId, ReviewReasonCode.INPUT_TRUNCATED, "document", warning, null))
+                .forEach(issues::add);
+        }
 
         DataQualityStatus status = issues.isEmpty() ? DataQualityStatus.VERIFIED : DataQualityStatus.REVIEW_REQUIRED;
         ExtractionRun run = new ExtractionRun(

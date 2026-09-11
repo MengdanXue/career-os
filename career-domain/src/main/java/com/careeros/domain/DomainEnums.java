@@ -34,7 +34,9 @@ public final class DomainEnums {
     public enum ReviewReasonCode {
         LOW_CONFIDENCE, MISSING_EVIDENCE, ORGANIZATION_TYPE_UNKNOWN,
         CONFLICTING_SOURCES, PARSER_FAILURE, LOW_TEXT_QUALITY,
-        SCHEMA_INVALID, RESTRICTIVE_FACT_FROM_LLM
+        SCHEMA_INVALID, RESTRICTIVE_FACT_FROM_LLM,
+        /** 送入模型的文档被预算截断，抽取结果只覆盖部分原文，必须人工复核。 */
+        INPUT_TRUNCATED
     }
     public enum LocatorType { HTML, PDF, DOCX }
     public enum AssessmentFactStatus { EXPLICIT, INTERPRETED, UNKNOWN }

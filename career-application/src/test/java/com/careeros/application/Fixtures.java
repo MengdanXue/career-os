@@ -108,11 +108,18 @@ final class Fixtures {
     static final class CountingExtractor implements StructuredExtractor {
         private final RecruitmentExtractionProposal proposal;
         private final boolean enabled;
+        private final java.util.List<String> warnings;
         private int calls;
 
         CountingExtractor(RecruitmentExtractionProposal proposal, boolean enabled) {
+            this(proposal, enabled, java.util.List.of());
+        }
+
+        CountingExtractor(
+            RecruitmentExtractionProposal proposal, boolean enabled, java.util.List<String> warnings) {
             this.proposal = proposal;
             this.enabled = enabled;
+            this.warnings = warnings;
         }
 
         @Override public ExtractorDescriptor descriptor() {
@@ -121,7 +128,7 @@ final class Fixtures {
 
         @Override public ExtractionAttempt extract(ParsedDocument document, ExtractionContext context) {
             calls++;
-            return new ExtractionAttempt(proposal, enabled ? "{fixture:true}" : null);
+            return new ExtractionAttempt(proposal, enabled ? "{fixture:true}" : null, warnings);
         }
 
         int calls() { return calls; }
@@ -129,6 +136,7 @@ final class Fixtures {
 
     static final class MemoryExtractionPersistence implements ExtractionPersistence {
         private final Map<String, PersistedExtraction> byFingerprint = new ConcurrentHashMap<>();
+        private final Map<UUID, ReviewItem> reviews = new ConcurrentHashMap<>();
         private RuntimeException findFailure;
 
         @Override public Optional<PersistedExtraction> findByInputFingerprint(String fingerprint) {
@@ -139,6 +147,7 @@ final class Fixtures {
             PersistedExtraction value = new PersistedExtraction(
                 bundle.run(), Optional.ofNullable(bundle.review()).map(ReviewItem::id));
             byFingerprint.put(bundle.run().inputFingerprint(), value);
+            if (bundle.review() != null) reviews.put(bundle.review().id(), bundle.review());
             return value;
         }
 
@@ -154,6 +163,7 @@ final class Fixtures {
         }
 
         PersistedExtraction onlyValue() { return byFingerprint.values().iterator().next(); }
+        ReviewItem onlyReview() { return reviews.values().iterator().next(); }
         void failFindWith(RuntimeException failure) { this.findFailure = failure; }
     }
 
