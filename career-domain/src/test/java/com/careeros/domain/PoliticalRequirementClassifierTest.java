@@ -1,9 +1,8 @@
-package com.careeros.application.personal;
+package com.careeros.domain;
 
 import static com.careeros.domain.DomainEnums.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.careeros.domain.JobPosting;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;

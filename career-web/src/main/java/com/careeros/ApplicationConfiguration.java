@@ -26,7 +26,7 @@ import com.careeros.application.personal.CandidateDecisionDiffService;
 import com.careeros.application.personal.PersonalActionPorts.CurrentJobSignal;
 import com.careeros.application.personal.PersonalActionPorts.TargetJobChangeSnapshot;
 import com.careeros.application.personal.PersonalActionService;
-import com.careeros.application.personal.PoliticalRequirementClassifier;
+import com.careeros.domain.PoliticalRequirementClassifier;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;

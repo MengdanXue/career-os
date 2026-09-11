@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 import static com.careeros.domain.CandidateFacts.CandidateFactKey.*;
 
 public final class EligibilityEvaluator {
-    public static final String VERSION = "eligibility-hard-verdict-v3";
+    public static final String VERSION = "eligibility-hard-verdict-v4";
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) {
         return evaluate(candidate, CandidateFacts.confirmed(candidate), job, "unversioned", Instant.now());
@@ -74,6 +74,8 @@ public final class EligibilityEvaluator {
         results.put(RuleType.GRADUATE_YEAR, evaluateGraduation(candidate, facts, job));
         results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, facts, job, qualificationAsOf));
         results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, facts, job));
+        results.put(RuleType.POLITICAL_AFFILIATION, evaluatePoliticalAffiliation(candidate, facts, job));
+        results.put(RuleType.GENDER, evaluateGender(candidate, facts, job));
         var overall = results.values().stream().map(RuleResult::status)
             .max(EligibilityEvaluator::compareSeverity).orElse(EligibilityStatus.NEEDS_CONFIRMATION);
         return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), evaluatorVersion, assessedAt, candidate.profileVersion(), jobContentFingerprint);
@@ -197,6 +199,53 @@ public final class EligibilityEvaluator {
                     || candidateTitle.startsWith(required + ":")));
         return match ? eligible("职称满足要求") : ineligible("职称不满足要求");
     }
+
+    /**
+     * 政治面貌（产品需求 §5 EligibilityRule）。
+     *
+     * <p>只认公告里明确写死的硬性要求。"中共党员优先"、"党员或民主党派"、"不限"都不是
+     * 硬条件——把偏好当成门槛会凭空滤掉可报的岗位，PoliticalRequirementClassifier 已经
+     * 保守地划出了这条线。
+     *
+     * <p>预备党员单列：多数公告写"中共党员（含预备党员）"，但也有明确只要正式党员的。
+     * 公告原文没说清楚时不替它决定，落到待确认。
+     */
+    RuleResult evaluatePoliticalAffiliation(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
+        if (!POLITICAL_CLASSIFIER.hasHardRequirement(job)) return eligible("岗位未限定政治面貌");
+        if (!facts.isConfirmed(POLITICAL_AFFILIATION)) return needsConfirmation("候选人政治面貌尚未确认");
+        return switch (candidate.politicalAffiliation()) {
+            case CPC_MEMBER -> eligible("政治面貌满足公告的中共党员要求");
+            case CPC_PROBATIONARY -> needsConfirmation(
+                "候选人为中共预备党员，需确认公告是否接受预备党员");
+            case NON_MEMBER -> ineligible("公告限定中共党员，候选人不是党员");
+            case UNKNOWN -> needsConfirmation("候选人政治面貌信息缺失");
+        };
+    }
+
+    /**
+     * 性别（产品需求 §5 EligibilityRule）。
+     *
+     * <p>读的是公告已经公开写明的限定，用途只有一个：让候选人不必在报不了的岗位上花时间。
+     * "不限"和空值都不构成限制。公告写了限定但看不出限的是哪一性别时落到待确认，不猜。
+     */
+    RuleResult evaluateGender(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
+        String requirement = job.genderRequirement();
+        if (requirement == null || requirement.isBlank() || requirement.contains("不限")) {
+            return eligible("岗位未限定性别");
+        }
+        boolean male = requirement.contains("男");
+        boolean female = requirement.contains("女");
+        if (male == female) return needsConfirmation("岗位性别要求无法解析：" + requirement);
+        if (!facts.isConfirmed(GENDER)) return needsConfirmation("候选人性别尚未确认");
+        return switch (candidate.gender()) {
+            case MALE -> male ? eligible("性别满足公告限定") : ineligible("公告限定女性");
+            case FEMALE -> female ? eligible("性别满足公告限定") : ineligible("公告限定男性");
+            case OTHER, UNKNOWN -> needsConfirmation("候选人性别信息不足以对照公告限定");
+        };
+    }
+
+    private static final PoliticalRequirementClassifier POLITICAL_CLASSIFIER =
+        new PoliticalRequirementClassifier();
 
     private static int rank(EducationLevel level) { return level.ordinal(); }
     private static String normalize(String value) { return Stream.of(value.trim().toLowerCase(Locale.ROOT).replaceAll("[\\s·（）()_-]", "")).findFirst().orElse(""); }
