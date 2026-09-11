@@ -1,6 +1,5 @@
-package com.careeros.application.personal;
+package com.careeros.domain;
 
-import com.careeros.domain.JobPosting;
 import java.util.List;
 import java.util.Objects;
 

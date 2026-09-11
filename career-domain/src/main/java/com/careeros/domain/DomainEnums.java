@@ -13,7 +13,7 @@ public final class DomainEnums {
     public enum EducationLevel { UNKNOWN, HIGH_SCHOOL, ASSOCIATE, BACHELOR, MASTER, DOCTORATE }
     public enum Gender { FEMALE, MALE, OTHER, UNKNOWN }
     public enum PoliticalAffiliation { CPC_MEMBER, CPC_PROBATIONARY, NON_MEMBER, UNKNOWN }
-    public enum RuleType { AGE, EDUCATION, EXACT_MAJOR, GRADUATE_YEAR, EXPERIENCE, PROFESSIONAL_TITLE, OTHER }
+    public enum RuleType { AGE, EDUCATION, EXACT_MAJOR, GRADUATE_YEAR, EXPERIENCE, PROFESSIONAL_TITLE, POLITICAL_AFFILIATION, GENDER, OTHER }
     /**
      * 硬资格判定结果（产品需求 §6.1）。
      *
