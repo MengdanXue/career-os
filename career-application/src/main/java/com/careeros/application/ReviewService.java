@@ -96,7 +96,7 @@ public final class ReviewService {
             UUID.randomUUID(), command.reviewId(), command.decision(), command.expectedVersion(),
             ReviewPayload.full(details.item().proposal()),
             command.correctedPayload() == null ? null : ReviewPayload.full(command.correctedPayload()),
-            command.note(), clock.instant());
+            command.note(), command.actor(), clock.instant());
         return new ReviewResolution(details.item(), action, proposal);
     }
 

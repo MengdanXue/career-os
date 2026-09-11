@@ -18,10 +18,14 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(controllers = ExtractionController.class)
 @TestPropertySource(properties = "career-os.extraction.max-document-bytes=1024")
+@Import(SecurityConfiguration.class)
+@WithMockUser(username = "reviewer-a", roles = "REVIEWER")
 class ExtractionApiTest {
     @Autowired MockMvc mvc;
     @MockBean ExtractionService service;

@@ -37,6 +37,17 @@ management:
         include: health,info,metrics
 
 career-os:
+  # 全站默认拒绝（HTTP Basic）。这里不放任何默认账号：
+  # 未配置用户时应用会为本次进程生成一次性随机口令的 admin 并打到 WARN 日志，
+  # 不会留下可猜的默认凭证。
+  #
+  # 部署时通过环境变量注入（Spring 宽松绑定），明文口令不进配置文件也不进仓库：
+  #   CAREER_OS_SECURITY_USERS_0_USERNAME=zhang
+  #   CAREER_OS_SECURITY_USERS_0_PASSWORDHASH='$2y$12$...'
+  #   CAREER_OS_SECURITY_USERS_0_ROLES_0=REVIEWER
+  # 生成哈希：htpasswd -nbBC 12 "" '<password>' | cut -d: -f2
+  #
+  # 角色：REVIEWER 可处理复核动作；ADMIN 额外可删除资源与访问 /actuator。
   artifacts:
     root: ${CAREER_OS_ARTIFACT_ROOT:${user.dir}/var/artifacts}
   extraction:

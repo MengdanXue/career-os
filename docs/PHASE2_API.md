@@ -75,6 +75,13 @@ curl http://localhost:8080/api/v1/reviews/<review-uuid>
 
 每次动作都必须提交当前 `expectedVersion`，避免两位审核者覆盖彼此结果。版本过期返回 `409 Conflict`。
 
+复核端点需要 `REVIEWER` 或 `ADMIN` 角色（HTTP Basic）。匿名请求返回 `401`，
+角色不足返回 `403`。下面的示例省略了 `-u <user>:<password>`。
+
+每条 `review_action` 会记录 **actor**，取自认证主体，**不读请求体**——
+请求体里自称的 `actor` 会被忽略，否则任何人都能在审计记录里署别人的名字。
+V6 迁移之前的历史动作回填为 `unknown-legacy`。
+
 ### 确认原提案
 
 ```bash

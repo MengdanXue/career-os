@@ -38,6 +38,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.http.MediaType;
@@ -56,6 +57,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(properties = "career-os.acquisition.scheduling-enabled=false")
 @AutoConfigureMockMvc
+@Import(TestSecurityDefaults.class)
 @Testcontainers(disabledWithoutDocker = true)
 class CareerOsApplicationTest {
     @MockitoSpyBean

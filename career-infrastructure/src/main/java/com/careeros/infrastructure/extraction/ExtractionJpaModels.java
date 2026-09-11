@@ -96,6 +96,7 @@ final class ExtractionJpaModels {
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "corrected_payload", columnDefinition = "jsonb")
         JsonNode correctedPayload;
         String note;
+        @Column(nullable = false) String actor;
         @Column(name = "acted_at", nullable = false) Instant actedAt;
         protected ReviewActionEntity() {}
     }
