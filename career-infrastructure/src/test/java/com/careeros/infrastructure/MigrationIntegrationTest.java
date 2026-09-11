@@ -481,7 +481,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(86);
+        assertThat(result.migrationsExecuted).isEqualTo(87);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -539,6 +539,8 @@ class MigrationIntegrationTest {
               var confirmationLedgerKey = connection.prepareStatement("select string_agg(column_name, ',' order by ordinal_position) from information_schema.key_column_usage key_usage join information_schema.table_constraints table_constraint on table_constraint.constraint_name=key_usage.constraint_name where table_constraint.table_schema='public' and table_constraint.table_name='profile_confirmation_ledger' and table_constraint.constraint_type='PRIMARY KEY'");
               var confirmationLedgerStages = connection.prepareStatement("select pg_get_constraintdef(constraint_row.oid) from pg_constraint constraint_row where constraint_row.conname='ck_profile_confirmation_stage'");
               var confirmationLedgerFactKeys = connection.prepareStatement("select pg_get_constraintdef(constraint_row.oid) from pg_constraint constraint_row where constraint_row.conname='ck_profile_confirmation_fact_key'");
+              var agentSessionColumns = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='agent_session' and column_name in ('filter_tier','filter_location','filter_job_family','filter_limit','last_job_ids','pending_confirmations','profile_version')");
+              var agentSessionJsonArrays = connection.prepareStatement("select count(*) from pg_constraint where conname in ('ck_agent_session_last_job_ids','ck_agent_session_pending')");
               var transportRisk = connection.prepareStatement("select is_nullable, column_default from information_schema.columns where table_schema='public' and table_name='acquired_document' and column_name='transport_risk'");
               var acquisitionAuditTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('source_onboarding_checkpoint','artifact_import_failure')");
               var coverageAuditColumns = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='source_year_coverage' and column_name in ('listing_page_count','filtered_count','failed_count','earliest_published_on','latest_published_on','stop_reason')");
@@ -657,6 +659,9 @@ class MigrationIntegrationTest {
                     .doesNotContain("EDUCATION_RECORDS")
                     .doesNotContain("EMPLOYMENT_HISTORY");
             }
+            // 会话要记住筛选条件、岗位顺序、待确认事项和资料版本，缺一项闭环就断在那里。
+            try (var rows = agentSessionColumns.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(7); }
+            try (var rows = agentSessionJsonArrays.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
             try (var rows = transportRisk.executeQuery()) {
                 rows.next();
                 assertThat(rows.getString("is_nullable")).isEqualTo("NO");
