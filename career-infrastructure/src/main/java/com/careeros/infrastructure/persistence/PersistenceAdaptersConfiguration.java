@@ -54,7 +54,48 @@ public class PersistenceAdaptersConfiguration {
             }
         };
     }
+    @Bean com.careeros.application.personal.ProfileConfirmationPorts.ConfirmationLedger confirmationLedger(
+        ProfileConfirmationLedgerJpaRepository repository
+    ) {
+        return new com.careeros.application.personal.ProfileConfirmationPorts.ConfirmationLedger() {
+            public Optional<com.careeros.application.personal.ProfileConfirmationPorts.LedgerEntry> find(
+                UUID candidateId, String idempotencyKey
+            ) {
+                return repository.findById(new JpaModels.ProfileConfirmationLedgerId(candidateId, idempotencyKey))
+                    .map(PersistenceAdaptersConfiguration.this::toLedgerEntry);
+            }
+            public com.careeros.application.personal.ProfileConfirmationPorts.LedgerEntry save(
+                com.careeros.application.personal.ProfileConfirmationPorts.LedgerEntry entry
+            ) {
+                return toLedgerEntry(repository.save(toLedgerEntity(entry)));
+            }
+        };
+    }
     @Bean RepositoryPorts.PolicyRules policyRules(PolicyRuleJpaRepository r) { return new PolicyAdapter(r,this::toPolicyEntity,this::toPolicy); }
+    private com.careeros.application.personal.ProfileConfirmationPorts.LedgerEntry toLedgerEntry(
+        JpaModels.ProfileConfirmationLedgerEntity entity
+    ) {
+        return new com.careeros.application.personal.ProfileConfirmationPorts.LedgerEntry(
+            entity.id.candidateProfileId, entity.id.idempotencyKey,
+            CandidateFacts.CandidateFactKey.valueOf(entity.factKey), entity.declaredValue,
+            com.careeros.application.personal.ProfileConfirmationPorts.Stage.valueOf(entity.stage),
+            entity.profileVersionBefore, entity.profileVersionAfter, entity.recordedAt);
+    }
+
+    private JpaModels.ProfileConfirmationLedgerEntity toLedgerEntity(
+        com.careeros.application.personal.ProfileConfirmationPorts.LedgerEntry entry
+    ) {
+        var entity = new JpaModels.ProfileConfirmationLedgerEntity();
+        entity.id = new JpaModels.ProfileConfirmationLedgerId(entry.candidateId(), entry.idempotencyKey());
+        entity.factKey = entry.factKey().name();
+        entity.declaredValue = entry.declaredValue();
+        entity.stage = entry.stage().name();
+        entity.profileVersionBefore = entry.profileVersionBefore();
+        entity.profileVersionAfter = entry.profileVersionAfter();
+        entity.recordedAt = entry.recordedAt();
+        return entity;
+    }
+
     @Bean RepositoryPorts.EvidenceRecords evidenceRecords(EvidenceJpaRepository r) { return new EvidenceAdapter(r,this::toEvidenceEntity,this::toEvidence); }
     @Bean RepositoryPorts.EligibilityAssessments eligibilityAssessments(EligibilityAssessmentJpaRepository r) { return new AssessmentAdapter(r,this::toAssessmentEntity,this::toAssessment); }
     @Bean RepositoryPorts.Opportunities opportunities(OpportunityJpaRepository r) { return new OpportunityAdapter(r,this::toOpportunityEntity,this::toOpportunity); }

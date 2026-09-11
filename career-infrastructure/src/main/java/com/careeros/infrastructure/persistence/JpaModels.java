@@ -246,6 +246,36 @@ public final class JpaModels {
         protected CandidateFactConfirmationEntity() {}
     }
 
+    @Embeddable
+    public static class ProfileConfirmationLedgerId implements java.io.Serializable {
+        @Column(name = "candidate_profile_id", nullable = false) UUID candidateProfileId;
+        @Column(name = "idempotency_key", nullable = false, length = 120) String idempotencyKey;
+        protected ProfileConfirmationLedgerId() {}
+        ProfileConfirmationLedgerId(UUID candidateProfileId, String idempotencyKey) {
+            this.candidateProfileId = candidateProfileId;
+            this.idempotencyKey = idempotencyKey;
+        }
+        @Override public boolean equals(Object other) {
+            return other instanceof ProfileConfirmationLedgerId value
+                && Objects.equals(candidateProfileId, value.candidateProfileId)
+                && Objects.equals(idempotencyKey, value.idempotencyKey);
+        }
+        @Override public int hashCode() { return Objects.hash(candidateProfileId, idempotencyKey); }
+    }
+
+    /** 主键就是候选人加幂等钥匙：同一把钥匙写两次在库里不成立。 */
+    @Entity @Table(name = "profile_confirmation_ledger")
+    public static class ProfileConfirmationLedgerEntity {
+        @EmbeddedId ProfileConfirmationLedgerId id;
+        @Column(name = "fact_key", nullable = false, length = 64) String factKey;
+        @Column(name = "declared_value", nullable = false, length = 200) String declaredValue;
+        @Column(nullable = false, length = 16) String stage;
+        @Column(name = "profile_version_before", nullable = false, length = 80) String profileVersionBefore;
+        @Column(name = "profile_version_after", nullable = false, length = 80) String profileVersionAfter;
+        @Column(name = "recorded_at", nullable = false) Instant recordedAt;
+        protected ProfileConfirmationLedgerEntity() {}
+    }
+
     @Entity @Table(name = "policy_rule")
     public static class PolicyRuleEntity extends UuidEntity {
         @Enumerated(EnumType.STRING) @Column(name = "rule_type", nullable = false) RuleType ruleType;
