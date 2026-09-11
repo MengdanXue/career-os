@@ -10,6 +10,7 @@ import static org.hamcrest.Matchers.not;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.Import;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,6 +24,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(properties = "career-os.acquisition.scheduling-enabled=false")
 @AutoConfigureMockMvc
+@Import(TestSecurityDefaults.class)
 @Testcontainers(disabledWithoutDocker = true)
 class CareerPlanEndToEndTest {
     private static final UUID CANDIDATE_ID =
