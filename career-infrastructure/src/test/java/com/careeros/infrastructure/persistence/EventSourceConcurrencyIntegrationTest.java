@@ -28,8 +28,6 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -86,7 +84,6 @@ class EventSourceConcurrencyIntegrationTest {
     @Test
     void independentLockInstancesKeepDistributedOwnershipAcrossFailureRollback(
         @Autowired DataSourceProperties dataSourceProperties,
-        @Autowired PlatformTransactionManager transactionManager,
         @Autowired JdbcTemplate jdbc,
         @Autowired HikariDataSource dataSource
     ) throws Exception {
@@ -101,10 +98,8 @@ class EventSourceConcurrencyIntegrationTest {
         dataSource.setMaximumPoolSize(1);
         dataSource.getHikariPoolMXBean().softEvictConnections();
 
-        try (var firstLock = new PostgresFingerprintLock(
-                 dataSourceProperties, new TransactionTemplate(transactionManager));
-             var secondLock = new PostgresFingerprintLock(
-                 dataSourceProperties, new TransactionTemplate(transactionManager));
+        try (var firstLock = new PostgresFingerprintLock(dataSourceProperties);
+             var secondLock = new PostgresFingerprintLock(dataSourceProperties);
              var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var first = executor.submit(() -> firstLock.execute(
                 fingerprint,
@@ -149,7 +144,6 @@ class EventSourceConcurrencyIntegrationTest {
     @Test
     void boundedLockPoolLimitsConcurrentDistinctFingerprintSessions(
         @Autowired DataSourceProperties dataSourceProperties,
-        @Autowired PlatformTransactionManager transactionManager,
         @Autowired HikariDataSource dataSource
     ) throws Exception {
         CountDownLatch entered = new CountDownLatch(2);
@@ -159,9 +153,7 @@ class EventSourceConcurrencyIntegrationTest {
         int originalMaximum = dataSource.getMaximumPoolSize();
         dataSource.setMaximumPoolSize(3);
         dataSource.getHikariPoolMXBean().softEvictConnections();
-        try (var lock = new PostgresFingerprintLock(
-                 dataSourceProperties, new TransactionTemplate(transactionManager),
-                 2, 500, 30_000);
+        try (var lock = new PostgresFingerprintLock(dataSourceProperties, 2, 500, 30_000);
              var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var first = executor.submit(() -> boundedOperation(
                 lock, "1".repeat(64), entered, release));

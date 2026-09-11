@@ -17,26 +17,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Component
 public class PostgresFingerprintLock implements FingerprintLock, DecisionInputLock, AutoCloseable {
     private final HikariDataSource lockDataSource;
-    private final TransactionTemplate transactions;
     private final long advisoryLockTimeoutMillis;
     private final ConcurrentHashMap<String, LocalLock> localLocks = new ConcurrentHashMap<>();
 
-    public PostgresFingerprintLock(
-        DataSourceProperties dataSourceProperties,
-        TransactionTemplate transactions
-    ) {
-        this(dataSourceProperties, transactions, 8, 5_000, 30_000);
+    public PostgresFingerprintLock(DataSourceProperties dataSourceProperties) {
+        this(dataSourceProperties, 8, 5_000, 30_000);
     }
 
     @Autowired
     public PostgresFingerprintLock(
         DataSourceProperties dataSourceProperties,
-        TransactionTemplate transactions,
         @Value("${career-os.extraction.lock-pool-size:8}") int lockPoolSize,
         @Value("${career-os.extraction.lock-connection-timeout-ms:5000}") long connectionTimeoutMillis,
         @Value("${career-os.extraction.lock-wait-timeout-ms:30000}") long advisoryLockTimeoutMillis
@@ -59,7 +53,6 @@ public class PostgresFingerprintLock implements FingerprintLock, DecisionInputLo
         lockPool.setConnectionTimeout(connectionTimeoutMillis);
         lockPool.setPoolName("career-os-fingerprint-lock-" + Integer.toHexString(System.identityHashCode(this)));
         this.lockDataSource = new HikariDataSource(lockPool);
-        this.transactions = Objects.requireNonNull(transactions);
         this.advisoryLockTimeoutMillis = advisoryLockTimeoutMillis;
     }
 
@@ -103,15 +96,27 @@ public class PostgresFingerprintLock implements FingerprintLock, DecisionInputLo
         }
     }
 
+    /**
+     * 只负责串行化，不再把整个操作包进一个数据库事务。
+     *
+     * 抽取流程里包含一次模型 HTTP 往返（长文档可能几十秒）。以前它被包在
+     * transactions.execute 内，等于在等待模型期间一直占着主连接池的一条连接，
+     * 十几个并发上传就能把连接池打满。现在事务边界下沉到各个持久化步骤自身
+     * （JpaExtractionPersistence 上的 @Transactional 与 UnitOfWork），
+     * 模型调用期间不持有任何主池连接。
+     *
+     * afterRollback 仍然在 advisory lock 释放之前执行：失败诊断记录必须在锁内写入，
+     * 否则并发的相同提交会各自写一条 FAILED 记录并撞上 input_fingerprint 唯一约束。
+     */
     private <T> T executeWhileSessionLocked(
         Supplier<T> operation,
         Consumer<RuntimeException> afterRollback
     ) {
         try {
-            return transactions.execute(status -> operation.get());
+            return operation.get();
         } catch (RuntimeException failure) {
             try {
-                transactions.executeWithoutResult(status -> afterRollback.accept(failure));
+                afterRollback.accept(failure);
             } catch (RuntimeException auditFailure) {
                 failure.addSuppressed(auditFailure);
             }
