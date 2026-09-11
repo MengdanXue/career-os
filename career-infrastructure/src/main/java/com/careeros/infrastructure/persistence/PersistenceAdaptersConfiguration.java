@@ -71,7 +71,59 @@ public class PersistenceAdaptersConfiguration {
             }
         };
     }
+    @Bean com.careeros.application.AgentSessionPorts.Sessions agentSessions(AgentSessionJpaRepository repository) {
+        return new com.careeros.application.AgentSessionPorts.Sessions() {
+            public Optional<com.careeros.application.AgentSession> find(UUID sessionId) {
+                return repository.findById(sessionId).map(PersistenceAdaptersConfiguration.this::toAgentSession);
+            }
+            public com.careeros.application.AgentSession save(com.careeros.application.AgentSession session) {
+                return toAgentSession(repository.save(toAgentSessionEntity(session)));
+            }
+        };
+    }
     @Bean RepositoryPorts.PolicyRules policyRules(PolicyRuleJpaRepository r) { return new PolicyAdapter(r,this::toPolicyEntity,this::toPolicy); }
+    private com.careeros.application.AgentSession toAgentSession(JpaModels.AgentSessionEntity entity) {
+        var filters = new com.careeros.application.AgentSession.SessionFilters(
+            entity.filterTier == null ? null : OpportunityTier.valueOf(entity.filterTier),
+            entity.filterLocation,
+            entity.filterJobFamily == null ? null : JobFamily.valueOf(entity.filterJobFamily),
+            entity.filterLimit);
+        var pending = entity.pendingConfirmations.stream()
+            .map(value -> new com.careeros.application.AgentSession.PendingConfirmation(
+                CandidateFacts.CandidateFactKey.valueOf(value.get("factKey")),
+                value.get("question"),
+                UUID.fromString(value.get("jobPostingId"))))
+            .toList();
+        return new com.careeros.application.AgentSession(entity.id(), entity.candidateProfileId, filters,
+            entity.lastJobIds.stream().map(UUID::fromString).toList(), pending,
+            entity.profileVersion, entity.updatedAt);
+    }
+
+    private JpaModels.AgentSessionEntity toAgentSessionEntity(com.careeros.application.AgentSession session) {
+        var entity = new JpaModels.AgentSessionEntity();
+        entity.id = session.sessionId();
+        entity.candidateProfileId = session.candidateId();
+        entity.filterTier = session.filters().tier() == null ? null : session.filters().tier().name();
+        entity.filterLocation = session.filters().location();
+        entity.filterJobFamily = session.filters().jobFamily() == null ? null : session.filters().jobFamily().name();
+        entity.filterLimit = session.filters().limit();
+        // 顺序就是语义：序号按位置解析，所以这里必须保持列表原序。
+        entity.lastJobIds = session.lastJobIdsInOrder().stream().map(UUID::toString)
+            .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        entity.pendingConfirmations = session.pendingConfirmations().stream()
+            .map(value -> {
+                var row = new LinkedHashMap<String, String>();
+                row.put("factKey", value.factKey().name());
+                row.put("question", value.question());
+                row.put("jobPostingId", value.jobPostingId().toString());
+                return (Map<String, String>) row;
+            })
+            .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        entity.profileVersion = session.profileVersion();
+        entity.updatedAt = session.updatedAt();
+        return entity;
+    }
+
     private com.careeros.application.personal.ProfileConfirmationPorts.LedgerEntry toLedgerEntry(
         JpaModels.ProfileConfirmationLedgerEntity entity
     ) {
