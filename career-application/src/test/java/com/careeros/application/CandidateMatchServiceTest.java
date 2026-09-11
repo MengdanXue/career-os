@@ -34,7 +34,10 @@ class CandidateMatchServiceTest {
         var match = page.items().getFirst();
         assertThat(match.jobTitle()).isEqualTo("信息中心工作人员");
         assertThat(match.organizationName()).isEqualTo("杭州市西溪医院");
-        assertThat(match.eligibilityStatus()).isEqualTo(EligibilityStatus.ELIGIBLE);
+        // 这个 fixture 的公告里有应届原文（"2024年、2025年、2026年毕业生可报考"）但没有解析出
+        // 结构化条款——即解析失败。读不到不等于没限制，所以硬资格是待确认而不是可报。
+        // 本用例的重点是"即使有待确认项也仍然出现在匹配队列里"，这一点下面继续断言。
+        assertThat(match.eligibilityStatus()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
         assertThat(match.fitScore()).isPositive();
         assertThat(match.employmentIdentityConfirmed()).isFalse();
         assertThat(match.actualEmployer()).isEqualTo("杭州市西溪医院");

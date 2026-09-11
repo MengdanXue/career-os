@@ -324,9 +324,21 @@ class EligibilityEvaluatorTest {
 
     // --- 应届身份：报名时状态是声明，不是既成事实 ---
 
-    /** 公告里没有应届条款时不构成限制，不能因为"没解析到"就把岗位打成待确认。 */
-    @Test void aNoticeWithoutAGraduateClauseDoesNotRestrict() {
+    /**
+     * 公告没采集到 / 没解析出来时不能说"通过"——读不到不等于没限制。
+     * 这是本轮修掉的错判：此前 rule==null 一律判 ELIGIBLE。
+     */
+    @Test void anUnparsedGraduateClauseCannotBeReadAsUnrestricted() {
         var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.UNDECLARED), null);
+        assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.NEEDS_CONFIRMATION);
+        assertThat(result.ruleResults().get(RuleType.FRESH_GRADUATE_STATUS).explanation())
+            .contains("尚未解析");
+    }
+
+    /** 公告处理过、确实没有应届条款，这是可以下结论的事实。 */
+    @Test void aProcessedNoticeWithNoGraduateClauseDoesNotRestrict() {
+        var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.UNDECLARED),
+            processedWithoutClause());
         assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.ELIGIBLE);
     }
 
@@ -467,6 +479,79 @@ class EligibilityEvaluatorTest {
             employer, insurance);
     }
 
+    // --- 回归：把"读不到"或"偏好"当成通过/门槛 ---
+    // 这五条是同一类错判：结构化字段为空时分不清"公告没限制"和"没解析出来"。
+    // AGE 与 EXPERIENCE 一开始就按 null 落待确认；其余规则曾经一律判通过。
+
+    /** "男性优先"是招录倾向，不是报名门槛。当成门槛会凭空滤掉可报的岗位。 */
+    @Test void aGenderPreferenceIsNotAHardGate() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+            jobRequiring(null, "男性优先"));
+        assertRule(result, RuleType.GENDER, EligibilityStatus.ELIGIBLE);
+    }
+
+    /** "男女各一名"两性都提到，判断不了限哪一边，不能当成没限制。 */
+    @Test void anAmbiguousGenderClauseIsNotReadAsUnrestricted() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+            jobRequiring(null, "男女各一名"));
+        assertRule(result, RuleType.GENDER, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    /** 真正写死的限定仍要判不可报，修偏好误判不能把门槛也一起放过。 */
+    @Test void anExplicitGenderRestrictionStillBlocks() {
+        var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+            jobRequiring(null, "限男性"));
+        assertRule(result, RuleType.GENDER, EligibilityStatus.INELIGIBLE);
+    }
+
+    /** 专业栏有原文但没解析出结构化目录 = 解析失败，不是"不限专业"。 */
+    @Test void anUnparsedMajorClauseIsNotReadAsUnrestricted() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+        var result = evaluate(candidate, jobWithRawText("majorRequirementText", "计算机类相关专业，详见附件"));
+        assertRule(result, RuleType.EXACT_MAJOR, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    /** 招聘对象栏有原文但没解析出届别 = 解析失败，不是"无届别限制"。 */
+    @Test void anUnparsedGraduationCohortIsNotReadAsUnrestricted() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+        var result = evaluate(candidate, jobWithRawText("candidateScope", "2027届毕业生及社会人员"));
+        assertRule(result, RuleType.GRADUATE_YEAR, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    /** 其他条件栏有原文但没解析出职称要求 = 解析失败，不是"无职称要求"。 */
+    @Test void anUnparsedProfessionalTitleClauseIsNotReadAsUnrestricted() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+        var result = evaluate(candidate, jobWithRawText("otherRequirements", "须具备中级及以上职称"));
+        assertRule(result, RuleType.PROFESSIONAL_TITLE, EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    /** 原文栏本身为空时才是真的没限制，修正不能把所有岗位都推成待确认。 */
+    @Test void anAbsentRawClauseStillMeansUnrestricted() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+        var result = evaluate(candidate, jobWithRawText("majorRequirementText", null));
+        assertRule(result, RuleType.EXACT_MAJOR, EligibilityStatus.ELIGIBLE);
+        assertRule(result, RuleType.GRADUATE_YEAR, EligibilityStatus.ELIGIBLE);
+        assertRule(result, RuleType.PROFESSIONAL_TITLE, EligibilityStatus.ELIGIBLE);
+    }
+
+    /** 按字段名放一段原文，其余原文栏留空，用来隔离单条规则的解析失败判定。 */
+    private JobPosting jobWithRawText(String field, String rawText) {
+        return new JobPosting(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "TEST", "测试岗位",
+            JobFamily.SOFTWARE, EmploymentType.ESTABLISHMENT, "杭州", 1, EducationLevel.MASTER,
+            Set.of(), Set.of(), 40, LocalDate.of(2027, 1, 1), 0, Set.of(), "",
+            "https://example.test/official", List.of(),
+            null, null, null, null, null,
+            "majorRequirementText".equals(field) ? rawText : null,
+            null, null,
+            "candidateScope".equals(field) ? rawText : null,
+            "otherRequirements".equals(field) ? rawText : null,
+            null, null, null, null);
+    }
+
     private CandidateProfile candidateWith(DomainEnums.PoliticalAffiliation affiliation, Gender gender) {
         return new CandidateProfile(UUID.randomUUID(), "test", PartialDate.month(1992, 12),
             EducationLevel.MASTER, Set.of("计算机科学与技术"), 2027, 0, Set.of(), List.of("杭州"),
@@ -490,7 +575,22 @@ class EligibilityEvaluatorTest {
             List.of(records));
     }
 
-    private EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) { return evaluator.evaluate(candidate, job, Instant.parse("2026-08-14T00:00:00Z")); }
+    /**
+     * 默认按"公告已处理且没有应届条款"评估。这些用例测的是别的规则，不显式声明的话
+     * 整体结论会被"应届条款未解析"盖过——那正是本轮修掉的错判，不该让它掩盖其它断言。
+     */
+    private EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) {
+        return evaluator.evaluate(candidate, CandidateFacts.confirmed(candidate), job, "verified",
+            LocalDate.of(2027, 1, 1), Instant.parse("2026-08-14T00:00:00Z"),
+            EligibilityEvaluator.VERSION, Set.of(), processedWithoutClause(), Map.of());
+    }
+
+    private static GraduateEligibilityRule processedWithoutClause() {
+        return new GraduateEligibilityRule(2027, Set.of(), Set.of(), false,
+            GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null,
+            GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null,
+            false, false, "", GraduateEligibilityRule.EvidenceState.NOT_REQUIRED);
+    }
     private void assertRule(EligibilityAssessment assessment, RuleType rule, EligibilityStatus expected) { assertThat(assessment.ruleResults().get(rule).status()).isEqualTo(expected); }
 
     private CandidateProfile candidate(PartialDate birth, EducationLevel education, Set<String> majors, Integer graduationYear, Integer experience) {
