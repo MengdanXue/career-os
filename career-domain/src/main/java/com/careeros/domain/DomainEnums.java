@@ -45,6 +45,11 @@ public final class DomainEnums {
         EMPLOYMENT_SECURITY, FUNDING_STABILITY, ORGANIZATION_STABILITY, POLICY_STABILITY,
         BUSINESS_VOLATILITY, LAYOFF_RISK, CONTRACT_RISK
     }
+    /**
+     * 跨年度再现信号。产品需求 §11 把“没有历史样本支撑的精确上岸概率”列为非目标，
+     * 因此这里只给可观测的模式，不给概率数字。
+     */
+    public enum RecurrenceSignal { RECURRING_ANNUAL, INTERMITTENT, SINGLE_OCCURRENCE, INSUFFICIENT_HISTORY }
     public enum OpportunityTier { T1, T2, T3, EXCLUDED }
     public enum RecommendationStatus { RECOMMENDED, REVIEW, NOT_RECOMMENDED, EXCLUDED }
 }
