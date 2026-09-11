@@ -13,7 +13,16 @@ public final class DomainEnums {
     public enum EducationLevel { UNKNOWN, HIGH_SCHOOL, ASSOCIATE, BACHELOR, MASTER, DOCTORATE }
     public enum Gender { FEMALE, MALE, OTHER, UNKNOWN }
     public enum PoliticalAffiliation { CPC_MEMBER, CPC_PROBATIONARY, NON_MEMBER, UNKNOWN }
-    public enum RuleType { AGE, EDUCATION, EXACT_MAJOR, GRADUATE_YEAR, EXPERIENCE, PROFESSIONAL_TITLE, POLITICAL_AFFILIATION, GENDER, OTHER }
+
+    /**
+     * 候选人对"报名时"某项状态的声明（产品需求 §2.2）。
+     *
+     * <p>社保、劳动合同、档案和"未落实工作单位"都是**报名当天**的状态，而报名还没发生。
+     * 今天无法"确认"一个未来时点的事实，只能声明一个打算，因此它不是普通的已确认事实：
+     * 声明满足只能得出条件式结论，声明不满足才是明确不可报。
+     */
+    public enum ApplicationTimeStatus { DECLARED_MET, DECLARED_NOT_MET, UNDECLARED }
+    public enum RuleType { AGE, EDUCATION, EXACT_MAJOR, GRADUATE_YEAR, EXPERIENCE, PROFESSIONAL_TITLE, POLITICAL_AFFILIATION, GENDER, FRESH_GRADUATE_STATUS, OTHER }
     /**
      * 硬资格判定结果（产品需求 §6.1）。
      *

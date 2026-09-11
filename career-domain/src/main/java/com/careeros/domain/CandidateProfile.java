@@ -5,6 +5,7 @@ import com.careeros.domain.DomainEnums.EmploymentType;
 import com.careeros.domain.DomainEnums.Gender;
 import com.careeros.domain.DomainEnums.JobFamily;
 import com.careeros.domain.DomainEnums.OrganizationType;
+import com.careeros.domain.DomainEnums.ApplicationTimeStatus;
 import com.careeros.domain.DomainEnums.PoliticalAffiliation;
 import java.util.List;
 import java.util.Collection;
@@ -12,7 +13,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
-public record CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion, Set<String> skills, Set<String> researchKeywords, Set<JobFamily> targetJobFamilies, Set<OrganizationType> preferredOrganizationTypes, List<EducationRecord> educationRecords, Gender gender, PoliticalAffiliation politicalAffiliation, List<CandidateEmploymentRecord> employmentRecords) {
+public record CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion, Set<String> skills, Set<String> researchKeywords, Set<JobFamily> targetJobFamilies, Set<OrganizationType> preferredOrganizationTypes, List<EducationRecord> educationRecords, Gender gender, PoliticalAffiliation politicalAffiliation, List<CandidateEmploymentRecord> employmentRecords, ApplicationTimeStatus employerSettlementAtApplication, ApplicationTimeStatus socialInsuranceAtApplication) {
     public CandidateProfile {
         Objects.requireNonNull(id); require(displayName, "displayName"); Objects.requireNonNull(birthDate); Objects.requireNonNull(highestEducation);
         if (experienceYears != null && experienceYears < 0) throw new IllegalArgumentException("experienceYears is invalid");
@@ -27,6 +28,10 @@ public record CandidateProfile(UUID id, String displayName, PartialDate birthDat
         gender = gender == null ? Gender.UNKNOWN : gender;
         politicalAffiliation = politicalAffiliation == null ? PoliticalAffiliation.UNKNOWN : politicalAffiliation;
         employmentRecords = employmentRecords == null ? List.of() : List.copyOf(employmentRecords);
+        employerSettlementAtApplication = employerSettlementAtApplication == null
+            ? ApplicationTimeStatus.UNDECLARED : employerSettlementAtApplication;
+        socialInsuranceAtApplication = socialInsuranceAtApplication == null
+            ? ApplicationTimeStatus.UNDECLARED : socialInsuranceAtApplication;
         requireTokens(majors, "majors");
         requireTokens(professionalTitles, "professionalTitles");
         requireTokens(preferredLocations, "preferredLocations");
@@ -36,18 +41,25 @@ public record CandidateProfile(UUID id, String displayName, PartialDate birthDat
     public CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion) {
         this(id, displayName, birthDate, highestEducation, majors, graduationYear, experienceYears,
             professionalTitles, preferredLocations, acceptedEmploymentTypes, profileVersion,
-            Set.of(), Set.of(), Set.of(), Set.of(), List.of(), Gender.UNKNOWN, PoliticalAffiliation.UNKNOWN, List.of());
+            Set.of(), Set.of(), Set.of(), Set.of(), List.of(), Gender.UNKNOWN, PoliticalAffiliation.UNKNOWN, List.of(), ApplicationTimeStatus.UNDECLARED, ApplicationTimeStatus.UNDECLARED);
     }
     public CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion, Set<String> skills, Set<String> researchKeywords, Set<JobFamily> targetJobFamilies, Set<OrganizationType> preferredOrganizationTypes) {
         this(id, displayName, birthDate, highestEducation, majors, graduationYear, experienceYears,
             professionalTitles, preferredLocations, acceptedEmploymentTypes, profileVersion,
-            skills, researchKeywords, targetJobFamilies, preferredOrganizationTypes, List.of(), Gender.UNKNOWN, PoliticalAffiliation.UNKNOWN, List.of());
+            skills, researchKeywords, targetJobFamilies, preferredOrganizationTypes, List.of(), Gender.UNKNOWN, PoliticalAffiliation.UNKNOWN, List.of(), ApplicationTimeStatus.UNDECLARED, ApplicationTimeStatus.UNDECLARED);
     }
     public CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion, Set<String> skills, Set<String> researchKeywords, Set<JobFamily> targetJobFamilies, Set<OrganizationType> preferredOrganizationTypes, List<EducationRecord> educationRecords) {
         this(id, displayName, birthDate, highestEducation, majors, graduationYear, experienceYears,
             professionalTitles, preferredLocations, acceptedEmploymentTypes, profileVersion,
             skills, researchKeywords, targetJobFamilies, preferredOrganizationTypes, educationRecords,
-            Gender.UNKNOWN, PoliticalAffiliation.UNKNOWN, List.of());
+            Gender.UNKNOWN, PoliticalAffiliation.UNKNOWN, List.of(), ApplicationTimeStatus.UNDECLARED, ApplicationTimeStatus.UNDECLARED);
+    }
+    public CandidateProfile(UUID id, String displayName, PartialDate birthDate, EducationLevel highestEducation, Set<String> majors, Integer graduationYear, Integer experienceYears, Set<String> professionalTitles, List<String> preferredLocations, Set<EmploymentType> acceptedEmploymentTypes, String profileVersion, Set<String> skills, Set<String> researchKeywords, Set<JobFamily> targetJobFamilies, Set<OrganizationType> preferredOrganizationTypes, List<EducationRecord> educationRecords, Gender gender, PoliticalAffiliation politicalAffiliation, List<CandidateEmploymentRecord> employmentRecords) {
+        this(id, displayName, birthDate, highestEducation, majors, graduationYear, experienceYears,
+            professionalTitles, preferredLocations, acceptedEmploymentTypes, profileVersion,
+            skills, researchKeywords, targetJobFamilies, preferredOrganizationTypes, educationRecords,
+            gender, politicalAffiliation, employmentRecords,
+            ApplicationTimeStatus.UNDECLARED, ApplicationTimeStatus.UNDECLARED);
     }
     private static void require(String value, String field) { if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required"); }
     private static void requireTokens(Collection<String> values, String field) {
