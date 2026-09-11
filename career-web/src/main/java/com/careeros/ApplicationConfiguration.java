@@ -7,6 +7,8 @@ import com.careeros.application.ExtractionPorts.*;
 import com.careeros.domain.EligibilityEvaluator;
 import com.careeros.domain.FitEvaluator;
 import com.careeros.domain.StabilityEvaluator;
+import com.careeros.domain.JobLineageBuilder;
+import com.careeros.domain.OpportunityForecaster;
 import com.careeros.domain.ReviewPolicy;
 import com.careeros.infrastructure.artifact.FileSystemArtifactStore;
 import com.careeros.infrastructure.acquisition.*;
@@ -45,6 +47,9 @@ class ApplicationConfiguration {
     @Bean EligibilityEvaluator eligibilityEvaluator() { return new EligibilityEvaluator(); }
     @Bean FitEvaluator fitEvaluator() { return new FitEvaluator(); }
     @Bean StabilityEvaluator stabilityEvaluator() { return new StabilityEvaluator(); }
+    @Bean JobLineageBuilder jobLineageBuilder() { return new JobLineageBuilder(); }
+    @Bean OpportunityForecaster opportunityForecaster() { return new OpportunityForecaster(); }
+    @Bean OpportunityHistoryService opportunityHistoryService(RepositoryPorts.JobPostings jobs, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.Organizations organizations, JobLineageBuilder lineageBuilder, OpportunityForecaster forecaster) { return new OpportunityHistoryService(jobs, events, organizations, lineageBuilder, forecaster); }
     @Bean CandidateProfileService candidateProfileService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.CandidateFactConfirmations facts, Clock clock) { return new CandidateProfileService(candidates, facts, clock); }
     @Bean PoliticalRequirementClassifier politicalRequirementClassifier() { return new PoliticalRequirementClassifier(); }
     @Bean CareerPlanService careerPlanService(CareerPlanQuery query, Clock clock) { return new CareerPlanService(query, clock); }
