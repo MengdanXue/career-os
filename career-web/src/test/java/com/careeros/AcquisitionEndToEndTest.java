@@ -46,7 +46,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(properties = "career-os.acquisition.scheduling-enabled=false")
 @AutoConfigureMockMvc
-@Import(AcquisitionEndToEndTest.AcquisitionTestConfiguration.class)
+@Import({AcquisitionEndToEndTest.AcquisitionTestConfiguration.class, TestSecurityDefaults.class})
 @Testcontainers(disabledWithoutDocker = true)
 class AcquisitionEndToEndTest {
     private static final URI DETAIL = URI.create("https://rlsbt.zj.gov.cn/art/2026/8/15/art_1229743683_700001.html");

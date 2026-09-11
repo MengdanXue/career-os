@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import com.careeros.application.RepositoryPorts;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.Import;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,6 +25,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest(properties = "career-os.acquisition.scheduling-enabled=false")
 @AutoConfigureMockMvc
+@Import(TestSecurityDefaults.class)
 @Testcontainers(disabledWithoutDocker = true)
 class CandidateProfileTransactionIntegrationTest {
     private static final UUID CANDIDATE_ID =
