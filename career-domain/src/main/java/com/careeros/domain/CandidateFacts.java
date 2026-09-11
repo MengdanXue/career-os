@@ -30,7 +30,9 @@ public final class CandidateFacts {
         EDUCATION_RECORDS,
         GENDER,
         POLITICAL_AFFILIATION,
-        EMPLOYMENT_HISTORY
+        EMPLOYMENT_HISTORY,
+        EMPLOYER_SETTLEMENT_AT_APPLICATION,
+        SOCIAL_INSURANCE_AT_APPLICATION
     }
 
     public enum CandidateFactStatus { UNCONFIRMED, CONFIRMED, UNKNOWN }
@@ -141,6 +143,8 @@ public final class CandidateFacts {
             case GENDER -> candidate.gender().name();
             case POLITICAL_AFFILIATION -> candidate.politicalAffiliation().name();
             case EMPLOYMENT_HISTORY -> canonicalEmployment(candidate.employmentRecords());
+            case EMPLOYER_SETTLEMENT_AT_APPLICATION -> candidate.employerSettlementAtApplication().name();
+            case SOCIAL_INSURANCE_AT_APPLICATION -> candidate.socialInsuranceAtApplication().name();
         };
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -168,6 +172,8 @@ public final class CandidateFacts {
             case GENDER -> candidate.gender() != DomainEnums.Gender.UNKNOWN;
             case POLITICAL_AFFILIATION -> candidate.politicalAffiliation() != DomainEnums.PoliticalAffiliation.UNKNOWN;
             case EMPLOYMENT_HISTORY -> !candidate.employmentRecords().isEmpty();
+            case EMPLOYER_SETTLEMENT_AT_APPLICATION -> candidate.employerSettlementAtApplication() != DomainEnums.ApplicationTimeStatus.UNDECLARED;
+            case SOCIAL_INSURANCE_AT_APPLICATION -> candidate.socialInsuranceAtApplication() != DomainEnums.ApplicationTimeStatus.UNDECLARED;
         };
     }
 

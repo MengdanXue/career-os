@@ -21,12 +21,17 @@ export type CandidateEmploymentRecord = {
   evidenceTypes: string[]
 }
 
+/** 报名时状态是声明不是事实：报名还没发生，只能声明打算。 */
+export type ApplicationTimeStatus = 'DECLARED_MET' | 'DECLARED_NOT_MET' | 'UNDECLARED'
+
 export type CandidateProfile = {
   id: string
   displayName: string
   birthDate: { year: number; month: number; day: number | null }
   gender: Gender
   politicalAffiliation: PoliticalAffiliation
+  employerSettlementAtApplication: ApplicationTimeStatus
+  socialInsuranceAtApplication: ApplicationTimeStatus
   highestEducation: string
   majors: string[]
   graduationYear: number | null
@@ -48,6 +53,7 @@ export const candidateFactKeys = [
   'PROFESSIONAL_TITLES', 'PREFERRED_LOCATIONS', 'ACCEPTED_EMPLOYMENT_TYPES', 'SKILLS',
   'RESEARCH_KEYWORDS', 'TARGET_JOB_FAMILIES', 'PREFERRED_ORGANIZATION_TYPES',
   'EDUCATION_RECORDS', 'GENDER', 'POLITICAL_AFFILIATION', 'EMPLOYMENT_HISTORY',
+  'EMPLOYER_SETTLEMENT_AT_APPLICATION', 'SOCIAL_INSURANCE_AT_APPLICATION',
 ] as const
 
 export type CandidateFactKey = typeof candidateFactKeys[number]
@@ -69,6 +75,8 @@ export type CandidateProfileUpdate = {
   birthDay: number | null
   gender: Gender
   politicalAffiliation: PoliticalAffiliation
+  employerSettlementAtApplication: ApplicationTimeStatus
+  socialInsuranceAtApplication: ApplicationTimeStatus
   highestEducation: string
   majors: string[]
   graduationYear: number | null
