@@ -1,4 +1,4 @@
-export type EligibilityStatus = 'ELIGIBLE' | 'LIKELY_ELIGIBLE' | 'UNCERTAIN' | 'LIKELY_INELIGIBLE' | 'INELIGIBLE'
+export type EligibilityStatus = 'ELIGIBLE' | 'CONDITIONAL' | 'NEEDS_CONFIRMATION' | 'CONFLICTING_EVIDENCE' | 'INELIGIBLE'
 
 export interface DecisionChangeJob {
   jobId: string

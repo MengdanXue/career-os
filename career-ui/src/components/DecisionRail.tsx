@@ -9,11 +9,10 @@ type Props = {
 
 const eligibilityLabels: Record<EligibilityStatus, string> = {
   ELIGIBLE: '资格通过',
-  LIKELY_ELIGIBLE: '资格大概率通过',
-  UNCERTAIN: '资格待核实',
-  LIKELY_INELIGIBLE: '资格大概率不通过',
-  INELIGIBLE: '资格不通过',
   CONDITIONAL: '资格有条件通过',
+  NEEDS_CONFIRMATION: '资格待核实',
+  CONFLICTING_EVIDENCE: '官方证据冲突',
+  INELIGIBLE: '资格不通过',
   UNKNOWN: '资格待核实',
 }
 

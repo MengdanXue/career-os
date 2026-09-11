@@ -6,7 +6,7 @@ export type ProblemDetail = {
   code?: string
 }
 
-export type EligibilityStatus = 'ELIGIBLE' | 'LIKELY_ELIGIBLE' | 'UNCERTAIN' | 'LIKELY_INELIGIBLE' | 'INELIGIBLE' | 'UNKNOWN' | 'CONDITIONAL'
+export type EligibilityStatus = 'ELIGIBLE' | 'CONDITIONAL' | 'NEEDS_CONFIRMATION' | 'CONFLICTING_EVIDENCE' | 'INELIGIBLE' | 'UNKNOWN'
 export type OpportunityTier = 'T1' | 'T2' | 'T3' | 'REVIEW' | 'EXCLUDED'
 
 export type PageResponse<T> = {

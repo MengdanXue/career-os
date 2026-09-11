@@ -1,6 +1,8 @@
 package com.careeros.domain;
 
 import com.careeros.domain.DomainEnums.EducationLevel;
+import com.careeros.domain.EducationRecord.CompletionStatus;
+import com.careeros.domain.EducationRecord.CredentialVerificationStatus;
 import com.careeros.domain.DomainEnums.EligibilityStatus;
 import com.careeros.domain.DomainEnums.RuleType;
 import com.careeros.domain.EligibilityAssessment.RuleResult;
@@ -16,7 +18,7 @@ import java.util.stream.Stream;
 import static com.careeros.domain.CandidateFacts.CandidateFactKey.*;
 
 public final class EligibilityEvaluator {
-    public static final String VERSION = "eligibility-evidence-v2";
+    public static final String VERSION = "eligibility-hard-verdict-v3";
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) {
         return evaluate(candidate, CandidateFacts.confirmed(candidate), job, "unversioned", Instant.now());
@@ -48,39 +50,112 @@ public final class EligibilityEvaluator {
     public EligibilityAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
                                           String jobContentFingerprint, LocalDate qualificationAsOf,
                                           Instant assessedAt, String evaluatorVersion) {
+        return evaluate(candidate, facts, job, jobContentFingerprint, qualificationAsOf, assessedAt,
+            evaluatorVersion, Set.of());
+    }
+
+    /**
+     * @param conflictingOfficialFields 官方来源互相矛盾的字段名（与 OfficialJobAdmissionService
+     *        使用的字段名一致）。依赖这些字段的规则不产出判定——手里的岗位要求本身就不可信，
+     *        此时说“满足”或“不满足”都是在替官方做决定。
+     */
+    public EligibilityAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
+                                          String jobContentFingerprint, LocalDate qualificationAsOf,
+                                          Instant assessedAt, String evaluatorVersion,
+                                          Set<String> conflictingOfficialFields) {
+        Set<String> conflicts = conflictingOfficialFields == null ? Set.of() : conflictingOfficialFields;
         var results = new EnumMap<RuleType, RuleResult>(RuleType.class);
-        results.put(RuleType.AGE, evaluateAge(candidate, facts, job));
-        results.put(RuleType.EDUCATION, evaluateEducation(candidate, facts, job));
-        results.put(RuleType.EXACT_MAJOR, evaluateMajor(candidate, facts, job));
+        results.put(RuleType.AGE, orConflict(conflicts, "ageRequirementText",
+            () -> evaluateAge(candidate, facts, job)));
+        results.put(RuleType.EDUCATION, orConflict(conflicts, "educationRequirementText",
+            () -> evaluateEducation(candidate, facts, job)));
+        results.put(RuleType.EXACT_MAJOR, orConflict(conflicts, "majorRequirementText",
+            () -> evaluateMajor(candidate, facts, job)));
         results.put(RuleType.GRADUATE_YEAR, evaluateGraduation(candidate, facts, job));
         results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, facts, job, qualificationAsOf));
         results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, facts, job));
-        var overall = results.values().stream().map(RuleResult::status).max(EligibilityEvaluator::compareSeverity).orElse(EligibilityStatus.UNCERTAIN);
+        var overall = results.values().stream().map(RuleResult::status)
+            .max(EligibilityEvaluator::compareSeverity).orElse(EligibilityStatus.NEEDS_CONFIRMATION);
         return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), evaluatorVersion, assessedAt, candidate.profileVersion(), jobContentFingerprint);
     }
 
+    private static RuleResult orConflict(
+        Set<String> conflicts, String officialField, java.util.function.Supplier<RuleResult> rule
+    ) {
+        return conflicts.contains(officialField)
+            ? conflicting("官方来源在「" + officialField + "」上互相矛盾，该条无法判定")
+            : rule.get();
+    }
+
     RuleResult evaluateAge(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
-        if (job.maximumAge() == null) return uncertain("岗位年龄要求缺失或尚未明确，无法确认是否符合");
-        if (job.ageReferenceDate() == null) return uncertain("岗位有年龄上限，但缺少年龄计算基准日");
-        if (!facts.isConfirmed(BIRTH_DATE)) return uncertain("候选人出生日期尚未确认");
+        if (job.maximumAge() == null) return needsConfirmation("岗位年龄要求缺失或尚未明确，无法确认是否符合");
+        if (job.ageReferenceDate() == null) return needsConfirmation("岗位有年龄上限，但缺少年龄计算基准日");
+        if (!facts.isConfirmed(BIRTH_DATE)) return needsConfirmation("候选人出生日期尚未确认");
         int youngest = Period.between(candidate.birthDate().latest(), job.ageReferenceDate()).getYears();
         int oldest = Period.between(candidate.birthDate().earliest(), job.ageReferenceDate()).getYears();
         if (oldest <= job.maximumAge()) return eligible("基准日年龄不超过 " + job.maximumAge() + " 周岁");
         if (youngest > job.maximumAge()) return ineligible("基准日年龄超过 " + job.maximumAge() + " 周岁");
-        return uncertain("出生日期仅精确到月份，处于年龄边界，无法唯一判定");
+        return needsConfirmation("出生日期仅精确到月份，处于年龄边界，无法唯一判定");
     }
 
     RuleResult evaluateEducation(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
-        if (job.minimumEducation() == EducationLevel.UNKNOWN) return uncertain("岗位最低学历信息缺失");
-        if (!facts.isConfirmed(HIGHEST_EDUCATION)) return uncertain("候选人学历尚未确认");
-        if (candidate.highestEducation() == EducationLevel.UNKNOWN) return uncertain("候选人学历信息缺失");
-        return rank(candidate.highestEducation()) >= rank(job.minimumEducation()) ? eligible("学历满足最低要求") : ineligible("学历低于 " + job.minimumEducation());
+        if (job.minimumEducation() == EducationLevel.UNKNOWN) return needsConfirmation("岗位最低学历信息缺失");
+        if (!facts.isConfirmed(HIGHEST_EDUCATION)) return needsConfirmation("候选人学历尚未确认");
+        if (candidate.highestEducation() == EducationLevel.UNKNOWN) return needsConfirmation("候选人学历信息缺失");
+        if (rank(candidate.highestEducation()) < rank(job.minimumEducation())) {
+            return ineligible("学历低于 " + job.minimumEducation());
+        }
+        return settledEducation(candidate, job);
+    }
+
+    /**
+     * 学历达标之后，还要看支撑它的那段学历本身是否已经落定。
+     *
+     * <p>产品需求 §6.1 的 CONDITIONAL 就是为这种情况准备的：候选人计划以境外硕士身份报考，
+     * 学位尚未取得或留服认证尚未完成——结论不是“可报”，也不是“待确认”，而是“取决于某件
+     * 尚未完成的事”。只要有一段已毕业且认证已完成（或无需认证）的学历能单独满足要求，
+     * 就不存在这个条件。
+     *
+     * <p>没有逐段学历记录时退回按 highestEducation 判定：旧资料只有一个汇总字段，
+     * 不能因为没填明细就把已经满足的学历降级成条件式结论。
+     */
+    private static RuleResult settledEducation(CandidateProfile candidate, JobPosting job) {
+        var qualifying = candidate.educationRecords().stream()
+            .filter(record -> rank(record.educationLevel()) >= rank(job.minimumEducation()))
+            .toList();
+        if (qualifying.isEmpty()) return eligible("学历满足最低要求");
+        if (qualifying.stream().anyMatch(EligibilityEvaluator::settled)) {
+            return eligible("学历满足最低要求，且已有一段已毕业并完成认证的学历可单独支撑");
+        }
+        var pending = qualifying.getFirst();
+        if (pending.completionStatus() == CompletionStatus.EXPECTED) {
+            return conditional("学历达标取决于" + expectedGraduation(pending) + "按期毕业");
+        }
+        return switch (pending.credentialVerificationStatus()) {
+            case PLANNED, IN_PROGRESS -> conditional("学历达标取决于境外学历认证完成");
+            case UNKNOWN -> needsConfirmation("境外学历是否需要认证、认证是否完成尚未确认");
+            case VERIFIED, NOT_REQUIRED -> eligible("学历满足最低要求");
+        };
+    }
+
+    /** 已毕业，且认证已完成或本来就不需要认证。 */
+    private static boolean settled(EducationRecord record) {
+        return record.completionStatus() == CompletionStatus.COMPLETED
+            && (record.credentialVerificationStatus() == CredentialVerificationStatus.VERIFIED
+                || record.credentialVerificationStatus() == CredentialVerificationStatus.NOT_REQUIRED);
+    }
+
+    private static String expectedGraduation(EducationRecord record) {
+        if (record.graduationYear() == null) return "该段学历";
+        return record.graduationMonth() == null
+            ? record.graduationYear() + " 年"
+            : record.graduationYear() + " 年 " + record.graduationMonth() + " 月";
     }
 
     RuleResult evaluateMajor(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
         if (job.exactMajors().isEmpty()) return eligible("岗位未限定精确专业目录");
-        if (!facts.isConfirmed(MAJORS)) return uncertain("候选人专业尚未确认");
-        if (candidate.majors().isEmpty()) return uncertain("候选人专业信息缺失");
+        if (!facts.isConfirmed(MAJORS)) return needsConfirmation("候选人专业尚未确认");
+        if (candidate.majors().isEmpty()) return needsConfirmation("候选人专业信息缺失");
         Set<String> allowed = job.exactMajors().stream().map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
         Set<String> candidateMajors = candidate.majors().stream()
             .map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
@@ -90,22 +165,22 @@ public final class EligibilityEvaluator {
                     .anyMatch(major -> restricted.endsWith("限" + major)));
         if (match) return eligible("专业名称与允许目录精确匹配");
         boolean taxonomyNeedsReview = job.exactMajors().stream().anyMatch(value -> value.contains("门类") || value.endsWith("类") || value.contains("相关专业"));
-        return taxonomyNeedsReview ? uncertain("岗位使用专业门类或宽泛目录，需要权威专业分类表判定") : ineligible("专业名称不在岗位允许目录中");
+        return taxonomyNeedsReview ? needsConfirmation("岗位使用专业门类或宽泛目录，需要权威专业分类表判定") : ineligible("专业名称不在岗位允许目录中");
     }
 
     RuleResult evaluateGraduation(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
         if (job.acceptedGraduationYears().isEmpty()) return eligible("岗位无毕业届别限制");
-        if (!facts.isConfirmed(GRADUATION_YEAR)) return uncertain("候选人毕业年份尚未确认");
-        if (candidate.graduationYear() == null) return uncertain("候选人毕业年份缺失");
+        if (!facts.isConfirmed(GRADUATION_YEAR)) return needsConfirmation("候选人毕业年份尚未确认");
+        if (candidate.graduationYear() == null) return needsConfirmation("候选人毕业年份缺失");
         return job.acceptedGraduationYears().contains(candidate.graduationYear()) ? eligible("毕业年份满足应届范围") : ineligible("毕业年份不在允许范围内");
     }
 
     RuleResult evaluateExperience(CandidateProfile candidate, CandidateFacts facts, JobPosting job, LocalDate asOf) {
-        if (job.minimumExperienceYears() == null) return uncertain("岗位工作年限要求缺失或尚未明确，无法确认是否符合");
+        if (job.minimumExperienceYears() == null) return needsConfirmation("岗位工作年限要求缺失或尚未明确，无法确认是否符合");
         if (job.minimumExperienceYears() == 0) return eligible("岗位无最低工作年限要求");
-        if (asOf == null) return uncertain("岗位缺少官方资格计算截止日，无法核定工作年限");
+        if (asOf == null) return needsConfirmation("岗位缺少官方资格计算截止日，无法核定工作年限");
         var verifiedYears = CandidateEmploymentExperience.completedYears(candidate, facts, asOf);
-        if (verifiedYears.isEmpty()) return uncertain("缺少已确认、逐段核验的全职工作经历");
+        if (verifiedYears.isEmpty()) return needsConfirmation("缺少已确认、逐段核验的全职工作经历");
         return verifiedYears.getAsInt() >= job.minimumExperienceYears()
             ? eligible("已核验全职工作年限满足要求")
             : ineligible("已核验全职工作年限不足 " + job.minimumExperienceYears() + " 年");
@@ -113,7 +188,7 @@ public final class EligibilityEvaluator {
 
     RuleResult evaluateProfessionalTitle(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
         if (job.requiredProfessionalTitles().isEmpty()) return eligible("岗位无职称要求");
-        if (!facts.isConfirmed(PROFESSIONAL_TITLES)) return uncertain("候选人职称情况尚未确认");
+        if (!facts.isConfirmed(PROFESSIONAL_TITLES)) return needsConfirmation("候选人职称情况尚未确认");
         if (candidate.professionalTitles().isEmpty()) return ineligible("缺少岗位要求的职称");
         Set<String> candidateTitles = candidate.professionalTitles().stream().map(EligibilityEvaluator::normalize).collect(Collectors.toSet());
         boolean match = job.requiredProfessionalTitles().stream().map(EligibilityEvaluator::normalize)
@@ -126,8 +201,28 @@ public final class EligibilityEvaluator {
     private static int rank(EducationLevel level) { return level.ordinal(); }
     private static String normalize(String value) { return Stream.of(value.trim().toLowerCase(Locale.ROOT).replaceAll("[\\s·（）()_-]", "")).findFirst().orElse(""); }
     private static int compareSeverity(EligibilityStatus left, EligibilityStatus right) { return Integer.compare(severity(left), severity(right)); }
-    private static int severity(EligibilityStatus status) { return switch (status) { case ELIGIBLE -> 0; case LIKELY_ELIGIBLE -> 1; case UNCERTAIN -> 2; case LIKELY_INELIGIBLE -> 3; case INELIGIBLE -> 4; }; }
+
+    /**
+     * 逐条结果取最严重的一条作为整体结论。
+     *
+     * <p>CONDITIONAL 排在 NEEDS_CONFIRMATION 之前：前者已经知道缺的是什么、什么时候能补上，
+     * 后者连缺什么都还没确认。CONFLICTING_EVIDENCE 排在 NEEDS_CONFIRMATION 之后：缺证据只需要
+     * 去补，证据互相矛盾则要先核对来源，是更重的问题。INELIGIBLE 永远最高——一项硬条件明确
+     * 不满足，其余条目再不确定也改变不了结果。
+     */
+    private static int severity(EligibilityStatus status) {
+        return switch (status) {
+            case ELIGIBLE -> 0;
+            case CONDITIONAL -> 1;
+            case NEEDS_CONFIRMATION -> 2;
+            case CONFLICTING_EVIDENCE -> 3;
+            case INELIGIBLE -> 4;
+        };
+    }
+
     private static RuleResult eligible(String message) { return new RuleResult(EligibilityStatus.ELIGIBLE, message); }
-    private static RuleResult uncertain(String message) { return new RuleResult(EligibilityStatus.UNCERTAIN, message); }
+    private static RuleResult conditional(String message) { return new RuleResult(EligibilityStatus.CONDITIONAL, message); }
+    private static RuleResult needsConfirmation(String message) { return new RuleResult(EligibilityStatus.NEEDS_CONFIRMATION, message); }
+    private static RuleResult conflicting(String message) { return new RuleResult(EligibilityStatus.CONFLICTING_EVIDENCE, message); }
     private static RuleResult ineligible(String message) { return new RuleResult(EligibilityStatus.INELIGIBLE, message); }
 }

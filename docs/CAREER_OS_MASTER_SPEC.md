@@ -552,12 +552,18 @@ excluded_job_types
 结果：
 
 ```text
-ELIGIBLE
-LIKELY_ELIGIBLE
-UNCERTAIN
-LIKELY_INELIGIBLE
-INELIGIBLE
+ELIGIBLE              所有硬条件有证据且满足
+CONDITIONAL           满足与否取决于一件尚未完成的事，例如留服认证或预计毕业
+NEEDS_CONFIRMATION    公告或个人字段不足，无法判定
+CONFLICTING_EVIDENCE  该条依赖的官方字段存在来源冲突，判定不可信
+INELIGIBLE            至少一项硬条件明确不满足
 ```
+
+刻意没有“大概可报”这一档。早期版本的 `LIKELY_ELIGIBLE` / `LIKELY_INELIGIBLE`
+把“证据不足”表述成了一个带倾向的结论，与[产品需求基线](product-requirements.md)
+§6.1「资格不是分数」冲突，已在 V84 迁移中并入 `NEEDS_CONFIRMATION`。
+
+只有 `ELIGIBLE` 和经用户确认后的 `CONDITIONAL` 才能进入“建议报名”。
 
 字段：
 
@@ -1185,7 +1191,7 @@ Agent 主要负责“非结构化理解和决策辅助”。
 
 ```json
 {
-  "status": "LIKELY_ELIGIBLE",
+  "status": "NEEDS_CONFIRMATION",
   "blockingReasons": [],
   "uncertainties": [
     "需确认境外学历认定口径"

@@ -481,7 +481,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(83);
+        assertThat(result.migrationsExecuted).isEqualTo(84);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -532,6 +532,8 @@ class MigrationIntegrationTest {
               var processorVersion = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='acquired_document' and column_name='last_processor_version'");
               var reviewActor = connection.prepareStatement("select is_nullable from information_schema.columns where table_schema='public' and table_name='review_action' and column_name='actor'");
               var reviewActorIndex = connection.prepareStatement("select count(*) from pg_indexes where schemaname='public' and indexname='idx_review_action_actor'");
+              var eligibilityStatusCheck = connection.prepareStatement("select count(*) from pg_constraint constraint_row join pg_namespace namespace_row on namespace_row.oid=constraint_row.connamespace where namespace_row.nspname='public' and constraint_row.conname in ('ck_eligibility_assessment_status','ck_decision_assessment_eligibility_status')");
+              var legacyEligibilityValues = connection.prepareStatement("select count(*) from eligibility_assessment where status in ('LIKELY_ELIGIBLE','LIKELY_INELIGIBLE','UNCERTAIN')");
               var transportRisk = connection.prepareStatement("select is_nullable, column_default from information_schema.columns where table_schema='public' and table_name='acquired_document' and column_name='transport_risk'");
               var acquisitionAuditTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('source_onboarding_checkpoint','artifact_import_failure')");
               var coverageAuditColumns = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='source_year_coverage' and column_name in ('listing_page_count','filtered_count','failed_count','earliest_published_on','latest_published_on','stop_reason')");
@@ -619,6 +621,9 @@ class MigrationIntegrationTest {
             // 人工复核是把模型提案提升为已核验官方数据的唯一闸门，操作人必须非空。
             try (var rows = reviewActor.executeQuery()) { rows.next(); assertThat(rows.getString(1)).isEqualTo("NO"); }
             try (var rows = reviewActorIndex.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(1); }
+            // 新的硬资格语义：两张表都必须挡住旧值，否则读取时才会炸在 valueOf 上。
+            try (var rows = eligibilityStatusCheck.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
+            try (var rows = legacyEligibilityValues.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isZero(); }
             try (var rows = transportRisk.executeQuery()) {
                 rows.next();
                 assertThat(rows.getString("is_nullable")).isEqualTo("NO");
