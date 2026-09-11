@@ -8,7 +8,6 @@ import com.careeros.domain.RecruitmentEvent;
 import com.careeros.application.JobUpsertService.JobChange;
 import com.careeros.application.JobUpsertService.JobUpsertResult;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,18 +54,22 @@ public final class DailyDigestService {
         Map<UUID, String> organizationNames = new LinkedHashMap<>();
         organizations.findAll().forEach(value -> organizationNames.put(value.id(), value.name()));
 
-        var inputs = new ArrayList<DigestInput>();
+        // 逐岗去重后再交给 builder。DailyDigest 规定一个岗位在一份摘要里最多出现一次，
+        // 违反时构造器直接抛异常——而摘要是在导入提交之后才生成的，真抛了就会把一次
+        // 已经成功的导入报成 500。当前入库路径产不出重复 id，但这个不变式不该由调用方
+        // 的正确性来兜底。同一岗位若出现多条变化，以最后一条为准：它反映的是最终状态。
+        Map<UUID, DigestInput> inputsByJob = new LinkedHashMap<>();
         for (JobChange change : result.changes()) {
             JobPosting job = jobsById.get(change.jobPostingId());
             if (job == null) continue;
             RecruitmentEvent event = eventsById.get(job.recruitmentEventId());
-            inputs.add(new DigestInput(
+            inputsByJob.put(job.id(), new DigestInput(
                 job.id(), job.title(),
                 organizationNames.get(job.organizationId()),
                 event == null ? null : event.applicationEndsOn(),
                 change.kind()));
         }
-        return builder.build(inputs, reportDate, deadlineWindowDays);
+        return builder.build(List.copyOf(inputsByJob.values()), reportDate, deadlineWindowDays);
     }
 
     /** 供只关心"今天有哪些变化"的调用方使用的空结果。 */
