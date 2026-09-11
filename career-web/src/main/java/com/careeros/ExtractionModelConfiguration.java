@@ -25,9 +25,11 @@ public class ExtractionModelConfiguration {
         ObjectMapper objectMapper,
         NetworkntProposalValidator validator,
         @Value("${career-os.extraction.llm.model:gpt-5-mini}") String modelName,
-        @Value("${career-os.extraction.llm.prompt-version:1.0.0}") String promptVersion
+        @Value("${career-os.extraction.llm.prompt-version:1.0.0}") String promptVersion,
+        @Value("${career-os.extraction.llm.max-prompt-characters:40000}") int maxPromptCharacters
     ) {
-        return new OpenAiStructuredExtractor(builder.build(), objectMapper, validator, modelName, promptVersion);
+        return new OpenAiStructuredExtractor(
+            builder.build(), objectMapper, validator, modelName, promptVersion, maxPromptCharacters);
     }
 
     @Bean

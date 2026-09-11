@@ -2,6 +2,7 @@ package com.careeros.application;
 
 import static com.careeros.application.ExtractionPorts.*;
 import static com.careeros.domain.DomainEnums.DataQualityStatus;
+import static com.careeros.domain.DomainEnums.ReviewReasonCode;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -172,6 +173,27 @@ class ExtractionServiceTest {
         assertThat(result.reviewId()).isEmpty();
         assertThat(writer.calls).isEqualTo(1);
         assertThat(unitOfWork.calls).isEqualTo(1);
+    }
+
+    @Test
+    void truncatedInputCannotAutoVerifyEvenWhenTheProposalIsOtherwiseClean() {
+        // 与 verifiedProposalWritesFormalJobsInsideUnitOfWork 用的是同一份"干净"提案，
+        // 唯一差别是抽取器上报了输入截断——只覆盖部分原文的结果绝不能直接写进正式岗位库。
+        Fixtures.CountingExtractor extractor = new Fixtures.CountingExtractor(
+            Fixtures.verifiedProposal(), true,
+            List.of("Document exceeded the 5000 character extraction budget: 3 of 40 evidence fragments were sent to the model, 37 were dropped"));
+        Fixtures.RecordingWriter writer = new Fixtures.RecordingWriter();
+        Fixtures.MemoryExtractionPersistence persistence = new Fixtures.MemoryExtractionPersistence();
+        ExtractionService service = service(extractor, persistence, writer);
+
+        ExtractionResult result = service.submit(Fixtures.htmlCommand("<h1>招聘公告</h1>"));
+
+        assertThat(result.run().status()).isEqualTo(DataQualityStatus.REVIEW_REQUIRED);
+        assertThat(result.reviewId()).isPresent();
+        assertThat(writer.calls).isZero();
+        assertThat(persistence.onlyReview().issues())
+            .anyMatch(issue -> issue.reasonCode() == ReviewReasonCode.INPUT_TRUNCATED
+                && issue.message().contains("were dropped"));
     }
 
     @Test
