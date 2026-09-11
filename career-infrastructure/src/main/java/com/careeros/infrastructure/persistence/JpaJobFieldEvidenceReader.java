@@ -42,11 +42,11 @@ public class JpaJobFieldEvidenceReader implements JobFieldEvidence {
 
         RowCallbackHandler jobFacts = row -> addFact(values, row.getObject(1, UUID.class),
             row.getString(2), row.getString(3), row.getString(4), row.getString(5),
-            row.getString(6), row.getString(7));
+            row.getString(6), row.getString(7), row.getObject(8, UUID.class));
         jdbc.query("""
             select fact.job_posting_id, fact.field_name, fact.fact_status,
                    evidence.source_title, evidence.source_url,
-                   fragment.locator::text, fragment.verbatim_text
+                   fragment.locator::text, fragment.verbatim_text, fact.evidence_fragment_id
             from job_field_evidence fact
             left join evidence_fragment fragment on fragment.id=fact.evidence_fragment_id
             left join evidence on evidence.id=fragment.evidence_id
@@ -69,11 +69,11 @@ public class JpaJobFieldEvidenceReader implements JobFieldEvidence {
 
         RowCallbackHandler eventFacts = row -> addFact(values, row.getObject(1, UUID.class),
             row.getString(2), row.getString(3), row.getString(4), row.getString(5),
-            row.getString(6), row.getString(7));
+            row.getString(6), row.getString(7), row.getObject(8, UUID.class));
         jdbc.query("""
             select job.id, fact.field_name, fact.fact_status,
                    evidence.source_title, evidence.source_url,
-                   fragment.locator::text, fragment.verbatim_text
+                   fragment.locator::text, fragment.verbatim_text, fact.evidence_fragment_id
             from job_posting job
             join recruitment_event evidence_event
               on evidence_event.id=job.recruitment_event_id
@@ -98,14 +98,15 @@ public class JpaJobFieldEvidenceReader implements JobFieldEvidence {
         String sourceTitle,
         String sourceUrl,
         String locator,
-        String excerpt
+        String excerpt,
+        UUID evidenceFragmentId
     ) {
         MutableCoverage value = values.get(jobId);
         if (value == null) return;
         if ("EXPLICIT".equals(status)) value.explicit.add(field);
         if ("NOT_REQUIRED".equals(status)) value.notRequired.add(field);
         if ("CONFLICT".equals(status)) value.conflicts.add(field);
-        value.references.add(new EvidenceReference(field, status, sourceTitle, sourceUrl, locator, excerpt));
+        value.references.add(new EvidenceReference(field, status, sourceTitle, sourceUrl, locator, excerpt, evidenceFragmentId));
     }
 
     private static String placeholders(int count) {

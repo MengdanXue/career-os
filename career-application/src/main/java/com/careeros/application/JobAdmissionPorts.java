@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.ArrayList;
 import java.util.Set;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -52,8 +53,14 @@ public final class JobAdmissionPorts {
         String sourceTitle,
         String sourceUrl,
         String locator,
-        String excerpt
-    ) {}
+        String excerpt,
+        UUID evidenceFragmentId
+    ) {
+        public EvidenceReference(String fieldName, String factStatus, String sourceTitle,
+                                 String sourceUrl, String locator, String excerpt) {
+            this(fieldName, factStatus, sourceTitle, sourceUrl, locator, excerpt, null);
+        }
+    }
 
     public record FieldEvidenceCoverage(
         Set<String> explicitFields,
@@ -101,6 +108,22 @@ public final class JobAdmissionPorts {
 
         public boolean notRequired(String field) {
             return notRequiredFields.contains(field) && !conflictFields.contains(field);
+        }
+
+        /**
+         * 官方字段名 → 支撑该字段的证据片段 ID。产品需求 §10.6 要求每个资格结论都有可定位
+         * 证据，资格评估器据此给逐条规则挂片段而不是只挂公告级证据。
+         * 事实状态为 UNKNOWN 的行没有片段（表上的 CHECK 保证了这一点），自然不会进来。
+         */
+        public Map<String, List<UUID>> evidenceFragmentsByField() {
+            var byField = new LinkedHashMap<String, List<UUID>>();
+            for (EvidenceReference reference : evidenceReferences) {
+                if (reference.evidenceFragmentId() == null) continue;
+                byField.computeIfAbsent(reference.fieldName(), key -> new ArrayList<>())
+                    .add(reference.evidenceFragmentId());
+            }
+            byField.replaceAll((field, ids) -> List.copyOf(ids));
+            return Map.copyOf(byField);
         }
     }
 

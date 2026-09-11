@@ -11,6 +11,8 @@ import java.time.LocalDate;
 import java.time.Period;
 import java.util.EnumMap;
 import java.util.Locale;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -18,7 +20,7 @@ import java.util.stream.Stream;
 import static com.careeros.domain.CandidateFacts.CandidateFactKey.*;
 
 public final class EligibilityEvaluator {
-    public static final String VERSION = "eligibility-hard-verdict-v5";
+    public static final String VERSION = "eligibility-hard-verdict-v6";
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) {
         return evaluate(candidate, CandidateFacts.confirmed(candidate), job, "unversioned", Instant.now());
@@ -76,23 +78,51 @@ public final class EligibilityEvaluator {
                                           Instant assessedAt, String evaluatorVersion,
                                           Set<String> conflictingOfficialFields,
                                           GraduateEligibilityRule graduateRule) {
+        return evaluate(candidate, facts, job, jobContentFingerprint, qualificationAsOf, assessedAt,
+            evaluatorVersion, conflictingOfficialFields, graduateRule, Map.of());
+    }
+
+    /**
+     * @param evidenceByOfficialField 官方字段名 → 支撑该字段的证据片段 ID。产品需求 §10.6
+     *        要求每个资格结论都有可定位证据；挂在整份评估上的公告级证据只能指到一份公告，
+     *        指不到具体是哪一句话。缺片段时该规则的 evidenceIds 为空，读者回落到公告级。
+     */
+    public EligibilityAssessment evaluate(CandidateProfile candidate, CandidateFacts facts, JobPosting job,
+                                          String jobContentFingerprint, LocalDate qualificationAsOf,
+                                          Instant assessedAt, String evaluatorVersion,
+                                          Set<String> conflictingOfficialFields,
+                                          GraduateEligibilityRule graduateRule,
+                                          Map<String, List<UUID>> evidenceByOfficialField) {
+        Map<String, List<UUID>> fieldEvidence =
+            evidenceByOfficialField == null ? Map.of() : evidenceByOfficialField;
         Set<String> conflicts = conflictingOfficialFields == null ? Set.of() : conflictingOfficialFields;
         var results = new EnumMap<RuleType, RuleResult>(RuleType.class);
-        results.put(RuleType.AGE, orConflict(conflicts, "ageRequirementText",
-            () -> evaluateAge(candidate, facts, job)));
-        results.put(RuleType.EDUCATION, orConflict(conflicts, "educationRequirementText",
-            () -> evaluateEducation(candidate, facts, job)));
-        results.put(RuleType.EXACT_MAJOR, orConflict(conflicts, "majorRequirementText",
-            () -> evaluateMajor(candidate, facts, job)));
-        results.put(RuleType.GRADUATE_YEAR, evaluateGraduation(candidate, facts, job));
-        results.put(RuleType.EXPERIENCE, evaluateExperience(candidate, facts, job, qualificationAsOf));
+        results.put(RuleType.AGE, cite(fieldEvidence, "ageRequirementText",
+            orConflict(conflicts, "ageRequirementText", () -> evaluateAge(candidate, facts, job))));
+        results.put(RuleType.EDUCATION, cite(fieldEvidence, "educationRequirementText",
+            orConflict(conflicts, "educationRequirementText", () -> evaluateEducation(candidate, facts, job))));
+        results.put(RuleType.EXACT_MAJOR, cite(fieldEvidence, "majorRequirementText",
+            orConflict(conflicts, "majorRequirementText", () -> evaluateMajor(candidate, facts, job))));
+        results.put(RuleType.GRADUATE_YEAR, cite(fieldEvidence, "graduateRule",
+            evaluateGraduation(candidate, facts, job)));
+        results.put(RuleType.EXPERIENCE, cite(fieldEvidence, "experienceEvidenceRule",
+            evaluateExperience(candidate, facts, job, qualificationAsOf)));
         results.put(RuleType.PROFESSIONAL_TITLE, evaluateProfessionalTitle(candidate, facts, job));
-        results.put(RuleType.POLITICAL_AFFILIATION, evaluatePoliticalAffiliation(candidate, facts, job));
-        results.put(RuleType.GENDER, evaluateGender(candidate, facts, job));
-        results.put(RuleType.FRESH_GRADUATE_STATUS, evaluateFreshGraduateStatus(candidate, facts, graduateRule));
+        results.put(RuleType.POLITICAL_AFFILIATION, cite(fieldEvidence, "otherRequirements",
+            evaluatePoliticalAffiliation(candidate, facts, job)));
+        results.put(RuleType.GENDER, cite(fieldEvidence, "genderRequirement",
+            evaluateGender(candidate, facts, job)));
+        results.put(RuleType.FRESH_GRADUATE_STATUS, cite(fieldEvidence, "graduateRule",
+            evaluateFreshGraduateStatus(candidate, facts, graduateRule)));
         var overall = results.values().stream().map(RuleResult::status)
             .max(EligibilityEvaluator::compareSeverity).orElse(EligibilityStatus.NEEDS_CONFIRMATION);
         return new EligibilityAssessment(UUID.randomUUID(), candidate.id(), job.id(), overall, results, job.evidenceIds(), evaluatorVersion, assessedAt, candidate.profileVersion(), jobContentFingerprint);
+    }
+
+    /** 给一条规则结果挂上对应官方字段的证据片段；没有片段时保持为空，由读者回落到公告级。 */
+    private static RuleResult cite(Map<String, List<UUID>> fieldEvidence, String officialField, RuleResult result) {
+        List<UUID> fragments = fieldEvidence.get(officialField);
+        return fragments == null || fragments.isEmpty() ? result : result.withEvidence(fragments);
     }
 
     private static RuleResult orConflict(

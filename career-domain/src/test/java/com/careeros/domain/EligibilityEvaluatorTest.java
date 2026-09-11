@@ -4,6 +4,7 @@ import com.careeros.domain.DomainEnums.*;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -381,6 +382,57 @@ class EligibilityEvaluatorTest {
         assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.INELIGIBLE);
         assertThat(result.ruleResults().get(RuleType.FRESH_GRADUATE_STATUS).explanation())
             .contains("社保");
+    }
+
+    // --- §10.6：逐条结论挂到具体证据片段 ---
+
+    /** 每条规则挂自己那个官方字段的片段，而不是统一挂公告级证据。 */
+    @Test void eachRuleCitesTheFragmentsOfItsOwnOfficialField() {
+        var ageFragment = UUID.randomUUID();
+        var educationFragment = UUID.randomUUID();
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+
+        var result = evaluateCiting(candidate, Map.of(
+            "ageRequirementText", List.of(ageFragment),
+            "educationRequirementText", List.of(educationFragment)));
+
+        assertThat(result.ruleResults().get(RuleType.AGE).evidenceIds()).containsExactly(ageFragment);
+        assertThat(result.ruleResults().get(RuleType.EDUCATION).evidenceIds())
+            .containsExactly(educationFragment);
+    }
+
+    /** 一条事实本就可能引用多个片段，不能只留第一个。 */
+    @Test void aFieldWithSeveralFragmentsKeepsAllOfThem() {
+        var first = UUID.randomUUID();
+        var second = UUID.randomUUID();
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+
+        var result = evaluateCiting(candidate, Map.of("ageRequirementText", List.of(first, second)));
+
+        assertThat(result.ruleResults().get(RuleType.AGE).evidenceIds()).containsExactly(first, second);
+    }
+
+    /** 没有片段级证据时保持为空，读者回落到公告级，而不是伪造一个片段。 */
+    @Test void aFieldWithoutFragmentsCitesNothingRatherThanInventingOne() {
+        var candidate = candidate(PartialDate.month(1992, 12), EducationLevel.MASTER,
+            Set.of("计算机科学与技术"), 2027, 0);
+
+        var result = evaluateCiting(candidate, Map.of());
+
+        assertThat(result.ruleResults().get(RuleType.AGE).evidenceIds()).isEmpty();
+        // 公告级证据仍在评估上，读者据此回落——逐条为空不等于整条结论无据可查。
+        assertThat(result.evidenceIds()).isNotNull();
+    }
+
+    private EligibilityAssessment evaluateCiting(
+        CandidateProfile candidate, Map<String, List<UUID>> fieldEvidence
+    ) {
+        return evaluator.evaluate(candidate, CandidateFacts.confirmed(candidate),
+            job(40, LocalDate.of(2027, 1, 1), EducationLevel.MASTER, Set.of("计算机科学与技术"), Set.of(2027), 0),
+            "verified", LocalDate.of(2027, 1, 1), Instant.parse("2026-08-14T00:00:00Z"),
+            EligibilityEvaluator.VERSION, Set.of(), null, fieldEvidence);
     }
 
     private EligibilityAssessment evaluateWithGraduateRule(
