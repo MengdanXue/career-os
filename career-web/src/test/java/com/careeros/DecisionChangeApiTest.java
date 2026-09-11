@@ -31,7 +31,7 @@ class DecisionChangeApiTest {
         var summary = new DecisionChangeSummary(CANDIDATE_ID, "old-v1", "current-v2",
             LocalDate.of(2026, 8, 24), true, null, 1, 1, 0,
             List.of(new DecisionChangeSummary.AffectedJob(jobId, "信息岗位", "杭州市信息中心",
-                UNCERTAIN, ELIGIBLE, List.of("工作经历：待确认 → 可报"), "/opportunities/" + jobId)));
+                NEEDS_CONFIRMATION, ELIGIBLE, List.of("工作经历：待确认 → 可报"), "/opportunities/" + jobId)));
         when(service.recompute(CANDIDATE_ID, "old-v1", LocalDate.of(2026, 8, 24))).thenReturn(summary);
 
         mvc.perform(post("/api/v1/candidates/{candidateId}/decision-change-summaries/{profileVersion}",

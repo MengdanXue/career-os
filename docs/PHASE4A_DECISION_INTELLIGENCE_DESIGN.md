@@ -159,7 +159,9 @@ An organization type alone is not sufficient evidence for funding, policy contin
 - `T1`: explicit establishment or equivalent stable identity with supporting evidence;
 - `T2`: formal non-dispatch role in a stable semi-public organization, with enough evidence to distinguish it from outsourcing;
 - `T3`: personnel agency, labor dispatch, project-based work, outsourcing, short-term contract, or unresolved identity;
-- `EXCLUDED`: deterministic eligibility status is `INELIGIBLE` or `LIKELY_INELIGIBLE`.
+- `EXCLUDED`: deterministic eligibility status is `INELIGIBLE`. Missing or conflicting
+  evidence is never grounds for exclusion — `NEEDS_CONFIRMATION`, `CONFLICTING_EVIDENCE`
+  and `CONDITIONAL` all stay in the list as items a person has to resolve.
 
 An unknown employment identity can never receive T1.
 

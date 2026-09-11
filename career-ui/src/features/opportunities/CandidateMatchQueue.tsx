@@ -4,8 +4,9 @@ import { OfficialJobDetail } from './OfficialJobDetail'
 
 const eligibilityLabels: Record<string, string> = {
   ELIGIBLE: '硬条件符合',
-  LIKELY_ELIGIBLE: '大概率符合',
-  UNCERTAIN: '仍有条件待核实',
+  CONDITIONAL: '待某事完成后符合',
+  NEEDS_CONFIRMATION: '仍有条件待核实',
+  CONFLICTING_EVIDENCE: '官方证据冲突，需核对来源',
 }
 
 export function CandidateMatchQueue({ matches, total }: { matches: CandidateMatch[]; total: number }) {

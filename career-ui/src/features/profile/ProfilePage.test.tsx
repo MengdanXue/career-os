@@ -62,7 +62,7 @@ describe('ProfilePage', () => {
         asOf: '2026-08-24', available: true, message: null, newlyEligibleCount: 1,
         resolvedUncertaintyCount: 2, newlyIneligibleCount: 0,
         affectedJobs: [{ jobId: 'job-1', title: '信息技术岗位', organizationName: '杭州市信息中心',
-          previousStatus: 'UNCERTAIN', currentStatus: 'ELIGIBLE',
+          previousStatus: 'NEEDS_CONFIRMATION', currentStatus: 'ELIGIBLE',
           reasons: ['工作经历：待确认 → 可报'], deepLink: '/opportunities/job-1' }],
       })
       throw new Error(`Unexpected request: ${url}`)
