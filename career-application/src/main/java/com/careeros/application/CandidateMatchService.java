@@ -90,9 +90,13 @@ public class CandidateMatchService {
         CandidateProfile candidate, CandidateFacts facts, DecisionPorts.JobContext context,
         JobAdmission admission, FieldEvidenceCoverage evidenceCoverage, Instant now
     ) {
+        // 必须与决策快照走同一套输入：应届条款、官方字段冲突、逐字段证据。
+        // 少传任何一项，同一个岗位在匹配队列和决策详情里就会显示不同结论。
         var eligibilityResult = eligibility.evaluate(
             candidate, facts, context.job(), context.contentFingerprint(),
-            context.event().applicationEndsOn(), now);
+            context.event().applicationEndsOn(), now, EligibilityEvaluator.VERSION,
+            evidenceCoverage.conflictFields(), context.graduateClause(),
+            evidenceCoverage.evidenceFragmentsByField());
         var fitResult = fit.evaluate(
             candidate, facts, context.job(), context.organization(), context.contentFingerprint(),
             context.event().applicationEndsOn(), now);

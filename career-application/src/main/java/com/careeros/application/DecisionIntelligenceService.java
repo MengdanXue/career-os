@@ -127,7 +127,7 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
             context.job(), context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion(),
             conflictingFields,
             // 应届身份条款解析在招聘事件上，不在岗位上。为 null 表示公告里没有这类条款。
-            context.event() == null ? null : context.event().graduateEligibilityRule(),
+            context.graduateClause(),
             // §10.6：逐条结论挂到具体证据片段，而不是只指向整份公告。
             jobFieldEvidence.evidenceFragmentsByField()));
         var fit = fitEvaluator.evaluate(candidate, facts, context.job(), context.organization(),
