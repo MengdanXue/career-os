@@ -121,12 +121,15 @@ public final class DecisionIntelligenceService implements DecisionAssessor {
         LocalDate qualificationAsOf = context.event().applicationEndsOn();
         // 官方来源在某个字段上互相矛盾时，依赖该字段的规则不产出判定：手里的岗位要求
         // 本身就不可信，此时说"满足"或"不满足"都是在替官方做决定。
-        var conflictingFields = fieldEvidence.coverage(context.job().id()).conflictFields();
+        var jobFieldEvidence = fieldEvidence.coverage(context.job().id());
+        var conflictingFields = jobFieldEvidence.conflictFields();
         var eligibility = eligibilityAssessments.save(eligibilityEvaluator.evaluate(candidate, facts,
             context.job(), context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion(),
             conflictingFields,
             // 应届身份条款解析在招聘事件上，不在岗位上。为 null 表示公告里没有这类条款。
-            context.event() == null ? null : context.event().graduateEligibilityRule()));
+            context.event() == null ? null : context.event().graduateEligibilityRule(),
+            // §10.6：逐条结论挂到具体证据片段，而不是只指向整份公告。
+            jobFieldEvidence.evidenceFragmentsByField()));
         var fit = fitEvaluator.evaluate(candidate, facts, context.job(), context.organization(),
             context.contentFingerprint(), qualificationAsOf, now, input.evaluatorVersion());
         var stabilityResult = stabilityEvaluator.evaluate(candidate, context.job(), context.organization(),

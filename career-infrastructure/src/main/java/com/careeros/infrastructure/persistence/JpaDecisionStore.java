@@ -168,8 +168,14 @@ public class JpaDecisionStore implements JobContexts, OrganizationStabilityFacts
 
     private EligibilityAssessment eligibility(JpaModels.EligibilityAssessmentEntity value) {
         var results=new EnumMap<RuleType,RuleResult>(RuleType.class);
-        value.ruleResults.forEach((key,result)->results.put(RuleType.valueOf(key),new RuleResult(EligibilityStatus.valueOf(result.get("status")),result.get("explanation"))));
+        value.ruleResults.forEach((key,result)->results.put(RuleType.valueOf(key),new RuleResult(EligibilityStatus.valueOf(String.valueOf(result.get("status"))),String.valueOf(result.get("explanation")),readEvidenceIds(result.get("evidenceIds")))));
         return new EligibilityAssessment(value.id,value.candidateProfileId,value.jobPostingId,value.status,results,value.evidenceIds,value.evaluatorVersion,value.assessedAt,value.profileVersion,value.jobContentFingerprint);
+    }
+
+    /** V6 之前落库的行没有 evidenceIds，读成空表而不是让整行读不出来。 */
+    private static java.util.List<UUID> readEvidenceIds(Object raw) {
+        if (!(raw instanceof java.util.Collection<?> values)) return java.util.List.of();
+        return values.stream().map(String::valueOf).map(UUID::fromString).toList();
     }
 
     private AssessmentDimension dimension(DecisionJpaModels.AssessmentDimensionEntity value) { return new AssessmentDimension(value.dimensionType,value.achievedPoints,value.maximumPoints,value.factStatus,value.reasonCode,value.explanation,List.copyOf(value.evidenceIds)); }
