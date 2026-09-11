@@ -61,6 +61,43 @@ public record CandidateProfile(UUID id, String displayName, PartialDate birthDat
             gender, politicalAffiliation, employmentRecords,
             ApplicationTimeStatus.UNDECLARED, ApplicationTimeStatus.UNDECLARED);
     }
+    /**
+     * 只改一项、其余原样复制。
+     *
+     * <p>逐字段重建构造参数出过一次事故：漏掉两个报名时状态字段，结果每保存一次资料就把用户
+     * 的声明静默重置成"未声明"。这类改动不会报错，只会安静地丢数据。所以全部字段只在这里
+     * 抄写一次，各个 {@code with*} 都走它；{@code CandidateProfileTest} 用记录组件逐个比对，
+     * 将来新增字段若忘了带上，测试会失败。
+     */
+    private CandidateProfile copy(
+        Gender gender, PoliticalAffiliation politicalAffiliation,
+        ApplicationTimeStatus employerSettlementAtApplication, ApplicationTimeStatus socialInsuranceAtApplication
+    ) {
+        return new CandidateProfile(
+            id, displayName, birthDate, highestEducation, majors, graduationYear, experienceYears,
+            professionalTitles, preferredLocations, acceptedEmploymentTypes, profileVersion, skills,
+            researchKeywords, targetJobFamilies, preferredOrganizationTypes, educationRecords,
+            gender, politicalAffiliation, employmentRecords,
+            employerSettlementAtApplication, socialInsuranceAtApplication
+        );
+    }
+
+    public CandidateProfile withGender(Gender value) {
+        return copy(value, politicalAffiliation, employerSettlementAtApplication, socialInsuranceAtApplication);
+    }
+
+    public CandidateProfile withPoliticalAffiliation(PoliticalAffiliation value) {
+        return copy(gender, value, employerSettlementAtApplication, socialInsuranceAtApplication);
+    }
+
+    public CandidateProfile withEmployerSettlementAtApplication(ApplicationTimeStatus value) {
+        return copy(gender, politicalAffiliation, value, socialInsuranceAtApplication);
+    }
+
+    public CandidateProfile withSocialInsuranceAtApplication(ApplicationTimeStatus value) {
+        return copy(gender, politicalAffiliation, employerSettlementAtApplication, value);
+    }
+
     private static void require(String value, String field) { if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " is required"); }
     private static void requireTokens(Collection<String> values, String field) {
         if (values.stream().anyMatch(value -> value == null || value.isBlank())) {
