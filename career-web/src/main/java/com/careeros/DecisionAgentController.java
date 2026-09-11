@@ -18,9 +18,12 @@ class DecisionAgentController {
         int limit=request.limit()==null?5:request.limit();
         var result=service.query(candidateId,request.question(),limit,Instant.now());
         var decisions=result.decisions().stream().map(value->DecisionApiModels.DecisionResponse.from(value,explanations.explain(value))).toList();
-        return new AgentResponse(result.question(),result.answer(),decisions,result.modelPhrased(),result.fallbackUsed(),result.disclaimer());
+        return new AgentResponse(result.question(),result.answer(),decisions,result.modelPhrased(),result.fallbackUsed(),result.disclaimer(),result.violations());
     }
 
     record AgentRequest(String question,Integer limit) {}
-    record AgentResponse(String question,String answer,List<DecisionApiModels.DecisionResponse> decisions,boolean modelPhrased,boolean fallbackUsed,String disclaimer) { AgentResponse { decisions=List.copyOf(decisions); } }
+    /** {@code violations} 是叙述被拒的原因。拦截不外露等于没拦截，所以它随回答一起返回。 */
+    record AgentResponse(String question,String answer,List<DecisionApiModels.DecisionResponse> decisions,boolean modelPhrased,boolean fallbackUsed,String disclaimer,List<String> violations) {
+        AgentResponse { decisions=List.copyOf(decisions); violations=violations==null?List.of():List.copyOf(violations); }
+    }
 }
