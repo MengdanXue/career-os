@@ -275,7 +275,7 @@ public final class JpaModels {
         @Column(name = "candidate_profile_id", nullable = false) UUID candidateProfileId;
         @Column(name = "job_posting_id", nullable = false) UUID jobPostingId;
         @Enumerated(EnumType.STRING) @Column(nullable = false) EligibilityStatus status;
-        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "rule_results", columnDefinition = "jsonb", nullable = false) Map<String, Map<String,String>> ruleResults = new LinkedHashMap<>();
+        @JdbcTypeCode(SqlTypes.JSON) @Column(name = "rule_results", columnDefinition = "jsonb", nullable = false) Map<String, Map<String,Object>> ruleResults = new LinkedHashMap<>();
         @JdbcTypeCode(SqlTypes.JSON) @Column(name = "evidence_ids", columnDefinition = "jsonb", nullable = false) List<UUID> evidenceIds = new ArrayList<>();
         @Column(name = "evaluator_version", nullable = false) String evaluatorVersion;
         @Column(name = "assessed_at", nullable = false) Instant assessedAt;
