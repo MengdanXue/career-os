@@ -8,6 +8,8 @@ export type AgentResponse = {
   modelPhrased: boolean
   fallbackUsed: boolean
   disclaimer: string
+  /** 模型叙述被拒的原因。为空表示没有拦截发生。 */
+  violations?: string[]
 }
 
 export function askCareerOs(candidateId: string, question: string) {
