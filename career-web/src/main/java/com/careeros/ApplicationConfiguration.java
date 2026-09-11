@@ -9,6 +9,7 @@ import com.careeros.domain.FitEvaluator;
 import com.careeros.domain.StabilityEvaluator;
 import com.careeros.domain.JobLineageBuilder;
 import com.careeros.domain.OpportunityForecaster;
+import com.careeros.domain.DailyDigestBuilder;
 import com.careeros.domain.ReviewPolicy;
 import com.careeros.infrastructure.artifact.FileSystemArtifactStore;
 import com.careeros.infrastructure.acquisition.*;
@@ -49,6 +50,8 @@ class ApplicationConfiguration {
     @Bean StabilityEvaluator stabilityEvaluator() { return new StabilityEvaluator(); }
     @Bean JobLineageBuilder jobLineageBuilder() { return new JobLineageBuilder(); }
     @Bean OpportunityForecaster opportunityForecaster() { return new OpportunityForecaster(); }
+    @Bean DailyDigestBuilder dailyDigestBuilder() { return new DailyDigestBuilder(); }
+    @Bean DailyDigestService dailyDigestService(RepositoryPorts.JobPostings jobs, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.Organizations organizations, DailyDigestBuilder builder) { return new DailyDigestService(jobs, events, organizations, builder); }
     @Bean OpportunityHistoryService opportunityHistoryService(RepositoryPorts.JobPostings jobs, RepositoryPorts.RecruitmentEvents events, RepositoryPorts.Organizations organizations, JobLineageBuilder lineageBuilder, OpportunityForecaster forecaster) { return new OpportunityHistoryService(jobs, events, organizations, lineageBuilder, forecaster); }
     @Bean CandidateProfileService candidateProfileService(RepositoryPorts.CandidateProfiles candidates, RepositoryPorts.CandidateFactConfirmations facts, Clock clock) { return new CandidateProfileService(candidates, facts, clock); }
     @Bean PoliticalRequirementClassifier politicalRequirementClassifier() { return new PoliticalRequirementClassifier(); }

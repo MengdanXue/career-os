@@ -6,6 +6,7 @@ import static com.careeros.domain.DomainEnums.*;
 import com.careeros.application.ExtractionExceptions;
 import com.careeros.application.ExtractionPorts.VerifiedProposalWriter;
 import com.careeros.application.JobUpsertService;
+import com.careeros.domain.DomainEnums.JobChangeKind;
 import com.careeros.domain.ExtractedFact;
 import com.careeros.domain.RecruitmentExtractionProposal;
 import java.net.URI;
@@ -86,6 +87,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
         Instant now = clock.instant();
         Set<String> seen = new HashSet<>();
         List<UUID> ids = new ArrayList<>();
+        List<JobChange> changes = new ArrayList<>();
         var eventSourceCache = new HashMap<UUID, String>();
 
         for (NormalizedJob job : batch.jobs()) {
@@ -130,6 +132,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                             duplicate.lastSeenAt = now;
                             jobs.save(duplicate);
                             deactivated++;
+                            changes.add(new JobChange(duplicate.id, JobChangeKind.DEACTIVATED));
                         }
                     }
                 }
@@ -143,10 +146,12 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                 jobs.save(entity);
                 ids.add(entity.id);
                 unchanged++;
+                changes.add(new JobChange(entity.id, JobChangeKind.UNCHANGED));
                 continue;
             }
 
             JpaModels.JobPostingEntity entity = existing.orElseGet(JpaModels.JobPostingEntity::new);
+            boolean existedBefore = existing.isPresent();
             if (existing.isEmpty()) {
                 entity.id = UUID.randomUUID();
                 entity.firstSeenAt = now;
@@ -161,6 +166,7 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
             entity.lastSeenAt = now;
             jobs.save(entity);
             ids.add(entity.id);
+            changes.add(new JobChange(entity.id, existedBefore ? JobChangeKind.UPDATED : JobChangeKind.NEW));
         }
 
         if (batch.completeSnapshot() && batch.validationErrors().isEmpty()) {
@@ -170,10 +176,11 @@ public class DefaultJobUpsertService implements JobUpsertService, VerifiedPropos
                     existing.lastSeenAt = now;
                     jobs.save(existing);
                     deactivated++;
+                    changes.add(new JobChange(existing.id, JobChangeKind.DEACTIVATED));
                 }
             }
         }
-        return new JobUpsertResult(inserted, updated, unchanged, deactivated, ids);
+        return new JobUpsertResult(inserted, updated, unchanged, deactivated, ids, changes);
     }
 
     private boolean humanVerified(UUID jobId) {
