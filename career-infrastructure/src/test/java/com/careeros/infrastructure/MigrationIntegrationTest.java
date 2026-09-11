@@ -481,7 +481,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(85);
+        assertThat(result.migrationsExecuted).isEqualTo(86);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -536,6 +536,9 @@ class MigrationIntegrationTest {
               var legacyEligibilityValues = connection.prepareStatement("select count(*) from eligibility_assessment where status in ('LIKELY_ELIGIBLE','LIKELY_INELIGIBLE','UNCERTAIN')");
               var applicationTimeColumns = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='candidate_profile' and column_name in ('employer_settlement_at_application','social_insurance_at_application') and column_default like '%UNDECLARED%'");
               var applicationTimeFactKeys = connection.prepareStatement("select pg_get_constraintdef(constraint_row.oid) from pg_constraint constraint_row where constraint_row.conname='candidate_fact_confirmation_fact_key_check'");
+              var confirmationLedgerKey = connection.prepareStatement("select string_agg(column_name, ',' order by ordinal_position) from information_schema.key_column_usage key_usage join information_schema.table_constraints table_constraint on table_constraint.constraint_name=key_usage.constraint_name where table_constraint.table_schema='public' and table_constraint.table_name='profile_confirmation_ledger' and table_constraint.constraint_type='PRIMARY KEY'");
+              var confirmationLedgerStages = connection.prepareStatement("select pg_get_constraintdef(constraint_row.oid) from pg_constraint constraint_row where constraint_row.conname='ck_profile_confirmation_stage'");
+              var confirmationLedgerFactKeys = connection.prepareStatement("select pg_get_constraintdef(constraint_row.oid) from pg_constraint constraint_row where constraint_row.conname='ck_profile_confirmation_fact_key'");
               var transportRisk = connection.prepareStatement("select is_nullable, column_default from information_schema.columns where table_schema='public' and table_name='acquired_document' and column_name='transport_risk'");
               var acquisitionAuditTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('source_onboarding_checkpoint','artifact_import_failure')");
               var coverageAuditColumns = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='source_year_coverage' and column_name in ('listing_page_count','filtered_count','failed_count','earliest_published_on','latest_published_on','stop_reason')");
@@ -634,6 +637,25 @@ class MigrationIntegrationTest {
                     .contains("EMPLOYER_SETTLEMENT_AT_APPLICATION")
                     .contains("SOCIAL_INSURANCE_AT_APPLICATION")
                     .contains("EMPLOYMENT_HISTORY");
+            }
+            // 幂等就是主键：同一把钥匙写两次在库里不成立，不靠应用层记得去查一下。
+            try (var rows = confirmationLedgerKey.executeQuery()) {
+                rows.next();
+                assertThat(rows.getString(1)).isEqualTo("candidate_profile_id,idempotency_key");
+            }
+            // 资料已写入但结论未重算，是必须能被看见、能被恢复的中间态。
+            try (var rows = confirmationLedgerStages.executeQuery()) {
+                rows.next();
+                assertThat(rows.getString(1)).contains("WRITTEN").contains("RECOMPUTED");
+            }
+            // 要凭材料判断的字段进不了这张表：一句"我有的"不能成为硬资格依据。
+            try (var rows = confirmationLedgerFactKeys.executeQuery()) {
+                rows.next();
+                assertThat(rows.getString(1))
+                    .contains("POLITICAL_AFFILIATION")
+                    .contains("EMPLOYER_SETTLEMENT_AT_APPLICATION")
+                    .doesNotContain("EDUCATION_RECORDS")
+                    .doesNotContain("EMPLOYMENT_HISTORY");
             }
             try (var rows = transportRisk.executeQuery()) {
                 rows.next();
