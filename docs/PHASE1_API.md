@@ -208,3 +208,29 @@ Base path：`/api/v1`
 很容易误判；误判成“不可报”会静默丢掉岗位，代价比不做大。留服认证的**时限**
 （`GraduateEligibilityRule.credentialDeadline`）也还没接进学历规则——目前只判“认证是否
 在进行中”，不判“能否赶在截止日前完成”。
+
+### 逐条结论的证据
+
+产品需求 §10.6 要求“每个资格结论、用工身份和关键推荐都有可定位证据”。
+`EligibilityAssessment.ruleResults` 的每条 `RuleResult` 因此带 `evidenceIds`：支撑这条规则
+得出该结论的证据片段。挂在整份评估上的 `evidenceIds` 是公告级的，只能指到一份公告，
+指不到公告里具体是哪一句话。
+
+片段来自 `job_field_evidence` / `recruitment_event_field_evidence`，按官方字段名对应到规则：
+
+| RuleType | 官方字段 |
+| --- | --- |
+| `AGE` | `ageRequirementText` |
+| `EDUCATION` | `educationRequirementText` |
+| `EXACT_MAJOR` | `majorRequirementText` |
+| `GRADUATE_YEAR` / `FRESH_GRADUATE_STATUS` | `graduateRule` |
+| `EXPERIENCE` | `experienceEvidenceRule` |
+| `GENDER` | `genderRequirement` |
+| `POLITICAL_AFFILIATION` | `otherRequirements` |
+
+一个字段可以有多个片段，全部保留——一条事实本就可能引用多处原文。缺片段级证据时
+`evidenceIds` 为空，读者回落到评估级的公告证据，**不会伪造一个片段**。
+`PROFESSIONAL_TITLE` 目前没有对应的官方字段，因此始终回落到公告级。
+
+Excel 导入的行没有片段级定位，`job_field_evidence` 里没有它们的记录，行为与此前一致。
+V6 之前落库的评估没有 `evidenceIds`，读成空表，不影响整行可读。
