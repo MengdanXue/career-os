@@ -227,6 +227,35 @@ class AgentExecutorTest {
         assertThat(runEmpty.question()).contains("放宽");
     }
 
+    // --- 叙述不能带判定，执行器就地校验 ---
+
+    /**
+     * 带判定词或数值的叙述不能离开执行器。等到渲染阶段再拦已经晚了——
+     * 调用方可能先把它用掉（记日志、直接回给用户）。
+     */
+    @Test void aFinishNarrativeCarryingVerdictsIsRejectedBeforeItLeaves() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "查岗位",
+            state -> new PlannerStep.Finish("这个岗位你是可报的，适配 72 分，放心投。"));
+
+        assertThat(run.outcome()).isEqualTo(Outcome.FINISHED);
+        assertThat(run.narrative()).isNull();
+        assertThat(run.narrativeRejected()).isTrue();
+        assertThat(run.narrativeViolations()).isNotEmpty();
+    }
+
+    /** 合格的连接性叙述照常放行。 */
+    @Test void aPlainConnectiveNarrativeSurvives() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "查岗位",
+            state -> new PlannerStep.Finish("下面按稳定性排序，其中一处仍需你补充材料后才能定。"));
+
+        assertThat(run.narrative()).isEqualTo("下面按稳定性排序，其中一处仍需你补充材料后才能定。");
+        assertThat(run.narrativeRejected()).isFalse();
+    }
+
     /** 轨迹要能回答"它为什么这么选"，否则事后分不清依据结果还是走固定流程。 */
     @Test void theTraceRecordsWhyEachToolWasChosen() {
         var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
