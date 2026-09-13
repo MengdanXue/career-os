@@ -117,6 +117,55 @@ class AgentSessionServiceTest {
         assertThat(service.resolveOrdinal(SESSION_ID, 1).jobPostingId()).isEqualTo(later);
     }
 
+    // --- 连续确认：会话版本要跟着自己的写入推进 ---
+
+    /**
+     * 用户自己的一次确认把资料版本推高了。不推进会话里记的版本，第二个待确认问题
+     * 必定撞上版本检查——每一条确认单独测都是对的，连起来才暴露。
+     */
+    @Test void theSessionVersionAdvancesWithTheUsersOwnConfirmation() {
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+
+        assertThat(service.advanceProfileVersion(SESSION_ID, "profile-1", "profile-2")).isTrue();
+        assertThat(service.profileVersionSeenBy(SESSION_ID)).contains("profile-2");
+    }
+
+    /**
+     * 只从这次写入的 before 推进到 after，不是"刷成当前值"。期间若有别处改动，
+     * 会话版本已不是 before，这里什么都不做——版本检查照样会拦，那正是它要拦的情况。
+     */
+    @Test void anAdvanceFromAVersionTheSessionNoLongerHoldsIsRefused() {
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+
+        assertThat(service.advanceProfileVersion(SESSION_ID, "someone-elses-version", "profile-9")).isFalse();
+        assertThat(service.profileVersionSeenBy(SESSION_ID)).contains("profile-1");
+    }
+
+    /** 推进版本不能顺手清掉岗位顺序：用户看到的还是同一份列表，序号仍然有效。 */
+    @Test void advancingTheVersionKeepsTheRecordedOrderAndPendingItems() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(first), bundle(second,
+            Map.of(RuleType.POLITICAL_AFFILIATION, new EligibilityAssessment.RuleResult(
+                EligibilityStatus.NEEDS_CONFIRMATION, "候选人政治面貌尚未确认")))));
+
+        service.advanceProfileVersion(SESSION_ID, "profile-1", "profile-2");
+        profiles.stored = candidate("profile-2");
+
+        assertThat(service.resolveOrdinal(SESSION_ID, 2).jobPostingId()).isEqualTo(second);
+        assertThat(sessions.stored.get(SESSION_ID).pendingConfirmations()).hasSize(1);
+    }
+
+    // --- 归属：会话读取要按候选人校验 ---
+
+    /** 会话 ID 是可猜的 UUID；读别人的会话就能看到别人的待确认事项和岗位顺序。 */
+    @Test void aSessionCannotBeReadByAnotherCandidate() {
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+
+        assertThat(service.find(CANDIDATE_ID, SESSION_ID)).isPresent();
+        assertThat(service.find(UUID.randomUUID(), SESSION_ID)).isEmpty();
+    }
+
     // --- 待确认事项 ---
 
     /** 待确认事项要记下是哪个字段、哪个岗位问的、原话是什么，用户回答时才对得上。 */

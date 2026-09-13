@@ -133,9 +133,14 @@ describe('WatchlistPanel', () => {
     expect(screen.queryByRole('button', { name: /开始跟踪变化/ })).not.toBeInTheDocument()
   })
 
-  it('renders nothing when no job is watched', async () => {
+  /**
+   * 空清单不能什么都不显示。之前这里直接返回 null，用户既看不到这个功能，
+   * 也无从知道怎么把岗位加进来——而当时界面里根本没有任何"关注"入口。
+   */
+  it('tells the user how to add a job when the list is empty', async () => {
     renderPanel([])
 
-    await vi.waitFor(() => expect(screen.queryByText(/关注清单/)).not.toBeInTheDocument())
+    expect(await screen.findByText('还没有关注任何岗位')).toBeInTheDocument()
+    expect(screen.getByText(/点「关注」/)).toBeInTheDocument()
   })
 })

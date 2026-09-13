@@ -35,8 +35,21 @@ export function WatchlistPanel({ candidateId, asOf }: { candidateId: string; asO
   })
 
   const items = watchlist.data?.items ?? []
-  if (items.length === 0) return null
   const changedCount = items.filter(item => item.changedSinceLastSeen).length
+
+  // 空清单不能什么都不显示：那样用户既看不到这个功能，也无从知道怎么把岗位加进来。
+  if (items.length === 0) {
+    if (watchlist.isLoading || watchlist.error) return null
+    return <section className="watchlist-panel" aria-labelledby="watchlist-title">
+      <header>
+        <p className="section-number">WATCHLIST · 关注清单</p>
+        <h2 id="watchlist-title">还没有关注任何岗位</h2>
+      </header>
+      <p className="watchlist-empty">
+        在问答结果或岗位档案里点「关注」，之后这里会显示它们的结论变化和报名截止。
+      </p>
+    </section>
+  }
 
   return <section className="watchlist-panel" aria-labelledby="watchlist-title">
     <header>

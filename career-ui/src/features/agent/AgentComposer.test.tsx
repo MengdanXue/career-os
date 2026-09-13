@@ -48,6 +48,32 @@ describe('AgentComposer', () => {
     expect(screen.queryByText(/LLM|OpenAI|模型失败/i)).not.toBeInTheDocument()
   })
 
+  /**
+   * 关注清单此前只有接口没有入口，任何岗位都进不去，整个功能不可达。
+   * 结果行上的「关注」就是那个入口，并且要把屏幕上的结论作为基准一起送上去——
+   * 没有基准的话，第一次变化发现不了。
+   */
+  it('can add a job to the watchlist with the verdict shown on screen', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json(answer))
+      .mockResolvedValue(json({ jobId: answer.decisions[0].jobId, at: '2026-08-24T15:00:00Z' }))
+    vi.stubGlobal('fetch', fetch)
+    render(<AppProviders><AgentComposer expanded /></AppProviders>)
+
+    await userEvent.type(screen.getByLabelText('向 Career OS 提问'), '杭州有哪些稳定岗位？')
+    await userEvent.click(screen.getByRole('button', { name: '分析' }))
+    await screen.findByText(/优先核对杭州市数字事业中心/)
+
+    await userEvent.click(screen.getByRole('button', { name: '关注' }))
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+
+    const [url, init] = fetch.mock.calls[1]
+    expect(String(url)).toContain('/watched-jobs/')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body)).toEqual({ seenStatus: 'ELIGIBLE', seenEvaluatorVersion: 'decision-v1' })
+    expect(await screen.findByText('已加入关注')).toBeInTheDocument()
+  })
+
   // 第二句话必须带上第一句返回的会话 ID。不带的话每句都是新的一轮，
   // "第二个怎么样"就没有那份列表可指，而系统会拿重新排出来的第二名认真作答。
   it('carries the session id into the next question', async () => {

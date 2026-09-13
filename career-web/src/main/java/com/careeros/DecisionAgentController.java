@@ -19,12 +19,15 @@ class DecisionAgentController {
     private final AgentQueryService service;
     private final DecisionExplanationService explanations;
     private final AgentSessionService sessions;
+    private final com.careeros.application.CandidateProfileService profiles;
 
     DecisionAgentController(AgentQueryService service, DecisionExplanationService explanations,
-                            AgentSessionService sessions) {
+                            AgentSessionService sessions,
+                            com.careeros.application.CandidateProfileService profiles) {
         this.service = service;
         this.explanations = explanations;
         this.sessions = sessions;
+        this.profiles = profiles;
     }
 
     /**
@@ -51,6 +54,38 @@ class DecisionAgentController {
             session.pendingConfirmations().stream()
                 .map(item -> new PendingConfirmation(item.factKey(), item.question(), item.jobPostingId())).toList());
     }
+
+    /**
+     * 取回一轮会话的当前状态。
+     *
+     * <p>浏览器一刷新，待确认问题就只存在于上一次查询的响应里，用户没法接着回答。
+     * 这个只读接口让刷新之后还能把问题和当前资料版本取回来，不必重新提问一遍。
+     */
+    @GetMapping("/{sessionId}")
+    AgentSessionResponse session(
+        @PathVariable("candidateId") UUID candidateId,
+        @PathVariable("sessionId") UUID sessionId
+    ) {
+        var session = sessions.find(candidateId, sessionId).orElseThrow(() ->
+            new AgentSessionService.SessionNotFoundException("session not found: " + sessionId));
+        // 会话记的是"这一轮问过什么"。刷新之后若原样回放，已经答过的问题会被再问一遍，
+        // 用户没法区分"还没答"和"答过了"。所以按当前确认状态标出来，而不是把它们删掉——
+        // 删掉就看不出系统问过这一条了。
+        var statuses = profiles.facts(candidateId).statuses();
+        return new AgentSessionResponse(session.sessionId(), session.profileVersion(),
+            session.lastJobIdsInOrder(),
+            session.pendingConfirmations().stream()
+                .map(item -> new SessionPendingConfirmation(item.factKey(), item.question(), item.jobPostingId(),
+                    statuses.get(item.factKey()) == com.careeros.domain.CandidateFacts.CandidateFactStatus.CONFIRMED))
+                .toList());
+    }
+
+    /** @param answered 这一条是否已经确认过；刷新之后据此区分"还没答"和"答过了" */
+    record SessionPendingConfirmation(CandidateFactKey factKey, String question, UUID jobPostingId,
+                                      boolean answered) {}
+
+    record AgentSessionResponse(UUID sessionId, String profileVersion, List<UUID> jobIdsInOrder,
+                                List<SessionPendingConfirmation> pendingConfirmations) {}
 
     /**
      * "第 N 个怎么样"——指的是用户屏幕上那一份列表的第 N 个。
