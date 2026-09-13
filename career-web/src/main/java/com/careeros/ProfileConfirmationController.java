@@ -6,6 +6,7 @@ import com.careeros.application.personal.ProfileConfirmationService;
 import com.careeros.application.personal.ProfileConfirmationService.ConfirmationRequest;
 import com.careeros.application.personal.ProfileConfirmationService.DeclaredValue;
 import com.careeros.application.personal.ProfileConfirmationService.Result;
+import com.careeros.application.AgentSessionService;
 import com.careeros.domain.CandidateFacts.CandidateFactKey;
 import com.careeros.domain.DomainEnums.ApplicationTimeStatus;
 import com.careeros.domain.DomainEnums.Gender;
@@ -29,9 +30,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/v1/candidates/{candidateId}/profile-confirmations")
 class ProfileConfirmationController {
     private final ProfileConfirmationService confirmations;
+    private final AgentSessionService sessions;
 
-    ProfileConfirmationController(ProfileConfirmationService confirmations) {
+    ProfileConfirmationController(ProfileConfirmationService confirmations, AgentSessionService sessions) {
         this.confirmations = confirmations;
+        this.sessions = sessions;
     }
 
     @PostMapping
@@ -42,13 +45,28 @@ class ProfileConfirmationController {
         @RequestBody ConfirmationBody body
     ) {
         var request = new ConfirmationRequest(candidateId, body.factKey(), declared(body),
-            body.expectedProfileVersion(), body.idempotencyKey(), body.acknowledgedChange());
+            expectedProfileVersion(body), body.idempotencyKey(), body.acknowledgedChange());
         var outcome = confirmations.record(request, asOf);
         return new ConfirmationResponse(outcome.result(), outcome.evidenceStrength(),
             outcome.profileVersionBefore(), outcome.profileVersionAfter(), outcome.message(),
             outcome.pendingChange() == null ? null : new PendingChange(
                 outcome.pendingChange().factKey(), outcome.pendingChange().from(), outcome.pendingChange().to()),
             outcome.changes());
+    }
+
+    /**
+     * 用户是在哪一版资料下看到那个问题的。
+     *
+     * <p>带了会话就以会话里记着的版本为准，客户端传来的版本一概不用——那个检查的意义正是
+     * "用户看到的和现在的不一样"，若允许客户端自报，它只要报上当前版本就永远通过。
+     *
+     * <p>没有会话的直连调用（资料页自己的表单）才用请求里的版本：那里没有会话可依，
+     * 版本是页面渲染时拿到的，仍然是"用户看到的那一版"。
+     */
+    private String expectedProfileVersion(ConfirmationBody body) {
+        if (body.sessionId() == null) return body.expectedProfileVersion();
+        return sessions.profileVersionSeenBy(body.sessionId()).orElseThrow(() ->
+            new IllegalArgumentException("会话不存在或已过期，请重新查询后再确认"));
     }
 
     /**
@@ -82,13 +100,15 @@ class ProfileConfirmationController {
     }
 
     /**
-     * @param expectedProfileVersion 用户看到那个问题时的资料版本
+     * @param sessionId              对话里回答时带上；带了它就以会话记着的资料版本为准
+     * @param expectedProfileVersion 没有会话时（资料页直连）用户看到那个问题时的资料版本
      * @param idempotencyKey         同一次回答重试时带同一把钥匙
      * @param acknowledgedChange     是否已确认要覆盖一个不同的既有答案
      */
     record ConfirmationBody(
         CandidateFactKey factKey,
         String value,
+        UUID sessionId,
         String expectedProfileVersion,
         String idempotencyKey,
         boolean acknowledgedChange

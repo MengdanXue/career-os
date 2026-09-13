@@ -33,23 +33,24 @@ public final class AgentQueryService {
     public AgentResponse query(UUID candidateId,String question,int limit,Instant now) {
         if (question == null || question.isBlank()) throw new IllegalArgumentException("question is required");
         if (limit < 1 || limit > 20) throw new IllegalArgumentException("limit must be between 1 and 20");
-        var query=new DecisionRankingService.RankingQuery(tier(question),location(question),jobFamily(question),0,limit,false);
+        var filters=new AgentSession.SessionFilters(tier(question),location(question),jobFamily(question),limit);
+        var query=new DecisionRankingService.RankingQuery(filters.tier(),filters.location(),filters.jobFamily(),0,limit,false);
         var page=rankings.rank(candidateId,query,now);
         AnswerBlock block=block(page.items());
         String deterministic=block.render();
         if (phraser.isEmpty()) {
-            return new AgentResponse(question,deterministic,page.items(),false,false,block.disclaimer(),List.of());
+            return new AgentResponse(question,deterministic,page.items(),false,false,block.disclaimer(),List.of(),filters);
         }
         String narrative;
         try {
             narrative=phraser.get().phrase(new PhrasingContext(question,deterministic,summaries(page.items())));
         } catch (RuntimeException failure) {
             return new AgentResponse(question,deterministic,page.items(),false,true,block.disclaimer(),
-                List.of("模型调用失败："+failure.getClass().getSimpleName()));
+                List.of("模型调用失败："+failure.getClass().getSimpleName()),filters);
         }
         var composed=VALIDATOR.compose(narrative,block);
         return new AgentResponse(question,composed.answer(),page.items(),composed.narrativeUsed(),
-            !composed.narrativeUsed(),block.disclaimer(),composed.violations());
+            !composed.narrativeUsed(),block.disclaimer(),composed.violations(),filters);
     }
 
     /**
@@ -113,8 +114,10 @@ public final class AgentQueryService {
      * @param modelPhrased  模型叙述是否被采用
      * @param fallbackUsed  是否整块回落到确定性事实块
      * @param violations    回落原因，用于留痕——没人看得见的拦截等于没拦截
+     * @param filters       这一轮实际使用的筛选条件。返回它是为了让会话能记下"用户看到的是哪一份列表"，
+     *                      下一句"还有别的吗"才落在同一个范围里。
      */
-    public record AgentResponse(String question,String answer,List<DecisionBundle> decisions,boolean modelPhrased,boolean fallbackUsed,String disclaimer,List<String> violations) {
+    public record AgentResponse(String question,String answer,List<DecisionBundle> decisions,boolean modelPhrased,boolean fallbackUsed,String disclaimer,List<String> violations,AgentSession.SessionFilters filters) {
         public AgentResponse { decisions=List.copyOf(decisions); violations=violations==null?List.of():List.copyOf(violations); }
     }
 }
