@@ -18,6 +18,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
@@ -39,9 +40,22 @@ class SecurityConfiguration {
     static final String REVIEWER = "REVIEWER";
     static final String ADMIN = "ADMIN";
 
+    /**
+     * 用能识别 {@code {id}} 前缀的委派编码器。
+     *
+     * <p>配置进来的口令哈希带 {@code {bcrypt}} 前缀（见 {@code requirePasswordHash}）。
+     * 之前这里是裸的 {@link BCryptPasswordEncoder}，于是它拿到的是整串
+     * {@code {bcrypt}$2a$...}——不是合法 bcrypt 哈希，校验必然失败。结果是：凡是按文档
+     * 配置了账号的部署，全都登不进去，日志里只有一句 "Encoded password does not look like
+     * BCrypt"；唯一能用的反而是没配账号时生成的那个临时 admin，因为它的哈希是裸的。
+     * 单元测试照不出这一条，要真的发一次带凭证的请求才会暴露。
+     *
+     * <p>委派编码器同时让 {@code encode} 产出带前缀的哈希，生成的临时账号继续可用，
+     * 将来换算法也不必改动已存的哈希。
+     */
     @Bean
     PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
     @Bean
