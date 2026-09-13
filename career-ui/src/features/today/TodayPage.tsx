@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { queryKeys } from '../../api/http'
 import { AsyncState } from '../../components/AsyncState'
 import { getPersonalActions, getWorkbenchSummary, type PersonalAction } from './todayApi'
+import { WatchlistPanel } from './WatchlistPanel'
 
 const actionLabels: Record<PersonalAction['kind'], string> = {
   CURRENT_JOB_DEADLINE: '当前岗位截止',
@@ -86,6 +87,8 @@ export function TodayPage() {
           <p>你可以继续完善资料，或查看当前 T1 机会。</p>
           <div><Link to="/profile">完善我的资料</Link><Link to="/opportunities?tier=T1">查看 T1 机会</Link></div>
         </section>}
+
+        <WatchlistPanel candidateId={candidateId} asOf={asOf} />
 
         <section className="today-secondary" aria-labelledby="opportunity-overview-title">
           <header><div><p className="eyebrow">OPPORTUNITY LEDGER</p><h2 id="opportunity-overview-title">你的机会概览</h2></div><Link to="/opportunities">查看全部岗位 →</Link></header>
