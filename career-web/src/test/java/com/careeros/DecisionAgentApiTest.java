@@ -29,6 +29,7 @@ class DecisionAgentApiTest {
 
     private AgentQueryService service;
     private AgentSessionService sessions;
+    private com.careeros.application.CandidateProfileService profiles;
     private MockMvc mvc;
 
     @BeforeEach void setUp() {
@@ -36,7 +37,8 @@ class DecisionAgentApiTest {
         sessions=mock(AgentSessionService.class);
         when(sessions.remember(any(),any(),any(),any())).thenAnswer(call->new AgentSession(
             call.getArgument(0),call.getArgument(1),FILTERS,List.of(),List.of(),"profile-7",Instant.EPOCH));
-        mvc=MockMvcBuilders.standaloneSetup(new DecisionAgentController(service,new com.careeros.application.DecisionExplanationService(),sessions))
+        profiles=mock(com.careeros.application.CandidateProfileService.class);
+        mvc=MockMvcBuilders.standaloneSetup(new DecisionAgentController(service,new com.careeros.application.DecisionExplanationService(),sessions,profiles))
             .setControllerAdvice(new ApiExceptionHandler()).build();
     }
 

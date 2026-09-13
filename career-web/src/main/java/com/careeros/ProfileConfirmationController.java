@@ -47,6 +47,14 @@ class ProfileConfirmationController {
         var request = new ConfirmationRequest(candidateId, body.factKey(), declared(body),
             expectedProfileVersion(body), body.idempotencyKey(), body.acknowledgedChange());
         var outcome = confirmations.record(request, asOf);
+        // 用户自己的这次写入把资料版本推高了。会话里记的还是查询时那一版，不推进的话
+        // 下一个待确认问题必定撞上版本检查——连续确认走不完第二步。
+        // 只从这次写入的 before 推进到 after：期间若有别处改动，会话版本已不是 before，
+        // 这里什么都不做，版本检查照样会拦。
+        if (body.sessionId() != null) {
+            sessions.advanceProfileVersion(body.sessionId(),
+                outcome.profileVersionBefore(), outcome.profileVersionAfter());
+        }
         return new ConfirmationResponse(outcome.result(), outcome.evidenceStrength(),
             outcome.profileVersionBefore(), outcome.profileVersionAfter(), outcome.message(),
             outcome.pendingChange() == null ? null : new PendingChange(

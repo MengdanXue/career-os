@@ -71,6 +71,22 @@ public final class AgentSessionService {
     }
 
     /**
+     * 取回一轮会话，并核对它属于这个候选人。
+     *
+     * <p>会话 ID 是可猜的 UUID，读接口必须按候选人校验归属，否则拿到别人的会话
+     * 就能看到别人的待确认事项和岗位顺序。
+     */
+    public Optional<AgentSession> find(UUID candidateId, UUID sessionId) {
+        Objects.requireNonNull(candidateId, "candidateId");
+        return sessions.find(sessionId).filter(session -> session.candidateId().equals(candidateId));
+    }
+
+    /** 会话不存在，或不属于这个候选人。两者对外一视同仁，不泄露"存在但不是你的"。 */
+    public static final class SessionNotFoundException extends RuntimeException {
+        public SessionNotFoundException(String message) { super(message); }
+    }
+
+    /**
      * 用户要回答某个待确认事项时，取出他当时看到的资料版本。
      *
      * <p>确认写入用的乐观版本检查要以"用户看到问题时的版本"为准，而不是"此刻库里的版本"——
@@ -78,6 +94,28 @@ public final class AgentSessionService {
      */
     public Optional<String> profileVersionSeenBy(UUID sessionId) {
         return sessions.find(sessionId).map(AgentSession::profileVersion);
+    }
+
+    /**
+     * 一次确认写入之后，把会话记录的资料版本推进到那次写入产生的版本。
+     *
+     * <p>不推进的话，第二个待确认问题必定失败：它带的还是第一次查询时的版本，
+     * 而资料已经被用户自己的上一次确认改过了。用户每回答一条就得重新查一次，
+     * 连续确认根本走不完——每一条确认单独测都是对的，连起来才暴露。
+     *
+     * <p>只从 {@code fromVersion} 推进到 {@code toVersion}，不是"刷成当前值"。
+     * 期间若有别处改动，会话里的版本已经不是 {@code fromVersion}，这里什么都不做，
+     * 下一次确认照样会撞上版本检查——那正是这个检查要拦的情况。
+     *
+     * @return 是否真的推进了
+     */
+    public boolean advanceProfileVersion(UUID sessionId, String fromVersion, String toVersion) {
+        if (sessionId == null || fromVersion == null || toVersion == null) return false;
+        var session = sessions.find(sessionId).orElse(null);
+        if (session == null || !session.profileVersion().equals(fromVersion)) return false;
+        if (fromVersion.equals(toVersion)) return false;
+        sessions.save(session.withProfileVersion(toVersion, clock.instant()));
+        return true;
     }
 
     /** 从岗位结论里提取待确认事项：哪个字段没确认、是哪个岗位问的、原话是什么。 */
