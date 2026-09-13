@@ -60,6 +60,12 @@ class ApiExceptionHandler {
     ResponseEntity<ProblemDetail> candidateMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "CANDIDATE_NOT_FOUND", "Candidate not found", exception.getMessage());
     }
+    @ExceptionHandler(AgentRunController.PlannerUnavailableException.class)
+    ResponseEntity<ProblemDetail> plannerUnavailable(AgentRunController.PlannerUnavailableException exception) {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "PLANNER_UNAVAILABLE",
+            "Planner unavailable", exception.getMessage());
+    }
+
     @ExceptionHandler(com.careeros.application.AgentSessionService.SessionNotFoundException.class)
     ResponseEntity<ProblemDetail> sessionNotFound(
         com.careeros.application.AgentSessionService.SessionNotFoundException exception) {
