@@ -34,6 +34,60 @@ class DecisionAgentConfiguration {
             .call().content();
     }
 
+    /**
+     * 模型驱动的规划器。与叙述助手共用同一个开关。
+     *
+     * <p>它只负责把模型输出解析成一步计划；能不能调、调谁的、调几次由 {@code AgentExecutor} 决定。
+     * 所以这里不需要"请模型不要写入"——写入工具没有注册，请求了也会被拒。
+     *
+     * <p>模型调用失败不抛给上层：返回空串，解析为"没有下一步"，运行干净结束。
+     * 一次模型抖动不该让整个只读查询变成 500。
+     */
+    /** 一次模型往返的上限。超过就当这一步没给出计划，不让只读查询挂在那里。 */
+    static final java.time.Duration MODEL_TURN_DEADLINE=java.time.Duration.ofSeconds(20);
+
+    @Bean
+    @ConditionalOnProperty(prefix="career-os.agent.llm",name="enabled",havingValue="true")
+    com.careeros.application.agent.AgentTooling.AgentPlanner modelAgentPlanner(ChatClient.Builder builder) {
+        ChatClient client=builder.build();
+        // 每次往返起一个守护线程并设截止时间。客户端自身的重试与退避可能远超一次请求该等的时间：
+        // 真机上模型不可达时，这个只读接口曾经 120 秒都没有返回，请求线程一直被占着。
+        // 超时就返回空串，解析为"没有下一步"，运行干净结束——模型抖动不该让查询变成挂起。
+        var pool=java.util.concurrent.Executors.newCachedThreadPool(runnable->{
+            var thread=new Thread(runnable,"agent-model-turn");
+            thread.setDaemon(true);
+            return thread;
+        });
+        return new com.careeros.application.agent.ModelPlanner((protocol,state)->
+            boundedTurn(pool, MODEL_TURN_DEADLINE,
+                ()->client.prompt().system(protocol).user(state).call().content()));
+    }
+
+    /**
+     * 带截止时间地跑一次模型往返。
+     *
+     * <p>超时、失败、被中断一律返回空串——解析成"没有下一步"，运行干净结束。
+     * 返回 null 或抛出去都会让调用方多一条要处理的路径，而这三种情况对规划来说是同一件事：
+     * 这一步没有计划。
+     */
+    static String boundedTurn(java.util.concurrent.ExecutorService pool, java.time.Duration deadline,
+                              java.util.concurrent.Callable<String> call) {
+        var future=pool.submit(call);
+        try {
+            String answer=future.get(deadline.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            return answer == null ? "" : answer;
+        } catch (java.util.concurrent.TimeoutException timeout) {
+            future.cancel(true);
+            return "";
+        } catch (InterruptedException interrupted) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            return "";
+        } catch (java.util.concurrent.ExecutionException failure) {
+            return "";
+        }
+    }
+
     @Bean AgentQueryService agentQueryService(DecisionRankingService rankings,DecisionExplanationService explanations,ObjectProvider<AgentQueryService.AgentPhraser> phraser,DecisionIntelligenceService decisions) {
         return new AgentQueryService(rankings::rank,explanations,
             Optional.ofNullable(phraser.getIfAvailable()),Optional.of(decisions::assess));
