@@ -86,3 +86,5 @@
 .watch-actions a { color: var(--tide); font-size: 12px; font-weight: 700; }
 .watch-actions button { padding: 4px 9px; border: 1px solid #aaa79d; background: #fffefa; font: inherit; font-size: 12px; cursor: pointer; }
 .watch-actions button:disabled { opacity: 0.55; cursor: default; }
+
+.watch-nobaseline { padding: 2px 6px; background: #efeade; color: #5d5442; font-weight: 700; }
