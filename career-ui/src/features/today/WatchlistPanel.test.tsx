@@ -17,6 +17,7 @@ function job(overrides: Partial<WatchedJob> = {}): WatchedJob {
     lastSeenStatus: 'NEEDS_CONFIRMATION',
     currentStatus: 'ELIGIBLE',
     changedSinceLastSeen: true,
+    baselineMissing: false,
     applicationEndsOn: '2026-09-01',
     applicationClosed: false,
     evaluatorVersion: 'v7',
@@ -100,6 +101,36 @@ describe('WatchlistPanel', () => {
     for (const label of [/报名$/, /立即报名/, /一键报名/, /提交报名/]) {
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
     }
+  })
+
+  /**
+   * 没有基准就发现不了变化，而界面此前只在"变了"时才给按钮——基准永远补不上。
+   * 所以缺基准必须自己带一个入口，否则这个洞自己不会愈合。
+   */
+  it('offers a way to start tracking when no baseline exists', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json({ candidateId, asOf, items: [
+        job({ lastSeenStatus: null, changedSinceLastSeen: false, baselineMissing: true }),
+      ] }))
+      .mockResolvedValueOnce(json({ jobId, at: '2026-08-24T15:00:00Z' }))
+      .mockResolvedValue(json({ candidateId, asOf, items: [] }))
+    renderPanel([], fetch)
+
+    expect(await screen.findByText('尚未开始跟踪变化')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '以当前结论为基准，开始跟踪变化' }))
+    await vi.waitFor(() => expect(fetch.mock.calls.length).toBeGreaterThan(1))
+
+    const call = fetch.mock.calls.find(entry => String(entry[0]).includes('acknowledgements'))!
+    expect(JSON.parse(call[1].body).seenStatus).toBe('ELIGIBLE')
+  })
+
+  /** 有基准的正常条目不该出现补基准的入口。 */
+  it('does not offer the baseline action once a baseline exists', async () => {
+    renderPanel([job({ changedSinceLastSeen: false, lastSeenStatus: 'ELIGIBLE' })])
+
+    await screen.findByText('可报')
+    expect(screen.queryByText('尚未开始跟踪变化')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /开始跟踪变化/ })).not.toBeInTheDocument()
   })
 
   it('renders nothing when no job is watched', async () => {

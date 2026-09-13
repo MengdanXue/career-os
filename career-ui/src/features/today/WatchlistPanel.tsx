@@ -63,6 +63,7 @@ export function WatchlistPanel({ candidateId, asOf }: { candidateId: string; asO
                       {statusLabels[item.lastSeenStatus]} → {statusLabels[item.currentStatus]}
                     </span>
                   : <span>{statusLabels[item.currentStatus]}</span>}
+                {item.baselineMissing && <span className="watch-nobaseline">尚未开始跟踪变化</span>}
                 {item.applicationClosed && <span className="watch-closed">报名已截止</span>}
                 {!item.applicationClosed && item.applicationEndsOn &&
                   <time dateTime={item.applicationEndsOn}>报名截止 {item.applicationEndsOn}</time>}
@@ -74,6 +75,12 @@ export function WatchlistPanel({ candidateId, asOf }: { candidateId: string; asO
                   disabled={acknowledge.isPending}
                   onClick={() => acknowledge.mutate(item)}
                 >知道了</button>}
+                {/* 没有基准就发现不了变化，而且这个洞自己不会愈合——必须给一个补基准的入口。 */}
+                {item.baselineMissing && <button
+                  type="button"
+                  disabled={acknowledge.isPending}
+                  onClick={() => acknowledge.mutate(item)}
+                >以当前结论为基准，开始跟踪变化</button>}
                 <button
                   type="button"
                   disabled={remove.isPending}

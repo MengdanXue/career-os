@@ -41,14 +41,37 @@ public final class JobWatchlistService {
     }
 
     /**
-     * 关注一个岗位。重复关注不会重置"上次看到的结论"——那会把尚未查看的变化抹掉。
+     * 关注一个岗位，并把用户此刻看到的结论记为基准。
+     *
+     * <p><b>基准必须在关注时就建立。</b> 不建立的话"上次看到的结论"一直是空，
+     * 而"变了"要求它非空——于是刚关注的岗位，第一次变化永远发现不了。那恰恰是最该发现的一次：
+     * 用户就是因为在意它才关注的。界面又只在"变了"时才给"知道了"按钮，基准永远补不上，
+     * 这个洞自己不会愈合。
+     *
+     * <p>基准取用户屏幕上的那个结论，不在这里重算。理由与 {@link #acknowledge} 相同：
+     * 重算可能给出另一个答案，那就不是他看到的东西了。
+     *
+     * <p>重复关注不会重置基准——那会把尚未查看的变化抹掉。
      */
-    public WatchedJob watch(UUID candidateId, UUID jobPostingId) {
+    public WatchedJob watch(UUID candidateId, UUID jobPostingId,
+                            EligibilityStatus seenStatus, String seenEvaluatorVersion) {
         Objects.requireNonNull(candidateId, "candidateId");
         Objects.requireNonNull(jobPostingId, "jobPostingId");
         var existing = watchlist.find(candidateId, jobPostingId).orElse(null);
         if (existing != null) return existing;
-        return watchlist.save(new WatchedJob(candidateId, jobPostingId, null, null, clock.instant(), null));
+        var now = clock.instant();
+        return watchlist.save(new WatchedJob(candidateId, jobPostingId, seenStatus,
+            seenStatus == null ? null : seenEvaluatorVersion, now, seenStatus == null ? null : now));
+    }
+
+    /**
+     * 在看不到结论的位置关注（例如岗位详情还没算出结果）。
+     *
+     * <p>此时没有基准可记。清单会把这条标成"尚未建立基准"并给出显式入口，
+     * 而不是默默显示"无变化"——那是在替一个从没比对过的岗位下结论。
+     */
+    public WatchedJob watch(UUID candidateId, UUID jobPostingId) {
+        return watch(candidateId, jobPostingId, null, null);
     }
 
     public void unwatch(UUID candidateId, UUID jobPostingId) {
@@ -86,6 +109,8 @@ public final class JobWatchlistService {
                     current,
                     // 只有真的看过一个不同的结论，才算"变了"。从没看过不是变化，是第一次看到。
                     watched.lastSeenStatus() != null && watched.lastSeenStatus() != current,
+                    // 有当前结论却没有基准，说明这条还没开始比对。要标出来，不能当成"无变化"。
+                    watched.lastSeenStatus() == null,
                     deadline,
                     deadline != null && deadline.isBefore(asOf),
                     bundle.decision().evaluatorVersion(),
@@ -118,6 +143,8 @@ public final class JobWatchlistService {
 
     /**
      * @param changedSinceLastSeen 自用户上次查看以来结论是否变了
+     * @param baselineMissing      还没有比对基准。不是"无变化"——是从来没比过，
+     *        下一次变化也发现不了，必须让用户能把基准补上。
      * @param applicationClosed    报名窗口是否已经关闭。结论仍是"可报"但窗口关了，
      *        只显示"可报"会让人以为还来得及。
      */
@@ -128,13 +155,14 @@ public final class JobWatchlistService {
         EligibilityStatus lastSeenStatus,
         EligibilityStatus currentStatus,
         boolean changedSinceLastSeen,
+        boolean baselineMissing,
         LocalDate applicationEndsOn,
         boolean applicationClosed,
         String evaluatorVersion,
         String deepLink
     ) {
         static WatchedJobView unavailable(UUID jobPostingId, EligibilityStatus lastSeenStatus) {
-            return new WatchedJobView(jobPostingId, null, null, lastSeenStatus, null, false,
+            return new WatchedJobView(jobPostingId, null, null, lastSeenStatus, null, false, false,
                 null, false, null, "/opportunities/" + jobPostingId);
         }
 
