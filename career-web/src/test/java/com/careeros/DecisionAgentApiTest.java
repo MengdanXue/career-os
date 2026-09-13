@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.careeros.application.AgentQueryService;
 import com.careeros.application.AgentSession;
 import com.careeros.application.AgentSessionService;
+import com.careeros.application.AgentSessionService.Reference;
+import com.careeros.application.AgentSessionService.Reference.Outcome;
 import com.careeros.domain.DomainEnums.JobFamily;
 import com.careeros.domain.DomainEnums.OpportunityTier;
 import java.time.Instant;
@@ -83,6 +85,86 @@ class DecisionAgentApiTest {
             .andExpect(jsonPath("$.fallbackUsed").value(true))
             .andExpect(jsonPath("$.modelPhrased").value(false))
             .andExpect(jsonPath("$.violations[0]").value("叙述包含数值；所有数值必须来自确定性事实块"));
+    }
+
+    /** "第二个怎么样"要落到用户屏幕上那一份列表的第二个，不能重新排名。 */
+    @Test void anOrdinalIsAnsweredAboutTheJobTheUserPointedAt() throws Exception {
+        UUID job=UUID.randomUUID();
+        when(sessions.resolveOrdinal(SESSION_ID,2)).thenReturn(new Reference(Outcome.RESOLVED,job));
+        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.of("profile-7"));
+        when(service.describe(eq(CANDIDATE_ID),eq(job),eq("第二个怎么样？"),eq(5),any()))
+            .thenReturn(new AgentQueryService.AgentResponse("第二个怎么样？","1. 信息中心技术岗",List.of(),false,false,
+                "机会决策指数，不是录取概率",List.of(),FILTERS));
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/agent-queries",CANDIDATE_ID)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"question\":\"第二个怎么样？\",\"limit\":5,\"sessionId\":\""+SESSION_ID+"\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.answer").value("1. 信息中心技术岗"));
+
+        // 没有重新排名，也没有覆盖记下的顺序——否则下一句"第三个"就没了依据。
+        verify(service,never()).query(any(),anyString(),anyInt(),any());
+        verify(sessions,never()).remember(any(),any(),any(),any());
+    }
+
+    /**
+     * 那份列表已经不作数了就说不作数。回落去重新排一次名，会拿另一个岗位冒充
+     * 用户指的那个，而他看不出来。
+     */
+    @Test void aStaleListingRefusesTheOrdinalInsteadOfReRanking() throws Exception {
+        when(sessions.resolveOrdinal(SESSION_ID,2)).thenReturn(new Reference(Outcome.STALE_LISTING,null));
+        when(service.query(eq(CANDIDATE_ID),anyString(),eq(5),any()))
+            .thenReturn(new AgentQueryService.AgentResponse("重新排过的列表","1. 另一个岗位",List.of(),false,false,
+                "机会决策指数，不是录取概率",List.of(),FILTERS));
+
+        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.of("profile-7"));
+        when(service.cannotResolve(anyString(),anyString(),anyInt()))
+            .thenReturn(new AgentQueryService.AgentResponse("第二个怎么样？","你的资料已经更新，请重新查询后再指定序号。",
+                List.of(),false,false,"机会决策指数，不是录取概率",List.of(),FILTERS));
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/agent-queries",CANDIDATE_ID)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"question\":\"第二个怎么样？\",\"limit\":5,\"sessionId\":\""+SESSION_ID+"\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.answer").value(org.hamcrest.Matchers.containsString("重新查询")));
+
+        verify(service,never()).query(any(),anyString(),anyInt(),any());
+        verify(service,never()).describe(any(),any(),anyString(),anyInt(),any());
+    }
+
+    @Test void anOutOfRangeOrdinalSaysSoWithoutReRanking() throws Exception {
+        when(sessions.resolveOrdinal(SESSION_ID,9)).thenReturn(new Reference(Outcome.OUT_OF_RANGE,null));
+        when(service.query(eq(CANDIDATE_ID),anyString(),eq(5),any()))
+            .thenReturn(new AgentQueryService.AgentResponse("重新排过的列表","1. 另一个岗位",List.of(),false,false,
+                "机会决策指数，不是录取概率",List.of(),FILTERS));
+
+        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.of("profile-7"));
+        when(service.cannotResolve(anyString(),anyString(),anyInt()))
+            .thenReturn(new AgentQueryService.AgentResponse("第九个怎么样？","上一份列表里没有第 9 个。",
+                List.of(),false,false,"机会决策指数，不是录取概率",List.of(),FILTERS));
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/agent-queries",CANDIDATE_ID)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"question\":\"第九个怎么样？\",\"limit\":5,\"sessionId\":\""+SESSION_ID+"\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.answer").value(org.hamcrest.Matchers.containsString("没有第 9 个")));
+
+        verify(service,never()).query(any(),anyString(),anyInt(),any());
+    }
+
+    /** 不是序号的提问照常走普通查询——"第一学历"不是在指第一个岗位。 */
+    @Test void aFixedPhraseIsNotTreatedAsAnOrdinal() throws Exception {
+        when(service.query(eq(CANDIDATE_ID),eq("第一学历有要求吗"),eq(5),any()))
+            .thenReturn(new AgentQueryService.AgentResponse("第一学历有要求吗","当前没有符合条件的岗位。",List.of(),false,false,
+                "机会决策指数，不是录取概率",List.of(),FILTERS));
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/agent-queries",CANDIDATE_ID)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"question\":\"第一学历有要求吗\",\"limit\":5,\"sessionId\":\""+SESSION_ID+"\"}"))
+            .andExpect(status().isOk());
+
+        verify(sessions,never()).resolveOrdinal(any(),anyInt());
+        verify(service).query(eq(CANDIDATE_ID),eq("第一学历有要求吗"),eq(5),any());
     }
 
     @Test void invalidLimitReturnsProblemDetails() throws Exception {
