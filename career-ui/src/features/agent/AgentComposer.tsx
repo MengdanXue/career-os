@@ -10,7 +10,12 @@ export function AgentComposer({ expanded = false }: { expanded?: boolean }) {
   const [open, setOpen] = useState(expanded)
   const [question, setQuestion] = useState('')
   const candidateId = localStorage.getItem('career-os.selected-candidate') ?? '01992f09-0000-7000-8000-000000000001'
-  const query = useMutation({ mutationFn: (value: string) => askCareerOs(candidateId, value) })
+  // 会话 ID 要跨轮次带着走。不带的话每一句都是新的一轮，"第二个怎么样"就没有那份列表可指。
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined)
+  const query = useMutation({
+    mutationFn: (value: string) => askCareerOs(candidateId, value, sessionId),
+    onSuccess: result => { if (result.sessionId) setSessionId(result.sessionId) },
+  })
 
   function submit(event: FormEvent) {
     event.preventDefault()
