@@ -43,7 +43,7 @@ career-os:
   #
   # 部署时通过环境变量注入（Spring 宽松绑定），明文口令不进配置文件也不进仓库：
   #   CAREER_OS_SECURITY_USERS_0_USERNAME=zhang
-  #   CAREER_OS_SECURITY_USERS_0_PASSWORDHASH='$2y$12$...'
+  #   CAREER_OS_SECURITY_USERS_0_PASSWORD_HASH='$2y$12$...'
   #   CAREER_OS_SECURITY_USERS_0_ROLES_0=REVIEWER
   # 生成哈希：htpasswd -nbBC 12 "" '<password>' | cut -d: -f2
   #
