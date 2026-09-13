@@ -34,7 +34,15 @@ class ProfileConfirmationApiTest {
     @BeforeEach void setUp() {
         service = mock(ProfileConfirmationService.class);
         sessions = mock(AgentSessionService.class);
-        mvc = MockMvcBuilders.standaloneSetup(new ProfileConfirmationController(service, sessions))
+        // 直接执行回调即可：这里测的是控制器的编排，事务语义由真机验收覆盖。
+        var transactions = new org.springframework.transaction.support.TransactionTemplate(
+            new org.springframework.transaction.support.AbstractPlatformTransactionManager() {
+                protected Object doGetTransaction() { return new Object(); }
+                protected void doBegin(Object t, org.springframework.transaction.TransactionDefinition d) {}
+                protected void doCommit(org.springframework.transaction.support.DefaultTransactionStatus s) {}
+                protected void doRollback(org.springframework.transaction.support.DefaultTransactionStatus s) {}
+            });
+        mvc = MockMvcBuilders.standaloneSetup(new ProfileConfirmationController(service, sessions, transactions))
             .setControllerAdvice(new ApiExceptionHandler()).build();
     }
 
@@ -54,7 +62,7 @@ class ProfileConfirmationApiTest {
 
     /** 回答按本人声明记录，返回里要看得见证据等级与那句"不是官方核实"。 */
     @Test void recordsAnAnswerAsSelfReported() throws Exception {
-        when(service.record(any(), any())).thenReturn(new ConfirmationOutcome(Result.RECORDED,
+        when(service.completeRecompute(any(), any())).thenReturn(new ConfirmationOutcome(Result.RECORDED,
             EvidenceStrength.SELF_REPORTED, "profile-7", "profile-8",
             "已按你本人的声明记录。这是自述信息，不是官方核实结果。", null, null));
 
@@ -68,19 +76,19 @@ class ProfileConfirmationApiTest {
             .andExpect(jsonPath("$.profileVersionAfter").value("profile-8"))
             .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("不是官方核实")));
 
-        verify(service).record(argThat(request ->
+        verify(service).recordAnswer(argThat(request ->
             request.candidateId().equals(CANDIDATE_ID)
                 && request.factKey() == CandidateFactKey.POLITICAL_AFFILIATION
                 && request.value() instanceof DeclaredValue.OfPoliticalAffiliation value
                 && value.value() == PoliticalAffiliation.CPC_MEMBER
                 && request.expectedProfileVersion().equals("profile-7")
                 && request.idempotencyKey().equals("key-1")
-                && !request.acknowledgedChange()), any());
+                && !request.acknowledgedChange()));
     }
 
     /** 待确认的变更要说清改什么，但不承诺会解锁多少岗位。 */
     @Test void surfacesAPendingChangeWithoutPromisingUnlockedJobs() throws Exception {
-        when(service.record(any(), any())).thenReturn(new ConfirmationOutcome(
+        when(service.completeRecompute(any(), any())).thenReturn(new ConfirmationOutcome(
             Result.CHANGE_REQUIRES_ACKNOWLEDGEMENT, EvidenceStrength.SELF_REPORTED, "profile-7", "profile-7",
             "这会把「政治面貌」从「NON_MEMBER」改成「CPC_MEMBER」。改完要重算才知道各岗位结论有没有变。",
             new DeclaredChange(CandidateFactKey.POLITICAL_AFFILIATION, "NON_MEMBER", "CPC_MEMBER"), null));
@@ -108,7 +116,7 @@ class ProfileConfirmationApiTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
-        verify(service, never()).record(any(), any());
+        verify(service, never()).recordAnswer(any());
     }
 
     /** 要材料的字段在进入服务之前就被拒绝。 */
@@ -120,7 +128,7 @@ class ProfileConfirmationApiTest {
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
-        verify(service, never()).record(any(), any());
+        verify(service, never()).recordAnswer(any());
     }
 
     /**
@@ -131,7 +139,7 @@ class ProfileConfirmationApiTest {
      */
     @Test void aClaimedProfileVersionCannotOverrideTheOneTheSessionRecorded() throws Exception {
         when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.of("profile-the-user-saw"));
-        when(service.record(any(), any())).thenReturn(new ConfirmationOutcome(Result.RECORDED,
+        when(service.completeRecompute(any(), any())).thenReturn(new ConfirmationOutcome(Result.RECORDED,
             EvidenceStrength.SELF_REPORTED, "profile-the-user-saw", "profile-8", "已记录。", null, null));
 
         mvc.perform(post("/api/v1/candidates/{candidateId}/profile-confirmations", CANDIDATE_ID)
@@ -140,8 +148,8 @@ class ProfileConfirmationApiTest {
                 .content(sessionBody("POLITICAL_AFFILIATION", "CPC_MEMBER", SESSION_ID, "profile-current")))
             .andExpect(status().isOk());
 
-        verify(service).record(argThat(request ->
-            request.expectedProfileVersion().equals("profile-the-user-saw")), any());
+        verify(service).recordAnswer(argThat(request ->
+            request.expectedProfileVersion().equals("profile-the-user-saw")));
     }
 
     /** 会话不存在就不能确认：没有基准版本，那个检查无从谈起。 */
@@ -154,12 +162,12 @@ class ProfileConfirmationApiTest {
                 .content(sessionBody("POLITICAL_AFFILIATION", "CPC_MEMBER", SESSION_ID, "profile-current")))
             .andExpect(status().isBadRequest());
 
-        verify(service, never()).record(any(), any());
+        verify(service, never()).recordAnswer(any());
     }
 
     /** 覆盖既有答案的确认标记要原样传到服务，不能在这一层被默默打开。 */
     @Test void theAcknowledgementFlagIsPassedThroughUnchanged() throws Exception {
-        when(service.record(any(), any())).thenReturn(new ConfirmationOutcome(Result.RECORDED,
+        when(service.completeRecompute(any(), any())).thenReturn(new ConfirmationOutcome(Result.RECORDED,
             EvidenceStrength.SELF_REPORTED, "profile-7", "profile-8", "已记录。", null, null));
 
         mvc.perform(post("/api/v1/candidates/{candidateId}/profile-confirmations", CANDIDATE_ID)
@@ -168,6 +176,6 @@ class ProfileConfirmationApiTest {
                 .content(body("POLITICAL_AFFILIATION", "CPC_MEMBER", true)))
             .andExpect(status().isOk());
 
-        verify(service).record(argThat(ProfileConfirmationService.ConfirmationRequest::acknowledgedChange), any());
+        verify(service).recordAnswer(argThat(ProfileConfirmationService.ConfirmationRequest::acknowledgedChange));
     }
 }

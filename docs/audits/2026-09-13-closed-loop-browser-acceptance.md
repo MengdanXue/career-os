@@ -50,10 +50,53 @@ watch: c0000000-... lastSeen=NEEDS_CONFIRMATION      ← 基准在关注时就�
 确认已看过                      => 标记清除
 ```
 
+## 失败恢复：真实故障注入（后补，已完成）
+
+把一个岗位的 `job_family` 改成非法枚举值，使重算在真实实例上必定失败。
+
+**注入前（修复前的行为）**：
+
+```
+POST /profile-confirmations  => HTTP 500  UnexpectedRollbackException
+fact POLITICAL = UNCONFIRMED      ← 回答丢了
+profile political = UNKNOWN       ← 资料没写
+ledger rows = 0                   ← 台账也没了
+```
+
+根因：控制器把写入和重算包在一个 `@Transactional` 里。重算内部的评估失败把整个事务标成
+rollback-only，服务层 catch 住异常、返回"已记录但未重算"之后，提交阶段仍然整体回滚。
+**"回答不会丢"这条保证在生产里是假的。** 单元测试照不出来——假评估器只是抛异常，没有事务。
+
+**修复**：两段式。第一段在事务里写资料与台账并提交；第二段在事务之外重算。
+
+**注入后（修复后的行为）**：
+
+```
+POST /profile-confirmations  => HTTP 200  RECORDED_RECOMPUTE_DEFERRED
+   "已按你本人的声明记录…岗位结论尚未重算完成，稍后重试即可，回答不会重复记录。"
+fact   = CONFIRMED
+profile = CPC_MEMBER
+ledger  = 1 stage=WRITTEN          ← 停在可恢复的中间态
+```
+
+**修好岗位后用同一把幂等钥匙重试**：
+
+```
+=> HTTP 200  RECORDED   "上次的回答已经记录，这次补完了岗位结论的重算。"
+ledger = 1 stage=RECOMPUTED
+versions: before=profile-fail-3 after=profile-0800e999-…
+current profile version = profile-0800e999-…   ← 与 after 相同，没有第二次写入
+```
+
+结构侧由 `ConfirmationTransactionBoundaryTest` 守住：控制器方法与类上都不得有 `@Transactional`。
+
+## 顺带发现（未修，记录在案）
+
+一个岗位无法评估时，**整个排序查询失败**，返回里连 `sessionId` 都没有，而不是跳过该岗位并说明。
+关注清单对这种情况是降级处理的（标成读不到），排序路径不是。本轮未改，属于独立问题。
+
 ## 尚未验收
 
-- 失败恢复的**真实失败注入**：台账 `WRITTEN -> RECOMPUTED` 的恢复语义目前由单元测试与变异验证
-  覆盖，本轮未在真实实例上人为制造一次重算失败。
 - 模型自主选工具：尚未接入。当前模型只写连接性叙述。
 
 ## 复跑方式
