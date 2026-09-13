@@ -294,6 +294,34 @@ public final class JpaModels {
         protected AgentSessionEntity() {}
     }
 
+    @Embeddable
+    public static class CandidateJobWatchId implements java.io.Serializable {
+        @Column(name = "candidate_profile_id", nullable = false) UUID candidateProfileId;
+        @Column(name = "job_posting_id", nullable = false) UUID jobPostingId;
+        protected CandidateJobWatchId() {}
+        CandidateJobWatchId(UUID candidateProfileId, UUID jobPostingId) {
+            this.candidateProfileId = candidateProfileId;
+            this.jobPostingId = jobPostingId;
+        }
+        @Override public boolean equals(Object other) {
+            return other instanceof CandidateJobWatchId value
+                && Objects.equals(candidateProfileId, value.candidateProfileId)
+                && Objects.equals(jobPostingId, value.jobPostingId);
+        }
+        @Override public int hashCode() { return Objects.hash(candidateProfileId, jobPostingId); }
+    }
+
+    /** lastSeenStatus 是用户最后看到的结论，不是最新结论——只能由用户查看后显式推进。 */
+    @Entity @Table(name = "candidate_job_watch")
+    public static class CandidateJobWatchEntity {
+        @EmbeddedId CandidateJobWatchId id;
+        @Column(name = "last_seen_status", length = 32) String lastSeenStatus;
+        @Column(name = "last_seen_evaluator_version", length = 160) String lastSeenEvaluatorVersion;
+        @Column(name = "watched_at", nullable = false) Instant watchedAt;
+        @Column(name = "last_seen_at") Instant lastSeenAt;
+        protected CandidateJobWatchEntity() {}
+    }
+
     @Entity @Table(name = "policy_rule")
     public static class PolicyRuleEntity extends UuidEntity {
         @Enumerated(EnumType.STRING) @Column(name = "rule_type", nullable = false) RuleType ruleType;
