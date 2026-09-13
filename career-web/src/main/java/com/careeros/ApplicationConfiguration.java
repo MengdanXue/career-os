@@ -25,6 +25,8 @@ import com.careeros.application.personal.CandidateEvidenceTaskService;
 import com.careeros.application.personal.CandidateDecisionDiffService;
 import com.careeros.application.AgentSessionPorts;
 import com.careeros.application.AgentSessionService;
+import com.careeros.application.personal.JobWatchlistPorts;
+import com.careeros.application.personal.JobWatchlistService;
 import com.careeros.application.personal.ProfileConfirmationPorts;
 import com.careeros.application.personal.ProfileConfirmationService;
 import com.careeros.application.personal.PersonalActionPorts.CurrentJobSignal;
@@ -99,6 +101,7 @@ class ApplicationConfiguration {
         return new ProfileConfirmationService(candidates, profiles, diffs, ledger, clock);
     }
     @Bean AgentSessionService agentSessionService(AgentSessionPorts.Sessions sessions, RepositoryPorts.CandidateProfiles candidates, Clock clock) { return new AgentSessionService(sessions, candidates, clock); }
+    @Bean JobWatchlistService jobWatchlistService(JobWatchlistPorts.Watchlist watchlist, DecisionIntelligenceService decisions, Clock clock) { return new JobWatchlistService(watchlist, decisions, clock); }
     @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }
     @Bean JobLibrarySummaryService jobLibrarySummaryService(JobAdmissionPorts.JobAdmissions admissions) { return new JobLibrarySummaryService(admissions); }
     @Bean OfficialJobAdmissionService officialJobAdmissionService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,JobAdmissionPorts.JobFieldEvidence fieldEvidence) { return new OfficialJobAdmissionService(jobContexts,admissions,fieldEvidence); }
