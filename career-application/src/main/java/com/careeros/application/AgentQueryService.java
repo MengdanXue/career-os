@@ -18,9 +18,55 @@ public final class AgentQueryService {
     private final RankingPort rankings;
     private final DecisionExplanationService explanations;
     private final Optional<AgentPhraser> phraser;
+    private final Optional<DecisionPorts.DecisionAssessor> assessor;
 
     public AgentQueryService(RankingPort rankings,DecisionExplanationService explanations,Optional<AgentPhraser> phraser) {
-        this.rankings=rankings; this.explanations=explanations; this.phraser=phraser;
+        this(rankings,explanations,phraser,Optional.empty());
+    }
+
+    public AgentQueryService(RankingPort rankings,DecisionExplanationService explanations,Optional<AgentPhraser> phraser,Optional<DecisionPorts.DecisionAssessor> assessor) {
+        this.rankings=rankings; this.explanations=explanations; this.phraser=phraser; this.assessor=assessor;
+    }
+
+    /**
+     * 回答"第 N 个怎么样"——针对用户指着的那一个岗位。
+     *
+     * <p>岗位是会话按记下的顺序解析出来的，这里不重新排名：重新排出来的第 N 个可能是
+     * 另一个岗位，而用户看不出系统换了个对象在回答。
+     */
+    public AgentResponse describe(UUID candidateId,UUID jobPostingId,String question,int limit,Instant now) {
+        if (assessor.isEmpty()) {
+            return cannotResolve(question,"当前无法单独评估这个岗位，请重新查询列表。",limit);
+        }
+        var bundle=assessor.get().assess(candidateId,jobPostingId,now);
+        var decisions=List.of(bundle);
+        AnswerBlock block=block(decisions);
+        var filters=new AgentSession.SessionFilters(null,null,null,limit);
+        String deterministic=block.render();
+        if (phraser.isEmpty()) {
+            return new AgentResponse(question,deterministic,decisions,false,false,block.disclaimer(),List.of(),filters);
+        }
+        String narrative;
+        try {
+            narrative=phraser.get().phrase(new PhrasingContext(question,deterministic,summaries(decisions)));
+        } catch (RuntimeException failure) {
+            return new AgentResponse(question,deterministic,decisions,false,true,block.disclaimer(),
+                List.of("模型调用失败："+failure.getClass().getSimpleName()),filters);
+        }
+        var composed=VALIDATOR.compose(narrative,block);
+        return new AgentResponse(question,composed.answer(),decisions,composed.narrativeUsed(),
+            !composed.narrativeUsed(),block.disclaimer(),composed.violations(),filters);
+    }
+
+    /**
+     * 序号指不回任何岗位时的回答。
+     *
+     * <p>这里刻意不回落去重新排名一次。用户指的是他屏幕上那一份列表；那份列表已经不作数了，
+     * 就说它不作数，而不是拿一份新排的列表冒充它。
+     */
+    public AgentResponse cannotResolve(String question,String reason,int limit) {
+        return new AgentResponse(question,reason,List.of(),false,false,
+            AnswerBlock.DEFAULT_DISCLAIMER,List.of(),new AgentSession.SessionFilters(null,null,null,limit));
     }
 
     /**

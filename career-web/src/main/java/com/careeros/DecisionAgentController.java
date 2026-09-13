@@ -4,7 +4,9 @@ import com.careeros.application.AgentQueryService;
 import com.careeros.application.AgentSession;
 import com.careeros.application.AgentSessionService;
 import com.careeros.application.DecisionExplanationService;
+import com.careeros.application.AgentSessionService.Reference.Outcome;
 import com.careeros.domain.CandidateFacts.CandidateFactKey;
+import com.careeros.domain.OrdinalReference;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -36,6 +38,8 @@ class DecisionAgentController {
     @Transactional
     AgentResponse query(@PathVariable("candidateId") UUID candidateId, @RequestBody AgentRequest request) {
         int limit = request.limit() == null ? 5 : request.limit();
+        var byOrdinal = resolveOrdinal(candidateId, request, limit);
+        if (byOrdinal != null) return byOrdinal;
         var result = service.query(candidateId, request.question(), limit, Instant.now());
         var decisions = result.decisions().stream()
             .map(value -> DecisionApiModels.DecisionResponse.from(value, explanations.explain(value))).toList();
@@ -46,6 +50,48 @@ class DecisionAgentController {
             session.profileVersion(),
             session.pendingConfirmations().stream()
                 .map(item -> new PendingConfirmation(item.factKey(), item.question(), item.jobPostingId())).toList());
+    }
+
+    /**
+     * "第 N 个怎么样"——指的是用户屏幕上那一份列表的第 N 个。
+     *
+     * <p>解析不出序号就返回 null，走普通查询。解析出来了但那份列表已经不作数（资料变了）
+     * 或者序号越界，就明说，**不重新排名**：重新排出来的第 N 个可能是另一个岗位，
+     * 系统会一本正经地讲另一件事，而用户看不出它换了对象。
+     *
+     * <p>没有会话时也走普通查询——那说明用户是新开一轮，序号本来就无所指。
+     */
+    private AgentResponse resolveOrdinal(UUID candidateId, AgentRequest request, int limit) {
+        if (request.sessionId() == null) return null;
+        var ordinal = OrdinalReference.parse(request.question());
+        if (ordinal.isEmpty()) return null;
+        var reference = sessions.resolveOrdinal(request.sessionId(), ordinal.get());
+        if (reference.outcome() == Outcome.NO_SESSION) return null;
+        if (reference.outcome() == Outcome.STALE_LISTING) {
+            return describe(request, service.cannotResolve(request.question(),
+                "你的资料已经更新，上一份列表的排序不再对应当前结论，请重新查询后再指定序号。", limit), request.sessionId());
+        }
+        if (reference.outcome() == Outcome.OUT_OF_RANGE) {
+            return describe(request, service.cannotResolve(request.question(),
+                "上一份列表里没有第 " + ordinal.get() + " 个。", limit), request.sessionId());
+        }
+        return describe(request,
+            service.describe(candidateId, reference.jobPostingId(), request.question(), limit, Instant.now()),
+            request.sessionId());
+    }
+
+    /**
+     * 把针对单个岗位的回答装配成响应。
+     *
+     * <p>不调用 {@code sessions.remember}：这一轮没有产生新的列表，覆盖掉原有顺序
+     * 会让下一句"第三个"失去依据。
+     */
+    private AgentResponse describe(AgentRequest request, AgentQueryService.AgentResponse result, UUID sessionId) {
+        var decisions = result.decisions().stream()
+            .map(value -> DecisionApiModels.DecisionResponse.from(value, explanations.explain(value))).toList();
+        return new AgentResponse(result.question(), result.answer(), decisions, result.modelPhrased(),
+            result.fallbackUsed(), result.disclaimer(), result.violations(), sessionId,
+            sessions.profileVersionSeenBy(sessionId).orElse(null), List.of());
     }
 
     /** {@code sessionId} 为空表示开一轮新会话；带上它则接着上一轮，筛选条件与岗位顺序都延续。 */
