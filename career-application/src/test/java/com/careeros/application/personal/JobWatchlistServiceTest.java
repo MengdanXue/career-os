@@ -131,16 +131,87 @@ class JobWatchlistServiceTest {
             .satisfies(item -> assertThat(item.changedSinceLastSeen()).isTrue());
     }
 
-    /** 从没看过不是"变了"，是第一次看到。 */
-    @Test void aNeverSeenJobIsNotReportedAsChanged() {
+    /** 刚关注那一刻不是"变了"，是第一次看到——基准就等于当前值。 */
+    @Test void theMomentOfWatchingIsNotReportedAsAChange() {
+        var service = service();
+        service.watch(CANDIDATE_ID, JOB_A, EligibilityStatus.NEEDS_CONFIRMATION, "v7");
+
+        assertThat(service.list(CANDIDATE_ID, AS_OF).items()).singleElement().satisfies(item -> {
+            assertThat(item.changedSinceLastSeen()).isFalse();
+            assertThat(item.baselineMissing()).isFalse();
+            assertThat(item.currentStatus()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
+        });
+    }
+
+
+    // --- 首次关注的基准 ---
+
+    /**
+     * 刚关注的岗位，第一次变化必须能被发现——那恰恰是最该发现的一次，用户就是因为在意它才关注的。
+     *
+     * <p>此前这里是断的：基准一直为空，而"变了"要求它非空；界面又只在"变了"时才给"知道了"，
+     * 基准永远补不上，于是第一次变化静默丢失，而且这个洞自己不会愈合。
+     */
+    @Test void theFirstChangeAfterWatchingIsDetected() {
+        var service = service();
+        service.watch(CANDIDATE_ID, JOB_A, EligibilityStatus.NEEDS_CONFIRMATION, "v7");
+        service.list(CANDIDATE_ID, AS_OF);
+
+        statuses.put(JOB_A, EligibilityStatus.INELIGIBLE);
+
+        assertThat(service.list(CANDIDATE_ID, AS_OF).items()).singleElement().satisfies(item -> {
+            assertThat(item.changedSinceLastSeen()).isTrue();
+            assertThat(item.lastSeenStatus()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
+            assertThat(item.baselineMissing()).isFalse();
+        });
+    }
+
+    /** 基准取用户屏幕上那个结论，不在关注时重算——重算可能给出另一个答案。 */
+    @Test void theBaselineIsTheStatusTheUserSawNotARecomputedOne() {
+        var service = service();
+        statuses.put(JOB_A, EligibilityStatus.INELIGIBLE);
+
+        service.watch(CANDIDATE_ID, JOB_A, EligibilityStatus.ELIGIBLE, "v7");
+
+        assertThat(watchlist.stored.get(JOB_A).lastSeenStatus()).isEqualTo(EligibilityStatus.ELIGIBLE);
+    }
+
+    /**
+     * 在看不到结论的位置关注时没有基准可记。这种情况要标出来，
+     * 不能默默显示"无变化"——那是在替一个从没比对过的岗位下结论。
+     */
+    @Test void aWatchWithoutABaselineIsFlaggedRatherThanReportedAsUnchanged() {
         var service = service();
         service.watch(CANDIDATE_ID, JOB_A);
 
         assertThat(service.list(CANDIDATE_ID, AS_OF).items()).singleElement().satisfies(item -> {
+            assertThat(item.baselineMissing()).isTrue();
             assertThat(item.changedSinceLastSeen()).isFalse();
-            assertThat(item.lastSeenStatus()).isNull();
-            assertThat(item.currentStatus()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
         });
+    }
+
+    /** 补上基准之后就不再是"缺基准"，并且后续变化能被发现。 */
+    @Test void acknowledgingSuppliesTheMissingBaseline() {
+        var service = service();
+        service.watch(CANDIDATE_ID, JOB_A);
+        service.acknowledge(CANDIDATE_ID, JOB_A, EligibilityStatus.NEEDS_CONFIRMATION, "v7");
+
+        assertThat(service.list(CANDIDATE_ID, AS_OF).items()).singleElement()
+            .satisfies(item -> assertThat(item.baselineMissing()).isFalse());
+
+        statuses.put(JOB_A, EligibilityStatus.ELIGIBLE);
+        assertThat(service.list(CANDIDATE_ID, AS_OF).items()).singleElement()
+            .satisfies(item -> assertThat(item.changedSinceLastSeen()).isTrue());
+    }
+
+    /** 有基准的重复关注仍然不重置它。 */
+    @Test void rewatchingWithADifferentStatusDoesNotResetTheBaseline() {
+        var service = service();
+        service.watch(CANDIDATE_ID, JOB_A, EligibilityStatus.NEEDS_CONFIRMATION, "v7");
+
+        service.watch(CANDIDATE_ID, JOB_A, EligibilityStatus.ELIGIBLE, "v7");
+
+        assertThat(watchlist.stored.get(JOB_A).lastSeenStatus()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
     }
 
     // --- 截止与不可用 ---
