@@ -68,3 +68,21 @@
   .tier-ledger a { border-right: 0; border-bottom: 1px solid var(--line); }
   .today-secondary > header, .data-management-entry { display: grid; }
 }
+
+/* 关注清单：变了的要显眼，截止和读不到各自单独标出。 */
+.watchlist-panel { margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--line); }
+.watchlist-panel header h2 { margin: 4px 0 0; font-size: 17px; }
+.watchlist-panel ul { margin: 14px 0 0; padding: 0; list-style: none; }
+.watchlist-panel li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.watchlist-panel li[data-changed="true"] { padding-left: 11px; border-left: 3px solid var(--caution); }
+.watch-headline strong { display: block; font-size: 14px; }
+.watch-headline small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+.watch-status { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; margin-top: 6px; font-size: 12px; }
+.watch-transition { font-weight: 750; }
+.watch-closed { padding: 2px 6px; background: #f3e3df; color: #7f342c; font-weight: 700; }
+.watch-unreadable strong { display: block; font-size: 13px; }
+.watch-unreadable p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.watch-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 8px; }
+.watch-actions a { color: var(--tide); font-size: 12px; font-weight: 700; }
+.watch-actions button { padding: 4px 9px; border: 1px solid #aaa79d; background: #fffefa; font: inherit; font-size: 12px; cursor: pointer; }
+.watch-actions button:disabled { opacity: 0.55; cursor: default; }
