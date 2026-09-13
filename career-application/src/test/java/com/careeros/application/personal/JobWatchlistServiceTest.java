@@ -8,6 +8,7 @@ import com.careeros.application.DecisionPorts.DecisionAssessor;
 import com.careeros.application.DecisionPorts.DecisionBundle;
 import com.careeros.application.DecisionPorts.JobContext;
 import com.careeros.application.personal.JobWatchlistPorts.WatchedJob;
+import com.careeros.application.personal.JobWatchlistService.WatchedJobView;
 import com.careeros.domain.*;
 import java.time.Clock;
 import java.time.Instant;
@@ -183,6 +184,33 @@ class JobWatchlistServiceTest {
             });
         assertThat(items).filteredOn(item -> item.jobPostingId().equals(JOB_A)).singleElement()
             .satisfies(item -> assertThat(item.available()).isTrue());
+    }
+
+    // --- 调用预算 ---
+
+    /**
+     * 扇出由用户数据决定：关注 500 个岗位就是 500 次评估。超出上限的岗位仍然列出来，
+     * 但标成读不到——静默省略会让人以为那些岗位没有变化。
+     */
+    @Test void jobsBeyondTheCallBudgetAreListedAsUnreadableRatherThanOmitted() {
+        var service = service();
+        var watched = new ArrayList<UUID>();
+        for (int index = 0; index < com.careeros.application.ToolCallBudget.DEFAULT_LIMIT + 5; index++) {
+            UUID jobId = UUID.randomUUID();
+            statuses.put(jobId, EligibilityStatus.NEEDS_CONFIRMATION);
+            deadlines.put(jobId, AS_OF.plusDays(3));
+            service.watch(CANDIDATE_ID, jobId);
+            watched.add(jobId);
+        }
+
+        var items = service.list(CANDIDATE_ID, AS_OF).items();
+
+        // 一个都没少列。
+        assertThat(items).hasSize(watched.size());
+        // 超出预算的那些标成读不到，而不是被悄悄丢掉。
+        assertThat(items).filteredOn(item -> !item.available()).hasSize(5);
+        assertThat(items).filteredOn(WatchedJobView::available)
+            .hasSize(com.careeros.application.ToolCallBudget.DEFAULT_LIMIT);
     }
 
     // --- 排序与移除 ---

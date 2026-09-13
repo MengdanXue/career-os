@@ -5,6 +5,7 @@ import static com.careeros.domain.DomainEnums.*;
 
 import com.careeros.application.CandidateProfileService;
 import com.careeros.application.RepositoryPorts;
+import com.careeros.application.ToolCallBudget;
 import com.careeros.domain.EligibilityAssessment.RuleResult;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -43,7 +44,16 @@ public final class CandidateDecisionDiffService {
 
         var current = new LinkedHashMap<UUID, DecisionBundle>();
         var assessedAt = clock.instant();
+        // 这里不能给半份差异。少算几个岗位就会少报"新增不可报"，读起来正好是"没出什么事"——
+        // 那是最危险的方向。算不完就说算不完。
+        var budget = ToolCallBudget.standard();
         for (UUID jobId : previous.keySet()) {
+            if (!budget.tryConsume()) {
+                return new DecisionChangeSummary(candidateId, previousProfileVersion,
+                    currentCandidate.profileVersion(), asOf, false,
+                    "需要比对的岗位超过单次上限（" + budget.limit() + " 个），无法在一次请求内给出完整变化。",
+                    null, null, null, List.of());
+            }
             var result = assessor.assess(candidateId, jobId, assessedAt);
             if (!currentCandidate.profileVersion().equals(result.decision().profileVersion())) {
                 throw new DecisionComparisonConflictException("candidate profile changed during decision comparison");

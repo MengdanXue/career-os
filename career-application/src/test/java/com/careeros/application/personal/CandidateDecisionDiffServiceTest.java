@@ -130,6 +130,51 @@ class CandidateDecisionDiffServiceTest {
             .hasMessageContaining("profile changed");
     }
 
+    /**
+     * 差异比对不能给半份。少算几个岗位就会少报"新增不可报"，读起来正好是"没出什么事"——
+     * 那是最危险的方向。超出上限就说算不完，并且不编造任何计数。
+     */
+    @Test
+    void refusesToReportAPartialDifferenceWhenTheJobCountExceedsTheCallBudget() {
+        var old = new ArrayList<DecisionBundle>();
+        var current = new HashMap<UUID, DecisionBundle>();
+        for (int index = 0; index < com.careeros.application.ToolCallBudget.DEFAULT_LIMIT + 1; index++) {
+            UUID jobId = UUID.randomUUID();
+            old.add(bundle(jobId, "old-v1", EligibilityStatus.ELIGIBLE, Map.of()));
+            current.put(jobId, bundle(jobId, "current-v2", EligibilityStatus.INELIGIBLE, Map.of()));
+        }
+        var service = new CandidateDecisionDiffService(candidates("current-v2"), snapshots(old),
+            (candidateId, jobId, now) -> current.get(jobId), CLOCK);
+
+        var result = service.recompute(CANDIDATE_ID, "old-v1", AS_OF);
+
+        assertThat(result.available()).isFalse();
+        assertThat(result.message()).contains("上限");
+        assertThat(result.newlyEligibleCount()).isNull();
+        assertThat(result.resolvedUncertaintyCount()).isNull();
+        assertThat(result.newlyIneligibleCount()).isNull();
+        assertThat(result.affectedJobs()).isEmpty();
+    }
+
+    /** 正好用满上限仍要给出完整结论——预算是防失控，不是提前放弃。 */
+    @Test
+    void stillReportsACompleteDifferenceAtExactlyTheCallBudget() {
+        var old = new ArrayList<DecisionBundle>();
+        var current = new HashMap<UUID, DecisionBundle>();
+        for (int index = 0; index < com.careeros.application.ToolCallBudget.DEFAULT_LIMIT; index++) {
+            UUID jobId = UUID.randomUUID();
+            old.add(bundle(jobId, "old-v1", EligibilityStatus.NEEDS_CONFIRMATION, Map.of()));
+            current.put(jobId, bundle(jobId, "current-v2", EligibilityStatus.ELIGIBLE, Map.of()));
+        }
+        var service = new CandidateDecisionDiffService(candidates("current-v2"), snapshots(old),
+            (candidateId, jobId, now) -> current.get(jobId), CLOCK);
+
+        var result = service.recompute(CANDIDATE_ID, "old-v1", AS_OF);
+
+        assertThat(result.available()).isTrue();
+        assertThat(result.newlyEligibleCount()).isEqualTo(com.careeros.application.ToolCallBudget.DEFAULT_LIMIT);
+    }
+
     private static RepositoryPorts.CandidateProfiles candidates(String version) {
         return candidates(() -> version);
     }
