@@ -83,6 +83,19 @@ class AnswerNarrativeValidatorTest {
         assertThat(validator.validate("覆盖率不代表几率。", block()).accepted()).isTrue();
     }
 
+    /**
+     * 免责只在同一小句里才算数。
+     *
+     * <p>"不是我说，你上岸概率很高"里的"不是"属于上一小句，跟"概率"没有关系，
+     * 但按固定字数回看它正好落在窗口里，于是一句真正的概率断言被放行了。
+     * 固定窗口分不出"否定了这个断言"和"附近碰巧有个否定词"。
+     */
+    @Test void aNegationInAnEarlierClauseDoesNotLicenseAClaim() {
+        assertThat(validator.validate("不是我说，你上岸概率很高。", block()).accepted()).isFalse();
+        assertThat(validator.validate("这个我不清楚；你上岸概率很高。", block()).accepted()).isFalse();
+        assertThat(validator.validate("不确定，命中率应该不低。", block()).accepted()).isFalse();
+    }
+
     /** 先免责再断言不能蒙混过关：后一处断言仍要被拦。 */
     @Test void aDisclaimerDoesNotLicenseALaterClaim() {
         var result = validator.validate("这不是录取概率。不过说实话，你上岸概率挺高的。", block());

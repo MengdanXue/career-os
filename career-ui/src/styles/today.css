@@ -88,3 +88,4 @@
 .watch-actions button:disabled { opacity: 0.55; cursor: default; }
 
 .watch-nobaseline { padding: 2px 6px; background: #efeade; color: #5d5442; font-weight: 700; }
+.watchlist-empty { margin: 10px 0 0; color: var(--muted); font-size: 12px; }

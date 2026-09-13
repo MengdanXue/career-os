@@ -45,6 +45,20 @@ export function acknowledgeWatchedJob(
   )
 }
 
+/**
+ * 关注一个岗位，并把用户此刻屏幕上的结论记为比对基准。
+ *
+ * <p>不带基准的话，第一次变化——也就是最该看到的那次——发现不了。
+ */
+export function watchJob(
+  candidateId: string, jobId: string, seenStatus: EligibilityStatus, seenEvaluatorVersion: string | null,
+) {
+  return requestJson<{ jobId: string; at: string | null }>(
+    `/api/v1/candidates/${candidateId}/watched-jobs/${jobId}`,
+    { method: 'PUT', body: JSON.stringify({ seenStatus, seenEvaluatorVersion }) },
+  )
+}
+
 export function unwatchJob(candidateId: string, jobId: string) {
   return requestJson<void>(`/api/v1/candidates/${candidateId}/watched-jobs/${jobId}`, { method: 'DELETE' })
 }
