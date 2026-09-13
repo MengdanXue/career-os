@@ -32,10 +32,22 @@ class JobWatchlistController {
         return watchlist.list(candidateId, asOf);
     }
 
+    /**
+     * 关注一个岗位，并把用户此刻看到的结论记为比对基准。
+     *
+     * <p>不带基准也能关注（页面上看不到结论时），但那种情况下清单会标成"尚未建立基准"——
+     * 没有基准就发现不了变化，而静默显示"无变化"是在替一个从没比对过的岗位下结论。
+     */
     @PutMapping("/{jobId}")
     @Transactional
-    WatchResponse watch(@PathVariable("candidateId") UUID candidateId, @PathVariable("jobId") UUID jobId) {
-        var watched = watchlist.watch(candidateId, jobId);
+    WatchResponse watch(
+        @PathVariable("candidateId") UUID candidateId,
+        @PathVariable("jobId") UUID jobId,
+        @RequestBody(required = false) WatchBody body
+    ) {
+        var watched = body == null
+            ? watchlist.watch(candidateId, jobId)
+            : watchlist.watch(candidateId, jobId, body.seenStatus(), body.seenEvaluatorVersion());
         return new WatchResponse(watched.jobPostingId(), watched.watchedAt().toString());
     }
 
@@ -66,6 +78,9 @@ class JobWatchlistController {
 
     /** @param seenStatus 用户屏幕上看到的那个结论，不是此刻的当前值 */
     record AcknowledgementBody(EligibilityStatus seenStatus, String seenEvaluatorVersion) {}
+
+    /** @param seenStatus 关注那一刻用户屏幕上的结论；为空表示该处看不到结论 */
+    record WatchBody(EligibilityStatus seenStatus, String seenEvaluatorVersion) {}
 
     record WatchResponse(UUID jobId, String at) {}
 }

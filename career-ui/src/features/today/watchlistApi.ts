@@ -10,6 +10,8 @@ export type WatchedJob = {
   /** 当前结论。为 null 表示这次读不到，不是"没变化"。 */
   currentStatus: EligibilityStatus | null
   changedSinceLastSeen: boolean
+  /** 还没有比对基准。不是"无变化"——是从来没比过，下一次变化也发现不了。 */
+  baselineMissing: boolean
   applicationEndsOn: string | null
   applicationClosed: boolean
   evaluatorVersion: string | null
