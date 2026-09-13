@@ -118,6 +118,12 @@ public final class AgentSessionService {
         return true;
     }
 
+    /** 从一组岗位结论里提取待确认事项。工具面也要用它，所以是公开的。 */
+    public List<PendingConfirmation> pendingFor(UUID candidateId, List<DecisionPorts.DecisionBundle> decisions) {
+        Objects.requireNonNull(candidateId, "candidateId");
+        return pending(decisions);
+    }
+
     /** 从岗位结论里提取待确认事项：哪个字段没确认、是哪个岗位问的、原话是什么。 */
     private static List<PendingConfirmation> pending(List<DecisionPorts.DecisionBundle> decisions) {
         var pending = new ArrayList<PendingConfirmation>();

@@ -62,6 +62,17 @@ public final class AnswerNarrativeValidator {
 
     public Result validate(String narrative, AnswerBlock block) {
         Objects.requireNonNull(block, "block");
+        return validateNarrative(narrative);
+    }
+
+    /**
+     * 只校验叙述本身。
+     *
+     * <p>规则从来只看叙述文本——事实块参与的是"逐字附加"，不参与判定。
+     * 规划器在还没有事实块的时候就会给出 FINISH，那一刻也必须能校验，
+     * 否则带判定词的叙述要等到渲染阶段才被发现，而它可能已经被别处用掉了。
+     */
+    public Result validateNarrative(String narrative) {
         if (narrative == null || narrative.isBlank()) {
             return Result.violating(List.of("模型未返回叙述"));
         }
