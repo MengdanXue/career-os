@@ -95,9 +95,38 @@ current profile version = profile-0800e999-…   ← 与 after 相同，没有�
 一个岗位无法评估时，**整个排序查询失败**，返回里连 `sessionId` 都没有，而不是跳过该岗位并说明。
 关注清单对这种情况是降级处理的（标成读不到），排序路径不是。本轮未改，属于独立问题。
 
+## 只读工具面在真实数据上的验收
+
+后端 18080 + 本机 PostgreSQL 16，候选人 1 名、岗位 2 个（均 VERIFIED/INCLUDED）、
+待确认 2 项、关注 1 个。用 `career-os.agent.planner=scripted` 打开**验收专用**的可控规划器
+（默认不启用；它按工具结果分支，但分支是写死的，**不是模型，也不是 Agent**）。
+
+```
+有岗位时：
+  outcome    = FINISHED     toolCalls = 3
+  registered = search_jobs, job_facts, pending_confirmations, watchlist   ← 全部只读
+  trace      = search_jobs(✓) → pending_confirmations(✓) → watchlist(✓)
+  obs        = 找到 2 个岗位 / 还有 2 项要用户确认 / 关注 1 个其中 0 个有变化
+  narrative  = 通过校验，violations 为空
+
+搜索返回 0 时（把 job_admission 下架制造）：
+  outcome    = ASKED_USER   toolCalls = 1
+  trace      = search_jobs                       ← 没有继续往下查
+  question   = 这个范围内没有岗位，要不要放宽城市或职位类别？
+
+没有规划器时：
+  HTTP 503  PLANNER_UNAVAILABLE
+  "没有可用的规划器：模型未启用，且不提供写死的替代流程。"
+```
+
+第二条与第一条的差别是**真实工具结果**造成的，不是问题文本造成的——同一个规划器、
+同一个问题，因为岗位数不同走了不同的路。这验证的是执行器与工具面，**不是模型的选择能力**。
+
 ## 尚未验收
 
-- 模型自主选工具：尚未接入。当前模型只写连接性叙述。
+- **模型自主选工具：缺 API key，本环境无法验证。** 应用配的是 OpenAI
+  （`spring.ai.openai.api-key`），本环境未提供。`ModelPlanner` 的解析安全性有录制输出的回归，
+  但"模型会依据不同工具结果选择不同下一步"这件事**没有证据**，不能用可控规划器的结果冒充。
 
 ## 复跑方式
 
