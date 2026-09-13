@@ -1,6 +1,7 @@
 package com.careeros.application.personal;
 
 import com.careeros.application.DecisionPorts.DecisionAssessor;
+import com.careeros.application.ToolCallBudget;
 import com.careeros.application.personal.JobWatchlistPorts.WatchedJob;
 import com.careeros.domain.DomainEnums.EligibilityStatus;
 import java.time.Clock;
@@ -65,7 +66,14 @@ public final class JobWatchlistService {
         Objects.requireNonNull(asOf, "asOf");
         var entries = new ArrayList<WatchedJobView>();
         var now = clock.instant();
+        // 扇出由用户数据决定：关注 500 个岗位就是 500 次评估。上限之外的岗位照样列出来，
+        // 但明确标成"未刷新"——静默省略会让人以为那些岗位没有变化。
+        var budget = ToolCallBudget.standard();
         for (WatchedJob watched : watchlist.findByCandidate(candidateId)) {
+            if (!budget.tryConsume()) {
+                entries.add(WatchedJobView.notRefreshed(watched.jobPostingId(), watched.lastSeenStatus()));
+                continue;
+            }
             try {
                 var bundle = assessor.assess(candidateId, watched.jobPostingId(), now);
                 var deadline = bundle.jobContext().event().applicationEndsOn();
@@ -128,6 +136,11 @@ public final class JobWatchlistService {
         static WatchedJobView unavailable(UUID jobPostingId, EligibilityStatus lastSeenStatus) {
             return new WatchedJobView(jobPostingId, null, null, lastSeenStatus, null, false,
                 null, false, null, "/opportunities/" + jobPostingId);
+        }
+
+        /** 本次超出调用预算，没有重新评估。与"算不出来"一样是读不到，不是"没变化"。 */
+        static WatchedJobView notRefreshed(UUID jobPostingId, EligibilityStatus lastSeenStatus) {
+            return unavailable(jobPostingId, lastSeenStatus);
         }
 
         /** 当前结论算不出来。不是"没变化"，是读不到。 */
