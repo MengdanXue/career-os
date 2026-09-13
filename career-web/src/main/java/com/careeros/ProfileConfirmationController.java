@@ -14,7 +14,7 @@ import com.careeros.domain.DomainEnums.PoliticalAffiliation;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -31,14 +31,26 @@ import org.springframework.web.bind.annotation.*;
 class ProfileConfirmationController {
     private final ProfileConfirmationService confirmations;
     private final AgentSessionService sessions;
+    private final TransactionTemplate transactions;
 
-    ProfileConfirmationController(ProfileConfirmationService confirmations, AgentSessionService sessions) {
+    ProfileConfirmationController(ProfileConfirmationService confirmations, AgentSessionService sessions,
+                                  TransactionTemplate transactions) {
         this.confirmations = confirmations;
         this.sessions = sessions;
+        this.transactions = transactions;
     }
 
+    /**
+     * 两段式，不能合成一个事务。
+     *
+     * <p>第一段在事务里写资料和台账并提交。第二段在事务之外重算。
+     *
+     * <p>合成一个事务会毁掉失败恢复，而且不是理论问题：重算内部的评估失败会把整个事务标成
+     * rollback-only，服务层 catch 住异常、返回"已记录但未重算"之后，提交阶段仍然整体回滚，
+     * 接口抛 {@code UnexpectedRollbackException} 返 500，用户的回答连同台账一起消失。
+     * 真机注入一次评估失败即可复现——单元测试里的假评估器只是抛异常，没有事务，照不出这一条。
+     */
     @PostMapping
-    @Transactional
     ConfirmationResponse record(
         @PathVariable("candidateId") UUID candidateId,
         @RequestParam("asOf") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf,
@@ -46,7 +58,9 @@ class ProfileConfirmationController {
     ) {
         var request = new ConfirmationRequest(candidateId, body.factKey(), declared(body),
             expectedProfileVersion(body), body.idempotencyKey(), body.acknowledgedChange());
-        var outcome = confirmations.record(request, asOf);
+        var recorded = transactions.execute(status -> confirmations.recordAnswer(request));
+        // 写入已提交。到这里重算再失败，也只是"结论还没刷新"，回答不会丢。
+        var outcome = confirmations.completeRecompute(recorded, asOf);
         // 用户自己的这次写入把资料版本推高了。会话里记的还是查询时那一版，不推进的话
         // 下一个待确认问题必定撞上版本检查——连续确认走不完第二步。
         // 只从这次写入的 before 推进到 after：期间若有别处改动，会话版本已不是 before，
