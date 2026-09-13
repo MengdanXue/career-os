@@ -102,6 +102,11 @@ class ApplicationConfiguration {
     }
     @Bean AgentSessionService agentSessionService(AgentSessionPorts.Sessions sessions, RepositoryPorts.CandidateProfiles candidates, Clock clock) { return new AgentSessionService(sessions, candidates, clock); }
     @Bean JobWatchlistService jobWatchlistService(JobWatchlistPorts.Watchlist watchlist, DecisionIntelligenceService decisions, Clock clock) { return new JobWatchlistService(watchlist, decisions, clock); }
+    /** 确认写入要显式控制事务边界：写入提交之后才能重算，否则重算失败会把写入一起回滚。 */
+    @Bean org.springframework.transaction.support.TransactionTemplate confirmationTransactionTemplate(
+        org.springframework.transaction.PlatformTransactionManager manager) {
+        return new org.springframework.transaction.support.TransactionTemplate(manager);
+    }
     @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }
     @Bean JobLibrarySummaryService jobLibrarySummaryService(JobAdmissionPorts.JobAdmissions admissions) { return new JobLibrarySummaryService(admissions); }
     @Bean OfficialJobAdmissionService officialJobAdmissionService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,JobAdmissionPorts.JobFieldEvidence fieldEvidence) { return new OfficialJobAdmissionService(jobContexts,admissions,fieldEvidence); }
