@@ -81,7 +81,50 @@ public class PersistenceAdaptersConfiguration {
             }
         };
     }
+    @Bean com.careeros.application.personal.JobWatchlistPorts.Watchlist jobWatchlist(
+        CandidateJobWatchJpaRepository repository
+    ) {
+        return new com.careeros.application.personal.JobWatchlistPorts.Watchlist() {
+            public List<com.careeros.application.personal.JobWatchlistPorts.WatchedJob> findByCandidate(UUID candidateId) {
+                return repository.findAllByIdCandidateProfileId(candidateId).stream()
+                    .map(PersistenceAdaptersConfiguration.this::toWatchedJob).toList();
+            }
+            public Optional<com.careeros.application.personal.JobWatchlistPorts.WatchedJob> find(UUID candidateId, UUID jobPostingId) {
+                return repository.findById(new JpaModels.CandidateJobWatchId(candidateId, jobPostingId))
+                    .map(PersistenceAdaptersConfiguration.this::toWatchedJob);
+            }
+            public com.careeros.application.personal.JobWatchlistPorts.WatchedJob save(
+                com.careeros.application.personal.JobWatchlistPorts.WatchedJob entry
+            ) {
+                return toWatchedJob(repository.save(toWatchEntity(entry)));
+            }
+            public void remove(UUID candidateId, UUID jobPostingId) {
+                repository.deleteById(new JpaModels.CandidateJobWatchId(candidateId, jobPostingId));
+            }
+        };
+    }
     @Bean RepositoryPorts.PolicyRules policyRules(PolicyRuleJpaRepository r) { return new PolicyAdapter(r,this::toPolicyEntity,this::toPolicy); }
+    private com.careeros.application.personal.JobWatchlistPorts.WatchedJob toWatchedJob(
+        JpaModels.CandidateJobWatchEntity entity
+    ) {
+        return new com.careeros.application.personal.JobWatchlistPorts.WatchedJob(
+            entity.id.candidateProfileId, entity.id.jobPostingId,
+            entity.lastSeenStatus == null ? null : EligibilityStatus.valueOf(entity.lastSeenStatus),
+            entity.lastSeenEvaluatorVersion, entity.watchedAt, entity.lastSeenAt);
+    }
+
+    private JpaModels.CandidateJobWatchEntity toWatchEntity(
+        com.careeros.application.personal.JobWatchlistPorts.WatchedJob entry
+    ) {
+        var entity = new JpaModels.CandidateJobWatchEntity();
+        entity.id = new JpaModels.CandidateJobWatchId(entry.candidateId(), entry.jobPostingId());
+        entity.lastSeenStatus = entry.lastSeenStatus() == null ? null : entry.lastSeenStatus().name();
+        entity.lastSeenEvaluatorVersion = entry.lastSeenEvaluatorVersion();
+        entity.watchedAt = entry.watchedAt();
+        entity.lastSeenAt = entry.lastSeenAt();
+        return entity;
+    }
+
     private com.careeros.application.AgentSession toAgentSession(JpaModels.AgentSessionEntity entity) {
         var filters = new com.careeros.application.AgentSession.SessionFilters(
             entity.filterTier == null ? null : OpportunityTier.valueOf(entity.filterTier),
