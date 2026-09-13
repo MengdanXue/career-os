@@ -51,6 +51,15 @@ public final class AnswerNarrativeValidator {
     /** 免责标记需要出现在被禁词之前多少个字符内才算作用于它。 */
     private static final int DISCLAIMER_WINDOW = 12;
 
+    /**
+     * 小句边界。免责只在同一个小句里才算数。
+     *
+     * <p>此前只按固定字数回看，于是"不是我说，你上岸概率很高"被放行了——那个"不是"属于
+     * 上一小句，跟"概率"毫无关系，却正好落在窗口里。固定窗口分不出"否定了这个断言"和
+     * "附近碰巧有个否定词"，跨过标点就必须停。
+     */
+    private static final String CLAUSE_BOUNDARIES = "，。？！；,.?!;\n";
+
     public Result validate(String narrative, AnswerBlock block) {
         Objects.requireNonNull(block, "block");
         if (narrative == null || narrative.isBlank()) {
@@ -97,6 +106,13 @@ public final class AnswerNarrativeValidator {
 
     private static boolean disclaimed(String narrative, int at) {
         int from = Math.max(0, at - DISCLAIMER_WINDOW);
+        // 回看不跨小句：否定词必须和被禁词在同一句里，才算否定了它。
+        for (int index = at - 1; index >= from; index--) {
+            if (CLAUSE_BOUNDARIES.indexOf(narrative.charAt(index)) >= 0) {
+                from = index + 1;
+                break;
+            }
+        }
         String window = narrative.substring(from, at);
         return DISCLAIMER_MARKERS.stream().anyMatch(window::contains);
     }

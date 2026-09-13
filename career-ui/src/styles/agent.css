@@ -65,3 +65,8 @@
 .confirmation-changes small { color: var(--muted); }
 .confirmation-transition { display: inline-block; margin-top: 3px; font-size: 11px; font-weight: 700; }
 .confirmation-reasons { margin: 4px 0 0; padding-left: 14px; list-style: disc; color: var(--muted); font-size: 11px; }
+
+.decision-actions { display: flex; gap: 9px; align-items: center; }
+.watch-add { padding: 3px 8px; border: 1px solid #aaa79d; background: #fffefa; font: inherit; font-size: 11px; cursor: pointer; }
+.watch-add:disabled { opacity: 0.55; cursor: default; }
+.watch-added { color: #285f51; font-size: 11px; font-weight: 700; }

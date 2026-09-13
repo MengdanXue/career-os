@@ -74,6 +74,17 @@ public record AgentSession(
         return pendingConfirmations.stream().filter(item -> item.factKey() == factKey).findFirst();
     }
 
+    /**
+     * 只换资料版本，保留岗位顺序与待确认事项。
+     *
+     * <p>用户自己的一次确认改了资料版本，但他看到的那份列表和那些问题还是同一批，
+     * 序号仍然指向同一个岗位——所以不能顺手把顺序清掉。
+     */
+    public AgentSession withProfileVersion(String profileVersion, Instant at) {
+        return new AgentSession(sessionId, candidateId, filters, lastJobIdsInOrder,
+            pendingConfirmations, profileVersion, at);
+    }
+
     public AgentSession withListing(
         SessionFilters filters, List<UUID> jobIds, List<PendingConfirmation> pending,
         String profileVersion, Instant at

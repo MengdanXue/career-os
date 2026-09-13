@@ -60,6 +60,12 @@ class ApiExceptionHandler {
     ResponseEntity<ProblemDetail> candidateMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "CANDIDATE_NOT_FOUND", "Candidate not found", exception.getMessage());
     }
+    @ExceptionHandler(com.careeros.application.AgentSessionService.SessionNotFoundException.class)
+    ResponseEntity<ProblemDetail> sessionNotFound(
+        com.careeros.application.AgentSessionService.SessionNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", "Session not found", exception.getMessage());
+    }
+
     @ExceptionHandler(CandidateProfileService.CandidateProfileNotFoundException.class)
     ResponseEntity<ProblemDetail> profileMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "CANDIDATE_NOT_FOUND", "Candidate not found", exception.getMessage());
