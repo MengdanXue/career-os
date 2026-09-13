@@ -28,7 +28,7 @@ export function AgentComposer({ expanded = false }: { expanded?: boolean }) {
     {!open ? <button className="agent-launcher" type="button" aria-label="打开 Career OS 决策助手" onClick={() => setOpen(true)}><span aria-hidden="true">C</span><strong>问 Career OS</strong><small>基于岗位与证据回答</small></button> : <div className="agent-panel">
       <header><div><p className="eyebrow">DECISION AGENT</p><strong>问 Career OS</strong><small>只基于已采集岗位、你的资料和可引用证据</small></div><button type="button" aria-label="收起 Career OS" onClick={() => setOpen(false)}>×</button></header>
       {!query.data && <div className="agent-examples" aria-label="问题示例">{examples.map(example => <button type="button" key={example} onClick={() => setQuestion(example)}>{example}</button>)}</div>}
-      {query.data && <AgentAnswer result={query.data} />}
+      {query.data && <AgentAnswer result={query.data} candidateId={candidateId} />}
       {error && <p className="agent-error" role="alert">{error}</p>}
       <form onSubmit={submit}><label htmlFor="career-agent-question">向 Career OS 提问</label><div><textarea id="career-agent-question" rows={2} value={question} onChange={event => setQuestion(event.target.value)} placeholder="例如：本周最值得准备什么？" /><button type="submit" disabled={!question.trim() || query.isPending}>{query.isPending ? '分析中…' : '分析'}</button></div></form>
     </div>}
