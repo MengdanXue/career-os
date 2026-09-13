@@ -9,12 +9,19 @@
  *
  * 用法：
  *   mkdir -p /tmp/e2e && cd /tmp/e2e && npm i playwright
- *   cp <repo>/e2e/closed-loop.mjs . && CHROME_PATH=<chrome> node closed-loop.mjs
+ *   cp <repo>/e2e/closed-loop.mjs . \
+ *     && E2E_USER=<user> E2E_PASS=<pass> CHROME_PATH=<chrome> node closed-loop.mjs
  */
 import { chromium } from 'playwright'
 
 const BASE = process.env.BASE || 'http://127.0.0.1:18080'
-const CRED = { username: process.env.E2E_USER || 'e2e', password: process.env.E2E_PASS || 'e2e-local-pass' }
+// 不给默认口令。本项目在 application.yml 里刻意不放默认账号，验收脚本也不该留一个
+// 可以照抄的。缺了就直接退出，而不是用一个"本地用的"口令把它糊过去。
+if (!process.env.E2E_USER || !process.env.E2E_PASS) {
+  console.error('需要 E2E_USER 与 E2E_PASS：验收脚本不带默认口令。')
+  process.exit(2)
+}
+const CRED = { username: process.env.E2E_USER, password: process.env.E2E_PASS }
 const CANDIDATE = process.env.E2E_CANDIDATE || '01992f09-0000-7000-8000-000000000001'
 const QUESTION = process.env.E2E_QUESTION || '杭州有哪些岗位'
 const steps = []
