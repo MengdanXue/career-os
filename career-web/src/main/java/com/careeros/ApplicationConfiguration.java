@@ -107,6 +107,22 @@ class ApplicationConfiguration {
         org.springframework.transaction.PlatformTransactionManager manager) {
         return new org.springframework.transaction.support.TransactionTemplate(manager);
     }
+    /**
+     * 只读工具面。注册表里只有这四个，写入工具不在其中——
+     * 边界靠"没有注册"成立，不靠提示词请求模型别写。
+     */
+    @Bean com.careeros.application.agent.AgentExecutor agentExecutor(
+        DecisionRankingService rankings, DecisionIntelligenceService decisions,
+        JobWatchlistService watchlist, AgentSessionService sessions, Clock clock
+    ) {
+        var pending = (com.careeros.application.agent.ReadOnlyTools.PendingConfirmationsView) candidateId ->
+            sessions.pendingFor(candidateId, rankings.rankAll(candidateId, clock.instant()));
+        return new com.careeros.application.agent.AgentExecutor(java.util.List.of(
+            com.careeros.application.agent.ReadOnlyTools.searchJobs(rankings::rank, clock),
+            com.careeros.application.agent.ReadOnlyTools.jobFacts(decisions::assess, clock),
+            com.careeros.application.agent.ReadOnlyTools.pendingConfirmations(pending),
+            com.careeros.application.agent.ReadOnlyTools.watchlist(watchlist, clock)));
+    }
     @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }
     @Bean JobLibrarySummaryService jobLibrarySummaryService(JobAdmissionPorts.JobAdmissions admissions) { return new JobLibrarySummaryService(admissions); }
     @Bean OfficialJobAdmissionService officialJobAdmissionService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,JobAdmissionPorts.JobFieldEvidence fieldEvidence) { return new OfficialJobAdmissionService(jobContexts,admissions,fieldEvidence); }

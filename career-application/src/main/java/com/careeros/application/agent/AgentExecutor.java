@@ -1,6 +1,7 @@
 package com.careeros.application.agent;
 
 import com.careeros.application.ToolCallBudget;
+import com.careeros.domain.AnswerNarrativeValidator;
 import com.careeros.application.agent.AgentTooling.AgentPlanner;
 import com.careeros.application.agent.AgentTooling.Observation;
 import com.careeros.application.agent.AgentTooling.PlannerStep;
@@ -36,6 +37,8 @@ import java.util.UUID;
 public final class AgentExecutor {
     /** 规划器最多被问多少次。到顶即停，无论它还想做什么。 */
     public static final int DEFAULT_MAX_STEPS = 8;
+
+    private static final AnswerNarrativeValidator NARRATIVE = new AnswerNarrativeValidator();
 
     private final Map<String, ReadOnlyTool> tools;
     private final int maxSteps;
@@ -80,7 +83,11 @@ public final class AgentExecutor {
                 return new AgentRun(Outcome.PLANNER_FAILED, null, null, observations, trace, budget.spent());
             }
             if (next instanceof PlannerStep.Finish finish) {
-                return new AgentRun(Outcome.FINISHED, finish.narrative(), null, observations, trace, budget.spent());
+                // 叙述在这里就校验，不等渲染阶段。带数值或判定词的叙述不能离开执行器，
+                // 否则调用方可能先把它用掉——比如记进日志或直接回给用户。
+                var checked = NARRATIVE.validateNarrative(finish.narrative());
+                return new AgentRun(Outcome.FINISHED, checked.accepted() ? finish.narrative() : null,
+                    null, observations, trace, budget.spent(), checked.violations());
             }
             if (next instanceof PlannerStep.AskUser ask) {
                 return new AgentRun(Outcome.ASKED_USER, null, ask.question(), observations, trace, budget.spent());
@@ -133,11 +140,19 @@ public final class AgentExecutor {
      * @param question  仅在 ASKED_USER 时有值
      */
     public record AgentRun(Outcome outcome, String narrative, String question,
-                           List<Observation> observations, List<TraceEntry> trace, int toolCallsSpent) {
+                           List<Observation> observations, List<TraceEntry> trace, int toolCallsSpent,
+                           List<String> narrativeViolations) {
         public AgentRun {
             observations = List.copyOf(observations == null ? List.of() : observations);
             trace = List.copyOf(trace == null ? List.of() : trace);
+            narrativeViolations = List.copyOf(narrativeViolations == null ? List.of() : narrativeViolations);
         }
+        AgentRun(Outcome outcome, String narrative, String question, List<Observation> observations,
+                 List<TraceEntry> trace, int toolCallsSpent) {
+            this(outcome, narrative, question, observations, trace, toolCallsSpent, List.of());
+        }
+        /** 叙述被拒时 {@code narrative} 为空；调用方回落到确定性事实块。 */
+        public boolean narrativeRejected() { return !narrativeViolations.isEmpty(); }
     }
 
     /** 一步轨迹。被拒的步骤也要留下来——看不见的拦截等于没拦截。 */
