@@ -41,3 +41,27 @@
   .agent-answer li { grid-template-columns: auto 1fr; }
   .agent-answer li a { grid-column: 2; }
 }
+
+/* 待确认事项：问题、可选答案、以及重算之后真实的变化。 */
+.pending-confirmations { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.pending-confirmations h3 { margin: 0 0 4px; font-size: 13px; }
+.confirmation-basis { margin: 0 0 10px; color: var(--muted); font-size: 11px; }
+.pending-confirmations article { margin-bottom: 12px; }
+.confirmation-question { margin: 0 0 6px; }
+.confirmation-question strong { display: block; font-size: 12px; }
+.confirmation-question span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.confirmation-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.confirmation-options button { padding: 5px 9px; border: 1px solid #aaa79d; background: #fffefa; font: inherit; font-size: 11px; cursor: pointer; }
+.confirmation-options button:disabled { opacity: 0.55; cursor: default; }
+.confirmation-outcome p, .confirmation-change p { margin: 0 0 5px; font-size: 11px; }
+.confirmation-change { padding: 8px 9px; border-left: 3px solid var(--caution); background: #fdf6e7; }
+.confirmation-from-to { font-weight: 700; }
+.confirmation-change button { padding: 5px 9px; border: 0; background: var(--caution); color: #23170d; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.confirmation-deferred, .confirmation-unavailable { color: #78532e; }
+.confirmation-counts { font-size: 11px; }
+.confirmation-changes ul { margin: 6px 0 0; padding: 0; list-style: none; }
+.confirmation-changes > ul > li { padding: 7px 0; border-top: 1px solid var(--line); }
+.confirmation-changes strong, .confirmation-changes small { display: block; font-size: 11px; }
+.confirmation-changes small { color: var(--muted); }
+.confirmation-transition { display: inline-block; margin-top: 3px; font-size: 11px; font-weight: 700; }
+.confirmation-reasons { margin: 4px 0 0; padding-left: 14px; list-style: disc; color: var(--muted); font-size: 11px; }
