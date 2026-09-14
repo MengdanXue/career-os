@@ -147,6 +147,22 @@ class ReadOnlyToolsTest {
         assertThat(queryCaptor.get().size()).isEqualTo(ReadOnlyTools.DEFAULT_LIMIT);
     }
 
+    /**
+     * 显式给了空值的参数不能被当成"没给"。
+     *
+     * <p>{@code tier=} 现在和"不加分层筛选"没有区别，于是返回全量结果——
+     * 用户问的范围被静默换掉，回答却看不出任何异常。这是旧的静默降级还没清干净的一处。
+     */
+    @Test void anExplicitlyEmptyValueIsRefusedRatherThanTreatedAsAbsent() {
+        var tool = searchWith(List.of());
+
+        var observation = tool.invoke(context("search_jobs", "tier", ""));
+
+        assertThat(observation.ok()).isFalse();
+        assertThat(observation.summary()).contains("tier");
+        assertThat(queryCaptor.get()).isNull();
+    }
+
     // --- 逐岗评估计入共享预算 ---
 
     /** 一次 search_jobs 背后是几十次评估。预算必须按真实扇出扣，否则形同虚设。 */

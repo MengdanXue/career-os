@@ -96,6 +96,9 @@ public record AgentSession(
      * @param limit 这一轮取了几个。记下来是因为"还有别的吗"要接着往下取，而不是从头再来。
      */
     public record SessionFilters(OpportunityTier tier, String location, JobFamily jobFamily, int limit) {
+        /** 动态运行不由用户指定每页取几个，用这个值记账。 */
+        public static final int DEFAULT_LIMIT = 5;
+
         public SessionFilters {
             if (limit < 1 || limit > 20) throw new IllegalArgumentException("limit must be between 1 and 20");
         }

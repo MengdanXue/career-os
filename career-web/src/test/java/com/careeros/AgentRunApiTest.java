@@ -229,4 +229,68 @@ class AgentRunApiTest {
 
         assertThat(seenJobs).containsExactly(FIRST_JOB, SECOND_JOB);
     }
+
+    /**
+     * 一轮跑完要把这一轮的新范围、新列表和还没答的问题存回会话。
+     *
+     * <p>只读入不写回，会话就永远停在第一轮：用户在"余杭"那一轮看到的是新列表，
+     * 下一句"第二个"却解析回上一轮的杭州列表——系统一本正经地讲另一个岗位，
+     * 而他看不出它换了对象。这是动态面板与旧查询接口最大的差别所在。
+     */
+    @Test void aRunSavesThisRoundsScopeListingAndPendingItems() throws Exception {
+        var sessions = sessions(session());
+        mvc(state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "余杭"), "收窄到余杭")
+            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)), sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("余杭", SESSION)))
+            .andExpect(status().isOk());
+
+        var savedFilters = org.mockito.ArgumentCaptor.forClass(AgentSession.SessionFilters.class);
+        @SuppressWarnings("unchecked")
+        var savedJobs = (org.mockito.ArgumentCaptor<List<UUID>>) (org.mockito.ArgumentCaptor<?>)
+            org.mockito.ArgumentCaptor.forClass(List.class);
+        org.mockito.Mockito.verify(sessions).rememberRun(
+            org.mockito.ArgumentMatchers.eq(SESSION), org.mockito.ArgumentMatchers.eq(CANDIDATE),
+            savedFilters.capture(), savedJobs.capture(), org.mockito.ArgumentMatchers.any());
+
+        assertThat(savedFilters.getValue().location()).isEqualTo("余杭");
+        assertThat(savedJobs.getValue()).containsExactly(JOB);
+    }
+
+    /**
+     * 这一轮没有产生新列表时，不能把上一轮的顺序清掉。
+     *
+     * <p>用户问"第一个的截止日是哪天"，系统只调了 job_facts；这时候把列表清空，
+     * 下一句"第二个"就没有东西可指了——上一轮明明还在屏幕上。
+     */
+    @Test void aRunWithoutANewListingLeavesThePreviousOrderAlone() throws Exception {
+        var sessions = sessions(session());
+        mvc(state -> new PlannerStep.AskUser("你想看哪个城市？", AgentTooling.Basis.clarifying()), sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("再看看", SESSION)))
+            .andExpect(status().isOk());
+
+        org.mockito.Mockito.verify(sessions, org.mockito.Mockito.never()).rememberRun(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any());
+    }
+
+    /** 没带 sessionId 的一轮也要开一轮会话并返回它，否则页面下一句又是从零开始。 */
+    @Test void aRunWithoutASessionOpensOneAndReturnsIt() throws Exception {
+        var sessions = sessions(null);
+        org.mockito.Mockito.when(sessions.rememberRun(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any())).thenReturn(session());
+
+        mvc(state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)), sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.sessionId").isNotEmpty());
+    }
 }

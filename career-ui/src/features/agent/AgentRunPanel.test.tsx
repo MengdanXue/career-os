@@ -148,4 +148,40 @@ describe('AgentRunPanel', () => {
 
     expect(await screen.findByText(/这段话没有点名依据/)).toBeInTheDocument()
   })
+
+  /**
+   * 这一轮开出来的会话要交回上层。
+   *
+   * <p>不交回去，下一句又是新的一轮：用户刚在"余杭"那一轮看到新列表，
+   * 再问"第二个"时系统却不知道他指的是哪一份。
+   */
+  it('hands the session id back so the next question continues the same round', async () => {
+    const seen: string[] = []
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ ...run, sessionId: 'sess-1' })))
+    render(<AppProviders>
+      <AgentRunPanel candidateId={candidateId} onSession={id => seen.push(id)} />
+    </AppProviders>)
+    await userEvent.click(screen.getByRole('button', { name: /让它自己选工具查/ }))
+
+    await userEvent.type(screen.getByLabelText('交给它去查'), '余杭')
+    await userEvent.click(screen.getByRole('button', { name: '运行' }))
+
+    await vi.waitFor(() => expect(seen).toEqual(['sess-1']))
+  })
+
+  /** 续跑时要把会话带上，否则服务端无从知道上一轮是什么。 */
+  it('sends the session id with the next run', async () => {
+    const fetch = vi.fn().mockResolvedValue(json(run))
+    vi.stubGlobal('fetch', fetch)
+    render(<AppProviders>
+      <AgentRunPanel candidateId={candidateId} sessionId="sess-1" />
+    </AppProviders>)
+    await userEvent.click(screen.getByRole('button', { name: /让它自己选工具查/ }))
+
+    await userEvent.type(screen.getByLabelText('交给它去查'), '第二个怎么样')
+    await userEvent.click(screen.getByRole('button', { name: '运行' }))
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+    expect(JSON.parse(fetch.mock.calls[0][1].body).sessionId).toBe('sess-1')
+  })
 })

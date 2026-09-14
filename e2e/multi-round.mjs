@@ -1,14 +1,20 @@
 /**
- * 多轮验收：上一轮的上下文必须真的被用上。
+ * 多轮验收：从动态面板实际调 /agent-runs，验证上一轮的上下文真的被用上、也真的被存回去。
  *
- * 复核里的两个旧反例，这里定为正式回归：
+ * 复现包里的两个旧反例，这里定为正式回归，断言的是**用户屏幕上的岗位列表**：
  *
- *   1. Agent 追问之后，用户只答一句"余杭"。"余杭"单独看是个残句；没有上一轮限定的杭州，
- *      系统只能再问一次或者当成一个孤立的新问题——用户刚答过，却被再问一遍。
- *   2. 刷新之后用户说"第二个"，指的是他屏幕上那一份列表的第二个。重新排一次名次得到的
- *      第二个可能是另一个岗位，而用户看不出系统换了对象。
+ *   1. Agent 追问之后用户只答一句"余杭"。要验的不是"sessionId 回来了"，而是
+ *      这一轮的结果真的变了——列表从杭州全量收窄成余杭那几个。
+ *   2. 刷新之后用户说"第二个"，指的是**刚展示的那份新列表**的第二个，
+ *      不是第一轮那份。会话只读入不写回时，这一条必然指错。
  *
- * 断言的是行为，不是 sessionId 被原样回传——回传了照样可以什么都没用上。
+ * 岗位身份从页面上的"查看档案"链接取，即用户真正看到的东西；不看接口内部字段，
+ * 也不用列表长度代替身份——长度相同而内容不同的两份列表，长度比不出来。
+ *
+ * 前置：后端跑在 BASE，规划器按下面的顺序回放六轮输出（每次运行两轮）：
+ *   search_jobs location=杭州 / FINISH
+ *   search_jobs location=余杭 / FINISH
+ *   job_facts ordinal=2      / FINISH
  *
  * 用法：
  *   E2E_USER=... E2E_PASS=... CHROME_PATH=... node multi-round.mjs
@@ -21,7 +27,6 @@ if (!process.env.E2E_USER || !process.env.E2E_PASS) {
   process.exit(2)
 }
 const CRED = { username: process.env.E2E_USER, password: process.env.E2E_PASS }
-const CANDIDATE = process.env.E2E_CANDIDATE || '01992f09-0000-7000-8000-000000000001'
 const steps = []
 function record(name, ok, detail = '') { steps.push({ name, ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'} | ${name}${detail ? ' | ' + detail : ''}`) }
 
@@ -32,56 +37,65 @@ const errors = []
 page.on('pageerror', e => errors.push(String(e)))
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
 
-const api = context.request
-const base = `${BASE}/api/v1/candidates/${CANDIDATE}`
-
-// --- 第一轮：用户问杭州，拿到一份有顺序的列表 ---
-const first = await api.post(`${base}/agent-queries`, { data: { question: '杭州有哪些岗位', limit: 5 } })
-if (!first.ok()) { console.error(`前置检查失败：查询返回 ${first.status()}`); process.exit(2) }
-const firstBody = await first.json()
-const sessionId = firstBody.sessionId
-const order = firstBody.decisions.map(d => d.jobId)
-if (order.length < 2) {
-  console.error('前置条件不满足：需要至少两个岗位才能验证"第二个"。')
-  process.exit(2)
+/** 打开问答面板和它里面的只读工具编排面板。 */
+async function openRunPanel() {
+  const launcher = page.getByRole('button', { name: '打开 Career OS 决策助手' })
+  if (await launcher.count()) await launcher.click()
+  const toggle = page.getByRole('button', { name: /让它自己选工具查/ })
+  await toggle.waitFor({ timeout: 20000 })
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  await page.getByLabel('交给它去查').waitFor({ timeout: 15000 })
 }
-record('第一轮拿到有顺序的列表', true, `${order.length} 个岗位`)
 
-// --- 反例一：追问之后只答"余杭" ---
-// 会话必须把上一轮的范围交给下一轮。只检查 sessionId 回来了是不够的：
-// 真正要验的是服务端记住了"上一轮限定的是杭州"，下一句残句才接得上。
-const session = await api.get(`${base}/agent-queries/${sessionId}`)
-const sessionBody = await session.json()
-record('刷新接口能取回这一轮', session.ok() && sessionBody.sessionId === sessionId)
-record('会话记住了上一轮的列表顺序',
-  JSON.stringify(sessionBody.jobIdsInOrder) === JSON.stringify(order),
-  `${(sessionBody.jobIdsInOrder || []).length} 个`)
+/**
+ * 跑一轮，返回页面上渲染出来的岗位 id，按屏幕顺序。
+ *
+ * 必须等上一轮的结果块先消失、新的再出现。只等"本次消耗预算"这段文字出现是不够的：
+ * 它在上一轮就已经在屏幕上，等待会立刻返回，读到的是还没换掉的旧内容，
+ * 或者正好读在结果被清掉、新结果还没到的那一瞬间——两种都会让验收给出错误的结论。
+ */
+async function runRound(question) {
+  const result = page.locator('.agent-run-result')
+  const box = page.getByLabel('交给它去查')
+  await box.fill(question)
+  await page.getByRole('button', { name: '运行' }).click()
+  await result.waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
+  await result.waitFor({ state: 'attached', timeout: 30000 })
+  await page.getByText(/本次消耗预算/).waitFor({ timeout: 30000 })
+  const hrefs = await page.locator('.agent-run-jobs a').evaluateAll(
+    links => links.map(link => link.getAttribute('href')))
+  return hrefs.map(href => href.replace('/opportunities/', ''))
+}
 
-const follow = await api.post(`${base}/agent-queries`, { data: { question: '余杭', limit: 5, sessionId } })
-const followBody = await follow.json()
-record('只答"余杭"仍在同一轮里继续', follow.ok() && followBody.sessionId === sessionId)
-// 残句不能把系统打回"什么都不知道"的状态：上一轮的顺序还在，序号仍然可解析。
-const afterFollow = await (await api.get(`${base}/agent-queries/${sessionId}`)).json()
-record('残句之后上一轮的列表还在',
-  (afterFollow.jobIdsInOrder || []).length === order.length)
-
-// --- 反例二：刷新之后指向原列表第二个 ---
 await page.goto(BASE + '/', { waitUntil: 'networkidle' })
-const launcher = page.getByRole('button', { name: '打开 Career OS 决策助手' })
-if (await launcher.count()) await launcher.click()
+await openRunPanel()
 
-const second = await api.post(`${base}/agent-queries`,
-  { data: { question: '第二个怎么样', limit: 5, sessionId } })
-const secondBody = await second.json()
-const answeredJob = (secondBody.decisions || []).map(d => d.jobId)
-record('"第二个"解析回原列表的第二个',
-  answeredJob.length === 1 && answeredJob[0] === order[1],
-  `期望 ${order[1]}，实得 ${answeredJob[0]}`)
-record('"第二个"没有重新排名给出别的岗位', answeredJob[0] !== order[0])
+// --- 第一轮：范围是整个杭州 ---
+const hangzhou = await runRound('杭州有哪些岗位')
+record('第一轮在页面上列出了岗位', hangzhou.length >= 2, `${hangzhou.length} 个`)
+if (hangzhou.length < 2) { console.error('前置条件不满足：第一轮至少要有两个岗位。'); await browser.close(); process.exit(2) }
 
-// 资料变了之后，同一个序号要拒答，而不是拿重新排出来的第二个顶上去。
-const stale = await (await api.get(`${base}/agent-queries/${sessionId}`)).json()
-record('会话报出它是否仍对应当前资料', typeof stale.stale === 'boolean', `stale=${stale.stale}`)
+// --- 反例一：只答"余杭"，结果必须真的变 ---
+const yuhang = await runRound('余杭')
+record('只答"余杭"之后列表真的变了',
+  JSON.stringify(yuhang) !== JSON.stringify(hangzhou),
+  `杭州 ${hangzhou.length} 个 → 余杭 ${yuhang.length} 个`)
+record('余杭这一轮是杭州那一轮的子集，不是另起一问',
+  yuhang.length > 0 && yuhang.every(id => hangzhou.includes(id)))
+if (yuhang.length < 2) { console.error('前置条件不满足：余杭这一轮至少要有两个岗位。'); await browser.close(); process.exit(2) }
+
+// --- 反例二：刷新之后"第二个"指向刚展示的那份新列表 ---
+await page.reload({ waitUntil: 'networkidle' })
+await openRunPanel()
+const second = await runRound('第二个怎么样')
+
+record('"第二个"只讲一个岗位', second.length === 1, second.join(','))
+record('"第二个"指向刚展示的新列表的第二个',
+  second[0] === yuhang[1], `期望 ${yuhang[1]}，实得 ${second[0]}`)
+// 会话只读入不写回时，这一轮要么指回第一轮那份列表，要么根本解析不出岗位。
+// 所以这条必须同时要求"讲到了一个岗位"——只写不等号会在什么都没有时空过。
+record('"第二个"没有指回第一轮那份列表',
+  second.length === 1 && second[0] !== hangzhou[1], `第一轮的第二个是 ${hangzhou[1]}`)
 
 record('无 JS 运行时错误', errors.length === 0, errors.slice(0, 2).join(' / '))
 

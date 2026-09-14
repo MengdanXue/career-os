@@ -35,6 +35,22 @@ public final class AnswerNarrativeValidator {
         "T1", "T2", "T3"
     );
 
+    /**
+     * 推荐与适配判断。
+     *
+     * <p>这一类此前漏在外面："这些岗位都很适合你，建议优先准备"既没有数字也没有分层标签，
+     * 于是整段放行——可它说的正是系统从来没算过的那件事。适配分是程序算的，
+     * "适不适合你""要不要优先报"不是；把它写进叙述，等于让模型替系统下结论。
+     *
+     * <p>和 {@link #VERDICT_TOKENS} 一样是一份清单，覆盖不了所有说法。
+     * 真正的保证来自结构：所有判定都由事实块渲染，叙述只做连接。这份清单拦的是
+     * 最常见、也最像"正常措辞"的那几种。
+     */
+    private static final List<String> RECOMMENDATION_TOKENS = List.of(
+        "适合你", "不适合", "很适合", "都适合", "最适合", "挺适合", "比较适合",
+        "建议报考", "建议优先", "建议先报", "值得报", "推荐报考", "优先报考", "首选"
+    );
+
     /** 把主观指数说成统计概率的表述。基线 §6.2 明确禁止。 */
     private static final List<String> PROBABILITY_CLAIMS = List.of(
         "概率", "几率", "录取率", "上岸率", "命中率", "把握很大", "稳了", "十拿九稳"
@@ -86,6 +102,11 @@ public final class AnswerNarrativeValidator {
         for (String token : VERDICT_TOKENS) {
             if (narrative.contains(token)) {
                 violations.add("叙述包含判定词「" + token + "」；判定只能来自确定性事实块");
+            }
+        }
+        for (String token : RECOMMENDATION_TOKENS) {
+            if (narrative.contains(token)) {
+                violations.add("叙述包含推荐或适配判断「" + token + "」；这类结论只能来自确定性事实块");
             }
         }
         for (String claim : PROBABILITY_CLAIMS) {

@@ -52,6 +52,13 @@ public final class AgentExecutor {
     /** ASK 不是问句时的拒绝理由。陈述句走 ASK 通道就绕开了"结论要有依据"。 */
     static final String ASK_IS_NOT_A_QUESTION = "追问不是一个问句；结论不能借追问的通道发出";
 
+    /** 纯澄清的追问里夹了一个完整陈述句时的拒绝理由。 */
+    static final String CLARIFYING_ASK_CARRIES_A_STATEMENT =
+        "这条追问声明自己不依据任何结果，却先下了一个完整的判断；澄清就只问清楚要什么";
+
+    /** 陈述句的收尾标点。澄清式追问里出现它，说明问号之前还有一整句话。 */
+    private static final String SENTENCE_ENDINGS = "。！.!";
+
     private static final AnswerNarrativeValidator NARRATIVE = new AnswerNarrativeValidator();
 
     private final Map<String, ReadOnlyTool> tools;
@@ -190,12 +197,35 @@ public final class AgentExecutor {
         if (question != null && !question.isBlank() && question.indexOf('？') < 0 && question.indexOf('?') < 0) {
             violations.add(ASK_IS_NOT_A_QUESTION);
         }
+        // 声明成纯澄清就不受依据检查，于是它成了夹带结论的通道：
+        // "这批里有几个值得报。要我接着看吗？"——问号有了，前面那句照样是个没算过的判断。
+        if (ask.basis().clarifyingOnly() && carriesAStatement(question)) {
+            violations.add(CLARIFYING_ASK_CARRIES_A_STATEMENT);
+        }
         if (!ask.basis().declared()) {
             violations.add(UNGROUNDED_FINISH);
             return List.copyOf(violations);
         }
         violations.addAll(checkBasis(ask.basis(), observations));
         return List.copyOf(violations);
+    }
+
+    /**
+     * 问号之前是不是还有一整句话。
+     *
+     * <p>只看句末标点，不猜语义：澄清问句本来就该是"你说的杭州是指市区，还是整个市？"这种形状，
+     * 逗号分句没问题，一个句号就说明它先讲完了一件事再问。
+     * 逗号连起来的判断由叙述校验器的推荐词清单去拦，两者各拦一半，都不完整。
+     */
+    private static boolean carriesAStatement(String question) {
+        if (question == null) return false;
+        int mark = question.indexOf('？');
+        if (mark < 0) mark = question.indexOf('?');
+        if (mark < 0) mark = question.length();
+        for (int index = 0; index < mark; index++) {
+            if (SENTENCE_ENDINGS.indexOf(question.charAt(index)) >= 0) return true;
+        }
+        return false;
     }
 
     /** 点名的每一条依据都要在范围内，且确实是成功的观察。 */

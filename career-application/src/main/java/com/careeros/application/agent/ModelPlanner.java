@@ -152,17 +152,21 @@ public final class ModelPlanner implements AgentPlanner {
 
         Matcher finish = FINISH_LINE.matcher(line);
         if (finish.matches()) {
-            return new PlannerStep.Finish(continued(finish.group(1), trailing), basis(trailing));
+            var basis = basis(trailing);
+            return basis == null ? null : new PlannerStep.Finish(continued(finish.group(1), trailing), basis);
         }
         Matcher ask = ASK_LINE.matcher(line);
         if (ask.matches()) {
-            return new PlannerStep.AskUser(continued(ask.group(1), trailing), basis(trailing));
+            var basis = basis(trailing);
+            return basis == null ? null : new PlannerStep.AskUser(continued(ask.group(1), trailing), basis);
         }
         Matcher tool = TOOL_LINE.matcher(line);
         if (tool.matches()) {
             String name = tool.group(1).strip();
             if (name.isEmpty()) return null;
-            return new PlannerStep.CallTool(new ToolCall(name, arguments(tool.group(2))), why(trailing));
+            var arguments = arguments(tool.group(2));
+            if (arguments == null) return null;
+            return new PlannerStep.CallTool(new ToolCall(name, arguments), why(trailing));
         }
         return null;
     }
@@ -197,33 +201,71 @@ public final class ModelPlanner implements AgentPlanner {
         return "(模型未说明原因)";
     }
 
-    /** 解析 BASIS：收尾这段话依据的是第几条观察，或者明说它只是澄清。 */
+    /**
+     * 解析 BASIS：收尾这段话依据的是第几条观察，或者明说它只是澄清。
+     *
+     * <p>两处此前是静默解释的：
+     *
+     * <p><b>一、"无"出现在任何位置都会把整条依据翻成纯澄清。</b>
+     * {@code BASIS 1，无其他依据} 本意是"依据第 1 条"，却被当成"不依据任何结果"——
+     * 点名的那条再也不会被核对。现在只有整串就是那个词才算澄清；
+     * 既点了名又带着澄清词，是自相矛盾的声明，整段作废。
+     *
+     * <p><b>二、给了两条 BASIS 时取第一条。</b> 那同样是替模型做决定。现在也整段作废。
+     *
+     * @return 解析结果；{@code null} 表示声明自相矛盾或重复，整段作废
+     */
     private static AgentTooling.Basis basis(String trailing) {
+        String value = null;
         for (String line : trailing.split("\\R")) {
             Matcher matcher = BASIS_LINE.matcher(line);
             if (!matcher.matches()) continue;
-            String value = matcher.group(1).strip();
-            if (CLARIFYING_MARKERS.stream().anyMatch(value::contains)) return AgentTooling.Basis.clarifying();
-            var indexes = new ArrayList<Integer>();
-            Matcher number = Pattern.compile("\\d+").matcher(value);
-            while (number.find()) indexes.add(Integer.parseInt(number.group()));
-            return new AgentTooling.Basis(indexes, false);
+            if (value != null) return null;
+            value = matcher.group(1).strip();
         }
-        return AgentTooling.Basis.none();
+        if (value == null) return AgentTooling.Basis.none();
+
+        String declared = value;
+        boolean exactlyClarifying = CLARIFYING_MARKERS.stream().anyMatch(declared::equalsIgnoreCase);
+        boolean mentionsClarifying = CLARIFYING_MARKERS.stream().anyMatch(declared::contains);
+        var indexes = new ArrayList<Integer>();
+        Matcher number = Pattern.compile("\\d+").matcher(value);
+        while (number.find()) indexes.add(Integer.parseInt(number.group()));
+
+        if (exactlyClarifying && indexes.isEmpty()) return AgentTooling.Basis.clarifying();
+        // 又点名又说"无依据"，两种读法都说得通，所以哪种都不能选。
+        if (mentionsClarifying) return null;
+        return new AgentTooling.Basis(indexes, false);
     }
 
+    /**
+     * 解析 TOOL 行上的参数。
+     *
+     * <p><b>没被解释掉的部分不能静默消失。</b> 此前这里是"把认得的记号挑出来，其余忽略"：
+     * {@code TOOL search_jobs 杭州} 于是变成一次没有任何筛选的全量查询，
+     * 然后把全国的岗位当成杭州的答复给用户。比取值不认识更隐蔽——那种至少还留下一个失败观察。
+     *
+     * <p>同一个键给两个值也不再取最后一个：模型自相矛盾的一步被悄悄解释成其中一种，
+     * 用户拿到的答复对应的是他从没要求过的范围。
+     *
+     * @return 整行都是合法记号且键不重复时返回参数表；否则返回 {@code null}，整段作废
+     */
     private static Map<String, String> arguments(String rest) {
         var arguments = new LinkedHashMap<String, String>();
-        if (rest == null) return arguments;
+        if (rest == null || rest.isBlank()) return arguments;
         Matcher matcher = ARGUMENT.matcher(rest);
+        int consumedTo = 0;
         while (matcher.find()) {
+            // 记号之间只允许空白。别的东西说明这一行有没被解释的内容。
+            if (!rest.substring(consumedTo, matcher.start()).isBlank()) return null;
+            consumedTo = matcher.end();
             String value = matcher.group(2);
             if (value.startsWith("\"") && value.endsWith("\"") && value.length() >= 2) {
                 value = value.substring(1, value.length() - 1);
             }
-            arguments.put(matcher.group(1), value);
+            if (arguments.put(matcher.group(1), value) != null) return null;
         }
-        return arguments;
+        return rest.substring(consumedTo).isBlank() ? arguments : null;
     }
 
     /**

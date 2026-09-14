@@ -65,6 +65,12 @@ class AgentRunController {
 
         var run = executor.run(candidateId, request.question(), active, context);
 
+        var jobs = jobs(run.observations());
+        var pending = pending(run.observations(), context);
+        // 这一轮的范围、列表和还没答的问题要存回去，否则会话永远停在第一轮：
+        // 用户看到的是新列表，下一句"第二个"却解析回上一轮那一份。
+        var saved = save(candidateId, request.sessionId(), session, run, jobs, pending);
+
         return new AgentRunResponse(
             run.outcome().name(),
             run.narrative(),
@@ -73,10 +79,10 @@ class AgentRunController {
             run.groundedOn(),
             run.budgetSpent(),
             run.budgetLimit(),
-            session == null ? null : session.sessionId(),
-            session == null ? null : session.profileVersion(),
-            jobs(run.observations()),
-            pending(run.observations(), context),
+            saved == null ? (session == null ? null : session.sessionId()) : saved.sessionId(),
+            saved == null ? (session == null ? null : session.profileVersion()) : saved.profileVersion(),
+            jobs,
+            pending,
             executor.toolCatalogue().stream().map(tool -> new ToolView(tool.name(), tool.description(),
                 tool.parameters().stream().map(parameter -> new ParameterView(parameter.name(),
                     parameter.required(), parameter.description(), parameter.allowedValues())).toList())).toList(),
@@ -85,6 +91,68 @@ class AgentRunController {
                 entry.budgetUnits())).toList(),
             run.observations().stream().map(observation -> new ObservationView(
                 observation.tool(), observation.ok(), observation.summary(), observation.data())).toList());
+    }
+
+    /**
+     * 把这一轮存回会话。
+     *
+     * <p>只在这一轮真的查出了新列表时才写：用户问"第一个的截止日是哪天"，系统只调了 job_facts，
+     * 这时候把顺序清空，下一句"第二个"就没有东西可指了——上一轮明明还在他屏幕上。
+     *
+     * <p>范围取这一轮<b>实际执行成功</b>的那次 search_jobs 的参数，不取模型说过的话：
+     * 被拒的调用没有产生任何结果，把它的参数当成"本轮范围"，下一轮就会在一个从未生效的范围上接着走。
+     *
+     * @return 存下来的会话；这一轮没有新列表时为 {@code null}
+     */
+    private AgentSession save(UUID candidateId, UUID requestedSessionId, AgentSession existing,
+                              AgentExecutor.AgentRun run, List<JobView> jobs, List<PendingView> pending) {
+        var listing = searchArguments(run);
+        if (listing == null) return null;
+        UUID sessionId = existing != null ? existing.sessionId()
+            : requestedSessionId != null ? requestedSessionId : UUID.randomUUID();
+        var order = jobs.stream().map(job -> UUID.fromString(job.jobPostingId())).toList();
+        var items = pending.stream()
+            .map(item -> new AgentSession.PendingConfirmation(
+                com.careeros.domain.CandidateFacts.CandidateFactKey.valueOf(item.factKey()),
+                item.question(), UUID.fromString(item.jobPostingId())))
+            .toList();
+        return sessions.rememberRun(sessionId, candidateId, filtersOf(listing), order, items);
+    }
+
+    /** 这一轮成功执行的最后一次 search_jobs 用了什么参数；没有就返回 null。 */
+    private static Map<String, String> searchArguments(AgentExecutor.AgentRun run) {
+        Map<String, String> arguments = null;
+        var observations = run.observations();
+        int index = 0;
+        for (AgentExecutor.TraceEntry entry : run.trace()) {
+            if (!entry.accepted()) continue;
+            boolean succeeded = index < observations.size() && observations.get(index).ok();
+            if (succeeded && "search_jobs".equals(entry.tool())) arguments = entry.arguments();
+            index++;
+        }
+        return arguments;
+    }
+
+    private static AgentSession.SessionFilters filtersOf(Map<String, String> arguments) {
+        return new AgentSession.SessionFilters(
+            enumValue(com.careeros.domain.DomainEnums.OpportunityTier.class, arguments.get("tier")),
+            blankToNull(arguments.get("location")),
+            enumValue(com.careeros.domain.DomainEnums.JobFamily.class, arguments.get("jobFamily")),
+            AgentSession.SessionFilters.DEFAULT_LIMIT);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
+    }
+
+    /** 取值到这里已经过工具的校验，认不出来就当没筛选——不猜一个最接近的。 */
+    private static <E extends Enum<E>> E enumValue(Class<E> type, String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return Enum.valueOf(type, raw.strip().toUpperCase());
+        } catch (IllegalArgumentException unknown) {
+            return null;
+        }
     }
 
     /** 把会话翻译成执行器认得的上下文：上一轮的范围、列表顺序、还没答的资料项。 */
