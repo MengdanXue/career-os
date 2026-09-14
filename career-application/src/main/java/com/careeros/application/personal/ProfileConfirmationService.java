@@ -39,6 +39,9 @@ import java.util.UUID;
  * 待确认的变更详情，一个字都不写。
  */
 public final class ProfileConfirmationService {
+    private static final org.slf4j.Logger LOG =
+        org.slf4j.LoggerFactory.getLogger(ProfileConfirmationService.class);
+
 
     /** 对话里能直接回答的标量字段。其余字段都要材料，不能靠一句话确认。 */
     private static final Set<CandidateFactKey> DECLARABLE = EnumSet.of(
@@ -182,6 +185,10 @@ public final class ProfileConfirmationService {
         try {
             changes = diffs.recompute(entry.candidateId(), entry.profileVersionBefore(), asOf);
         } catch (RuntimeException failure) {
+            // 原因必须留痕。这里吞掉异常是对的——用户的声明不该因为算不动就丢掉——
+            // 但连日志都不留就变成"点重算没反应，谁也不知道为什么"，那条恢复路径就永远走不完。
+            LOG.warn("重算失败，回答已记录但结论未刷新：candidate={} previousProfileVersion={}",
+                entry.candidateId(), entry.profileVersionBefore(), failure);
             return new ConfirmationOutcome(Result.RECORDED_RECOMPUTE_DEFERRED, EvidenceStrength.SELF_REPORTED,
                 entry.profileVersionBefore(), entry.profileVersionAfter(),
                 message + " 岗位结论尚未重算完成，稍后重试即可，回答不会重复记录。", null, null);

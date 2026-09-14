@@ -14,6 +14,12 @@ const items = [{
   jobPostingId: jobId,
 }]
 
+const deferred = {
+  result: 'RECORDED_RECOMPUTE_DEFERRED', evidenceStrength: 'SELF_REPORTED',
+  profileVersionBefore: 'p1', profileVersionAfter: 'p2',
+  message: '已按你本人的声明记录。岗位结论尚未重算完成。', pendingChange: null, changes: null,
+}
+
 function json(value: unknown) {
   return new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
@@ -152,15 +158,46 @@ describe('PendingConfirmations', () => {
 
   /** 重算没做完要说出来，不能装作结论已经刷新。 */
   it('says the verdicts are not refreshed when the recompute was deferred', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
-      result: 'RECORDED_RECOMPUTE_DEFERRED', evidenceStrength: 'SELF_REPORTED',
-      profileVersionBefore: 'p1', profileVersionAfter: 'p2',
-      message: '已按你本人的声明记录。岗位结论尚未重算完成。', pendingChange: null, changes: null,
-    })))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(deferred)))
     renderPanel()
 
     await userEvent.click(screen.getByRole('button', { name: '中共党员' }))
 
-    expect(await screen.findByText(/岗位结论还没刷新/)).toBeInTheDocument()
+    expect(await screen.findByText(/岗位结论还没重算完/)).toBeInTheDocument()
+  })
+
+  /**
+   * 重算没做完时要有一个按钮，不是一句"稍后重试"。
+   *
+   * <p>没有按钮的话，这条恢复路径在页面上根本不存在——接口能单独调用，不等于用户走得通。
+   */
+  it('offers a button to finish the recompute instead of telling the user to retry later', async () => {
+    const fetch = vi.fn().mockResolvedValue(json(deferred))
+    vi.stubGlobal('fetch', fetch)
+    renderPanel()
+
+    await userEvent.click(screen.getByRole('button', { name: '中共党员' }))
+    await userEvent.click(await screen.findByRole('button', { name: '继续重算' }))
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    // 用原来那把幂等钥匙重放：只接着做重算，不会再写一次，也不会再推高一次资料版本。
+    const first = JSON.parse(fetch.mock.calls[0][1].body)
+    const retry = JSON.parse(fetch.mock.calls[1][1].body)
+    expect(retry.idempotencyKey).toBe(first.idempotencyKey)
+    expect(retry.value).toBe(first.value)
+  })
+
+  /**
+   * 每条问题都要标出是哪个岗位提出的。
+   *
+   * <p>不标的话，用户看到的是一句悬空的"你的政治面貌是？"——他既不知道为什么现在问，
+   * 也不知道答了对哪个岗位有影响。
+   */
+  it('shows which job asked for the confirmation', () => {
+    vi.stubGlobal('fetch', vi.fn())
+    renderPanel()
+
+    expect(screen.getByRole('link', { name: '这个岗位' }))
+      .toHaveAttribute('href', `/opportunities/${jobId}`)
   })
 })

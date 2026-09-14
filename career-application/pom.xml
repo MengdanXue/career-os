@@ -5,6 +5,8 @@
     <artifactId>career-application</artifactId>
     <dependencies>
         <dependency><groupId>com.careeros</groupId><artifactId>career-domain</artifactId><version>${project.version}</version></dependency>
+        <!-- 只要日志门面，不要任何实现或框架：吞掉的异常必须留痕，否则失败恢复没法诊断。 -->
+        <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>5.12.2</version><scope>test</scope></dependency>
         <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>3.27.3</version><scope>test</scope></dependency>
     </dependencies>

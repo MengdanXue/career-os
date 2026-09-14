@@ -8,6 +8,7 @@ import com.careeros.application.agent.AgentTooling.PlannerStep;
 import com.careeros.application.agent.AgentTooling.PlanningState;
 import com.careeros.application.agent.AgentTooling.ReadOnlyTool;
 import com.careeros.application.agent.AgentTooling.ToolCall;
+import java.time.Clock;
 import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
@@ -74,7 +75,7 @@ class ModelPlannerTest {
             new ModelPlanner((protocol, rendered) -> "这个问题挺复杂的，我想想。"));
 
         assertThat(run.outcome()).isEqualTo(Outcome.PLANNER_FAILED);
-        assertThat(run.toolCallsSpent()).isZero();
+        assertThat(run.budgetSpent()).isZero();
     }
 
     // --- 越权请求由执行器拒绝，不是这里悄悄过滤 ---
@@ -97,7 +98,7 @@ class ModelPlannerTest {
             assertThat(entry.tool()).isEqualTo("update_profile");
             assertThat(entry.accepted()).isFalse();
         });
-        assertThat(run.toolCallsSpent()).isZero();
+        assertThat(run.budgetSpent()).isZero();
     }
 
     /** 模型在参数里报别人的候选人 ID 也没有用：执行器绑定身份，工具收到的始终是本人。 */
@@ -120,7 +121,7 @@ class ModelPlannerTest {
         var rendered = ModelPlanner.render(new PlanningState("查岗位",
             List.of(Observation.ok("search_jobs", "找到 2 个岗位。", Map.of("count", 2))), 3));
 
-        assertThat(rendered).contains("剩余工具调用次数：3");
+        assertThat(rendered).contains("剩余预算单位：3");
         assertThat(rendered).contains("search_jobs 成功：找到 2 个岗位。");
         assertThat(rendered).contains("count=2");
     }
@@ -144,7 +145,7 @@ class ModelPlannerTest {
         return new ReadOnlyTool() {
             public String name() { return name; }
             public String description() { return name; }
-            public Observation invoke(UUID candidateId, ToolCall call) {
+            public Observation invoke(AgentTooling.ToolContext context) {
                 return Observation.ok(name, name + " ok", data);
             }
         };
@@ -156,9 +157,50 @@ class ModelPlannerTest {
         RecordingTool(String name) { this.name = name; }
         public String name() { return name; }
         public String description() { return name; }
-        public Observation invoke(UUID candidateId, ToolCall call) {
-            invokedFor.add(candidateId);
+        public Observation invoke(AgentTooling.ToolContext context) {
+            invokedFor.add(context.candidateId());
             return Observation.ok(name, "ok", Map.of("count", 1));
         }
     }
+    // --- 模型首轮就要看到工具目录 ---
+
+    /**
+     * 模型第一次被问的时候，提示里就得有完整的工具目录和参数定义。
+     *
+     * <p>只发格式不发目录，模型只能猜工具名和参数名，于是每一步都被执行器拒绝——
+     * 表面现象是"模型不会用工具"，真实原因是从没告诉过它有哪些工具。
+     * 这条断言走完整的执行器，看的是第一轮实际发出去的那段提示，不是某个常量。
+     */
+    @Test void theFirstTurnAlreadyCarriesTheToolCatalogueAndItsParameters() {
+        var prompts = new java.util.ArrayList<String>();
+        var executor = new AgentExecutor(List.of(
+            ReadOnlyTools.searchJobs((candidateId, query, now, budget) ->
+                new com.careeros.application.DecisionRankingService.RankingPage(List.of(), 0, 5, 0), CLOCK),
+            ReadOnlyTools.jobFacts((candidateId, jobId, now) -> { throw new IllegalStateException("not called"); },
+                CLOCK)));
+
+        executor.run(CANDIDATE, "杭州有哪些岗位", new ModelPlanner((protocol, rendered) -> {
+            prompts.add(protocol);
+            return "FINISH 好的。";
+        }));
+
+        assertThat(prompts).isNotEmpty();
+        String first = prompts.get(0);
+        assertThat(first).contains("search_jobs").contains("job_facts");
+        assertThat(first).contains("location").contains("jobFamily").contains("tier").contains("limit");
+        // 取值范围也要在里面，否则模型只能猜是 T1 还是 TIER_1。
+        assertThat(first).contains("DATA").contains("T1");
+        // 必填与可选要分得出来：jobId 是必填的，筛选参数都是可选的。
+        assertThat(first).contains("jobId（必填）").contains("location（可选）");
+    }
+
+    /** 一个工具都没注册时要明说，而不是省略目录——省略会让模型继续猜工具名。 */
+    @Test void anEmptyCatalogueIsStatedRatherThanOmitted() {
+        var protocol = ModelPlanner.protocol(new PlanningState("查岗位", List.of(), 5, List.of()));
+
+        assertThat(protocol).contains("没有注册任何工具");
+    }
+
+    private static final Clock CLOCK = Clock.fixed(java.time.Instant.parse("2026-08-24T15:00:00Z"),
+        java.time.ZoneOffset.UTC);
 }

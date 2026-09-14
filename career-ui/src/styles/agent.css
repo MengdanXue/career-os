@@ -70,3 +70,33 @@
 .watch-add { padding: 3px 8px; border: 1px solid #aaa79d; background: #fffefa; font: inherit; font-size: 11px; cursor: pointer; }
 .watch-add:disabled { opacity: 0.55; cursor: default; }
 .watch-added { color: #285f51; font-size: 11px; font-weight: 700; }
+
+/* 每条待确认问题要标出是哪个岗位提出的，否则问题读起来是悬空的。 */
+.confirmation-asking-job { margin: 0 0 6px; color: var(--muted); font-size: 11px; }
+.confirmation-asking-job a { color: inherit; }
+/* 重算没做完时给按钮，不是"稍后重试"：没有按钮这条恢复路径在页面上就不存在。 */
+.confirmation-deferred button { margin-top: 4px; padding: 4px 9px; border: 1px solid #aaa79d; background: #fffefa; font: inherit; font-size: 11px; cursor: pointer; }
+.confirmation-deferred button:disabled { opacity: 0.55; cursor: default; }
+
+/* 刷新之后恢复的上一轮。 */
+.agent-restored { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.agent-restored > p { margin: 0 0 6px; color: var(--muted); font-size: 11px; }
+.agent-restored-stale { padding: 7px 9px; border-left: 3px solid var(--caution); background: #fdf6e7; color: #78532e; }
+
+/* 只读工具编排：边界要摆出来，不是让人相信它是只读的。 */
+.agent-run { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.agent-run-toggle { padding: 4px 9px; border: 1px solid #aaa79d; background: #fffefa; font: inherit; font-size: 11px; cursor: pointer; }
+.agent-run-scope { margin: 8px 0 6px; color: var(--muted); font-size: 11px; }
+.agent-run form > div { display: flex; gap: 6px; margin-top: 4px; }
+.agent-run label { font-size: 11px; color: var(--muted); }
+.agent-run textarea { flex: 1; font: inherit; font-size: 12px; }
+.agent-run-disabled { margin: 8px 0 0; padding: 7px 9px; border-left: 3px solid var(--caution); background: #fdf6e7; color: #78532e; font-size: 11px; }
+.agent-run-result { margin-top: 10px; font-size: 11px; }
+.agent-run-outcome { margin: 0 0 6px; font-weight: 700; }
+.agent-run-budget { margin: 6px 0; color: var(--muted); }
+.agent-run-result details { margin-top: 6px; }
+.agent-run-result summary { cursor: pointer; color: var(--muted); }
+.agent-run-result ol, .agent-run-result details ul { margin: 6px 0 0; padding-left: 16px; }
+.agent-run-result li[data-accepted='false'] strong, .agent-run-result li[data-ok='false'] strong { color: #8a3b2f; }
+.agent-run-result code { display: block; margin-top: 2px; font-size: 10px; color: var(--muted); }
+.agent-run-result small { display: block; color: var(--muted); }

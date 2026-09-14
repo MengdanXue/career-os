@@ -100,17 +100,17 @@ class DecisionAgentController {
         if (request.sessionId() == null) return null;
         var ordinal = OrdinalReference.parse(request.question());
         if (ordinal.isEmpty()) return null;
-        var reference = sessions.resolveOrdinal(request.sessionId(), ordinal.get());
+        var reference = sessions.resolveOrdinal(candidateId, request.sessionId(), ordinal.get());
         if (reference.outcome() == Outcome.NO_SESSION) return null;
         if (reference.outcome() == Outcome.STALE_LISTING) {
-            return describe(request, service.cannotResolve(request.question(),
+            return describe(candidateId, request, service.cannotResolve(request.question(),
                 "你的资料已经更新，上一份列表的排序不再对应当前结论，请重新查询后再指定序号。", limit), request.sessionId());
         }
         if (reference.outcome() == Outcome.OUT_OF_RANGE) {
-            return describe(request, service.cannotResolve(request.question(),
+            return describe(candidateId, request, service.cannotResolve(request.question(),
                 "上一份列表里没有第 " + ordinal.get() + " 个。", limit), request.sessionId());
         }
-        return describe(request,
+        return describe(candidateId, request,
             service.describe(candidateId, reference.jobPostingId(), request.question(), limit, Instant.now()),
             request.sessionId());
     }
@@ -121,12 +121,13 @@ class DecisionAgentController {
      * <p>不调用 {@code sessions.remember}：这一轮没有产生新的列表，覆盖掉原有顺序
      * 会让下一句"第三个"失去依据。
      */
-    private AgentResponse describe(AgentRequest request, AgentQueryService.AgentResponse result, UUID sessionId) {
+    private AgentResponse describe(UUID candidateId, AgentRequest request,
+                                  AgentQueryService.AgentResponse result, UUID sessionId) {
         var decisions = result.decisions().stream()
             .map(value -> DecisionApiModels.DecisionResponse.from(value, explanations.explain(value))).toList();
         return new AgentResponse(result.question(), result.answer(), decisions, result.modelPhrased(),
             result.fallbackUsed(), result.disclaimer(), result.violations(), sessionId,
-            sessions.profileVersionSeenBy(sessionId).orElse(null), List.of());
+            sessions.profileVersionSeenBy(candidateId, sessionId).orElse(null), List.of());
     }
 
     /** {@code sessionId} 为空表示开一轮新会话；带上它则接着上一轮，筛选条件与岗位顺序都延续。 */

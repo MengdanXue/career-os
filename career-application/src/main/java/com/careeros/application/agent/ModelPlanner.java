@@ -24,7 +24,13 @@ import java.util.regex.Pattern;
  */
 public final class ModelPlanner implements AgentPlanner {
 
-    /** 模型每一步要按这个格式回。刻意用行格式而不是 JSON：少一层解析失败的来源。 */
+    /**
+     * 格式说明。刻意用行格式而不是 JSON：少一层解析失败的来源。
+     *
+     * <p>这只是格式部分。<b>真正发给模型的提示由 {@link #protocol(PlanningState)} 拼出来，
+     * 后面接的是这次运行的完整工具目录与每个参数的定义。</b> 只发格式不发目录，模型只能猜工具名，
+     * 于是每一步都被执行器拒绝——看起来像"模型不会用工具"，实际是从没告诉过它有哪些工具。
+     */
     public static final String PROTOCOL = """
         你是 Career OS 的检索规划器。你只能查资料和提问，不能修改任何东西。
 
@@ -41,7 +47,11 @@ public final class ModelPlanner implements AgentPlanner {
 
           FINISH <一两句连接性叙述>
 
-        FINISH 的叙述里不准出现任何数字（含中文数字），不准出现"可报／不可报／条件可报／
+        只能调下面列出的工具，参数也只能用下面列出的键；工具名或参数名不在表里会被直接拒绝，
+        取值不在允许范围里也会被拒绝，不会退化成"不加这个筛选"。
+        ASK 必须是一个问句。一次成功的工具结果都没有时不要 FINISH——那样的收尾没有依据，会被整段丢弃。
+
+        FINISH 和 ASK 的文字里都不准出现任何数字（含中文数字），不准出现"可报／不可报／条件可报／
         待确认／T1／T2／T3"这类判定词，不准把指数说成录取概率或上岸率。
         资格、分数、限制条件由程序渲染并附在你这段话后面，你改不了也删不掉；
         写进去只会导致你这段话被整段丢弃。""";
@@ -58,8 +68,42 @@ public final class ModelPlanner implements AgentPlanner {
 
     @Override
     public PlannerStep next(PlanningState state) {
-        String raw = model.respond(PROTOCOL, render(state));
+        String raw = model.respond(protocol(state), render(state));
         return parse(raw);
+    }
+
+    /**
+     * 拼出这一轮真正发给模型的提示：格式说明 + 这次运行的工具目录。
+     *
+     * <p>目录来自执行器的注册表，不是另写一份文档——提示里写着能填 T1、代码却不认，
+     * 这种偏差在同一份定义下不会出现。
+     */
+    static String protocol(PlanningState state) {
+        var text = new StringBuilder(PROTOCOL);
+        text.append("\n\n可用工具（只读，全部只能查，不能改）：\n");
+        if (state.tools().isEmpty()) {
+            // 说清楚"一个都没有"，不是省略不提：省略会让模型以为目录只是没写出来，继续猜工具名。
+            text.append("（本次运行没有注册任何工具。不要提出 TOOL 调用。）\n");
+            return text.toString();
+        }
+        for (AgentTooling.ToolSpec tool : state.tools()) {
+            text.append("\n- ").append(tool.name()).append("：").append(tool.description()).append('\n');
+            if (tool.parameters().isEmpty()) {
+                text.append("  参数：无\n");
+                continue;
+            }
+            text.append("  参数：\n");
+            for (AgentTooling.ToolParameter parameter : tool.parameters()) {
+                text.append("    - ").append(parameter.name())
+                    .append(parameter.required() ? "（必填）" : "（可选）")
+                    .append("：").append(parameter.description());
+                if (!parameter.allowedValues().isEmpty()) {
+                    text.append("；只能取 ").append(String.join("、", parameter.allowedValues()));
+                }
+                text.append('\n');
+            }
+        }
+        return text.toString();
     }
 
     /**
@@ -109,7 +153,8 @@ public final class ModelPlanner implements AgentPlanner {
     static String render(PlanningState state) {
         var text = new StringBuilder();
         text.append("用户问题：").append(state.question()).append('\n');
-        text.append("剩余工具调用次数：").append(state.remainingCalls()).append('\n');
+        text.append("剩余预算单位：").append(state.remainingBudget())
+            .append("（一次工具调用算一个单位，工具内部每评估一个岗位再算一个）\n");
         if (state.observations().isEmpty()) {
             text.append("目前还没有任何工具结果。");
             return text.toString();

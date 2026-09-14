@@ -60,8 +60,9 @@ public final class AgentSessionService {
      * @return 解析结果。资料已变时返回 {@link Reference#staleListing()}——不重新排名，
      *         因为重新排出来的第 N 个可能是另一个岗位，而用户无从察觉。
      */
-    public Reference resolveOrdinal(UUID sessionId, int ordinal) {
-        var session = sessions.find(sessionId).orElse(null);
+    public Reference resolveOrdinal(UUID candidateId, UUID sessionId, int ordinal) {
+        var session = find(candidateId, sessionId).orElse(null);
+        // 不是本人的会话与"没有这轮会话"对外一视同仁，不泄露"存在但不是你的"。
         if (session == null) return Reference.noSession();
         var profile = candidates.findById(session.candidateId()).orElseThrow(() ->
             new CandidateProfileService.CandidateProfileNotFoundException(
@@ -91,9 +92,12 @@ public final class AgentSessionService {
      *
      * <p>确认写入用的乐观版本检查要以"用户看到问题时的版本"为准，而不是"此刻库里的版本"——
      * 后者永远等于当前值，那个检查就恒真，等于没检查。
+     *
+     * <p><b>要带候选人。</b> 会话 ID 是可猜的 UUID；不核对归属的话，报上别人的会话 ID
+     * 就能拿它记着的版本去过自己的版本检查，而那个版本跟本人的资料毫无关系。
      */
-    public Optional<String> profileVersionSeenBy(UUID sessionId) {
-        return sessions.find(sessionId).map(AgentSession::profileVersion);
+    public Optional<String> profileVersionSeenBy(UUID candidateId, UUID sessionId) {
+        return find(candidateId, sessionId).map(AgentSession::profileVersion);
     }
 
     /**
@@ -107,11 +111,13 @@ public final class AgentSessionService {
      * 期间若有别处改动，会话里的版本已经不是 {@code fromVersion}，这里什么都不做，
      * 下一次确认照样会撞上版本检查——那正是这个检查要拦的情况。
      *
+     * <p>同样要带候选人：推进别人会话里的版本，会让那个人的下一次确认静默跳过版本检查。
+     *
      * @return 是否真的推进了
      */
-    public boolean advanceProfileVersion(UUID sessionId, String fromVersion, String toVersion) {
-        if (sessionId == null || fromVersion == null || toVersion == null) return false;
-        var session = sessions.find(sessionId).orElse(null);
+    public boolean advanceProfileVersion(UUID candidateId, UUID sessionId, String fromVersion, String toVersion) {
+        if (candidateId == null || sessionId == null || fromVersion == null || toVersion == null) return false;
+        var session = find(candidateId, sessionId).orElse(null);
         if (session == null || !session.profileVersion().equals(fromVersion)) return false;
         if (fromVersion.equals(toVersion)) return false;
         sessions.save(session.withProfileVersion(toVersion, clock.instant()));

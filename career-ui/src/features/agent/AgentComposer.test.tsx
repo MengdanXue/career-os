@@ -107,4 +107,61 @@ describe('AgentComposer', () => {
 
     expect(await screen.findByText('叙述包含数值；所有数值必须来自确定性事实块')).toBeInTheDocument()
   })
+
+  /**
+   * 刷新之后要接着走，不是从头再问一遍。
+   *
+   * <p>会话只活在页面内存里的话，按一次 F5，待确认事项和它们依据的资料版本一起消失。
+   * 回答到一半刷新最糟：已经写进去的那条没了着落，用户不知道自己答过没有。
+   */
+  it('recovers the previous round after a refresh', async () => {
+    localStorage.setItem('career-os.agent-session', '01992f09-0000-7000-8000-0000000000aa')
+    const fetch = vi.fn().mockResolvedValue(json({
+      sessionId: '01992f09-0000-7000-8000-0000000000aa',
+      profileVersion: 'profile-7',
+      stale: false,
+      lastJobIdsInOrder: ['01992f09-0000-7000-8000-0000000000bb'],
+      pendingConfirmations: [{
+        factKey: 'POLITICAL_AFFILIATION',
+        question: '候选人政治面貌尚未确认',
+        jobPostingId: '01992f09-0000-7000-8000-0000000000bb',
+      }],
+      updatedAt: '2026-09-01T00:00:00Z',
+    }))
+    vi.stubGlobal('fetch', fetch)
+    render(<AppProviders><AgentComposer expanded /></AppProviders>)
+
+    expect(await screen.findByText('候选人政治面貌尚未确认')).toBeInTheDocument()
+    expect(String(fetch.mock.calls[0][0])).toContain('/agent-sessions/01992f09-0000-7000-8000-0000000000aa')
+  })
+
+  /**
+   * 资料在这期间变了就要说出来。
+   *
+   * <p>不说的话，页面会拿着旧序号继续问"第二个怎么样"——重新排出来的第二个可能是另一个岗位，
+   * 而用户看不出它换了对象。
+   */
+  it('warns that a recovered listing no longer matches the current profile', async () => {
+    localStorage.setItem('career-os.agent-session', '01992f09-0000-7000-8000-0000000000aa')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      sessionId: '01992f09-0000-7000-8000-0000000000aa',
+      profileVersion: 'profile-7', stale: true,
+      lastJobIdsInOrder: [], pendingConfirmations: [], updatedAt: '2026-09-01T00:00:00Z',
+    })))
+    render(<AppProviders><AgentComposer expanded /></AppProviders>)
+
+    expect(await screen.findByText(/上一份列表的排序不再对应当前结论/)).toBeInTheDocument()
+  })
+
+  /** 上一轮已经过期或不是本人的，就安静地当新开一轮，不用一条错误挡住输入框。 */
+  it('starts a fresh round when the stored session cannot be recovered', async () => {
+    localStorage.setItem('career-os.agent-session', '01992f09-0000-7000-8000-0000000000aa')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'SESSION_NOT_FOUND', detail: '没有这轮会话' }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } })))
+    render(<AppProviders><AgentComposer expanded /></AppProviders>)
+
+    expect(await screen.findByLabelText('问题示例')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 })

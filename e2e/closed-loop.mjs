@@ -102,6 +102,46 @@ await page.reload({ waitUntil: 'networkidle' })
 await page.getByText('WATCHLIST · 关注清单').waitFor({ timeout: 20000 })
 record('刷新后关注清单可见', true)
 
+// 刷新恢复：上一轮会话要接着走，而不是从头再问一遍。
+// 只活在页面内存里的话，按一次 F5 待确认事项和它们依据的资料版本一起消失。
+const launcherAfterReload = page.getByRole('button', { name: '打开 Career OS 决策助手' })
+if (await launcherAfterReload.count()) await launcherAfterReload.click()
+const restored = page.getByLabel('上一轮会话')
+await restored.waitFor({ timeout: 20000 }).catch(() => {})
+record('刷新后接着上一轮会话', await restored.count() > 0)
+
+// 待确认事项要标出是哪个岗位提出的，否则问题读起来是悬空的。
+const askingJob = page.getByRole('link', { name: '这个岗位' }).first()
+record('待确认标出提出它的岗位', await askingJob.count() > 0,
+  await askingJob.count() ? await askingJob.getAttribute('href') : '')
+
+// 只读工具编排：页面上要走得通，不能只是接口可调用。
+const runToggle = page.getByRole('button', { name: /让它自己选工具查/ })
+if (await runToggle.count()) {
+  await runToggle.click()
+  const runBox = page.getByLabel('交给它去查')
+  await runBox.waitFor({ timeout: 15000 })
+  await runBox.fill('我关注的那些有没有变化？')
+  await page.getByRole('button', { name: '运行' }).click()
+  const disabled = page.getByText(/模型未启用/)
+  const budget = page.getByText(/本次消耗预算/)
+  await Promise.race([
+    disabled.waitFor({ timeout: 30000 }).catch(() => {}),
+    budget.waitFor({ timeout: 30000 }).catch(() => {}),
+  ])
+  if (await disabled.count()) {
+    // 没有规划器时要明说，而不是拿一个写死的流程冒充。这条也是通过。
+    record('工具编排入口可用', true, '模型未启用，页面如实说明')
+  } else {
+    record('工具编排入口可用', await budget.count() > 0)
+    await page.getByText('它做了哪几步（含被拒的）').click()
+    record('轨迹在页面上可见', await page.locator('.agent-run-trace li').count() > 0)
+    await page.getByText('这次它能用的工具（全部只读）').click()
+    const tools = await page.locator('.agent-run-tools').innerText()
+    record('工具目录到参数一级', tools.includes('search_jobs') && tools.includes('只能取'))
+  }
+} else { record('工具编排入口可用', false, '页面上没有这个入口') }
+
 record('无 JS 运行时错误', errors.length === 0, errors.slice(0, 2).join(' / '))
 
 await page.screenshot({ path: process.env.SHOT || '/var/tmp/e2e.png', fullPage: true })

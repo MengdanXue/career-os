@@ -57,7 +57,7 @@ class ProfileConfirmationController {
         @RequestBody ConfirmationBody body
     ) {
         var request = new ConfirmationRequest(candidateId, body.factKey(), declared(body),
-            expectedProfileVersion(body), body.idempotencyKey(), body.acknowledgedChange());
+            expectedProfileVersion(candidateId, body), body.idempotencyKey(), body.acknowledgedChange());
         var recorded = transactions.execute(status -> confirmations.recordAnswer(request));
         // 写入已提交。到这里重算再失败，也只是"结论还没刷新"，回答不会丢。
         var outcome = confirmations.completeRecompute(recorded, asOf);
@@ -66,7 +66,7 @@ class ProfileConfirmationController {
         // 只从这次写入的 before 推进到 after：期间若有别处改动，会话版本已不是 before，
         // 这里什么都不做，版本检查照样会拦。
         if (body.sessionId() != null) {
-            sessions.advanceProfileVersion(body.sessionId(),
+            sessions.advanceProfileVersion(candidateId, body.sessionId(),
                 outcome.profileVersionBefore(), outcome.profileVersionAfter());
         }
         return new ConfirmationResponse(outcome.result(), outcome.evidenceStrength(),
@@ -85,9 +85,10 @@ class ProfileConfirmationController {
      * <p>没有会话的直连调用（资料页自己的表单）才用请求里的版本：那里没有会话可依，
      * 版本是页面渲染时拿到的，仍然是"用户看到的那一版"。
      */
-    private String expectedProfileVersion(ConfirmationBody body) {
+    private String expectedProfileVersion(UUID candidateId, ConfirmationBody body) {
         if (body.sessionId() == null) return body.expectedProfileVersion();
-        return sessions.profileVersionSeenBy(body.sessionId()).orElseThrow(() ->
+        // 按候选人取，不只按会话 ID：会话 ID 可猜，不核对归属就等于允许拿别人的版本来过自己的检查。
+        return sessions.profileVersionSeenBy(candidateId, body.sessionId()).orElseThrow(() ->
             new IllegalArgumentException("会话不存在或已过期，请重新查询后再确认"));
     }
 

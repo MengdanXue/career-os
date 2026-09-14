@@ -92,8 +92,8 @@ class DecisionAgentApiTest {
     /** "第二个怎么样"要落到用户屏幕上那一份列表的第二个，不能重新排名。 */
     @Test void anOrdinalIsAnsweredAboutTheJobTheUserPointedAt() throws Exception {
         UUID job=UUID.randomUUID();
-        when(sessions.resolveOrdinal(SESSION_ID,2)).thenReturn(new Reference(Outcome.RESOLVED,job));
-        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.of("profile-7"));
+        when(sessions.resolveOrdinal(CANDIDATE_ID,SESSION_ID,2)).thenReturn(new Reference(Outcome.RESOLVED,job));
+        when(sessions.profileVersionSeenBy(CANDIDATE_ID,SESSION_ID)).thenReturn(java.util.Optional.of("profile-7"));
         when(service.describe(eq(CANDIDATE_ID),eq(job),eq("第二个怎么样？"),eq(5),any()))
             .thenReturn(new AgentQueryService.AgentResponse("第二个怎么样？","1. 信息中心技术岗",List.of(),false,false,
                 "机会决策指数，不是录取概率",List.of(),FILTERS));
@@ -114,12 +114,12 @@ class DecisionAgentApiTest {
      * 用户指的那个，而他看不出来。
      */
     @Test void aStaleListingRefusesTheOrdinalInsteadOfReRanking() throws Exception {
-        when(sessions.resolveOrdinal(SESSION_ID,2)).thenReturn(new Reference(Outcome.STALE_LISTING,null));
+        when(sessions.resolveOrdinal(CANDIDATE_ID,SESSION_ID,2)).thenReturn(new Reference(Outcome.STALE_LISTING,null));
         when(service.query(eq(CANDIDATE_ID),anyString(),eq(5),any()))
             .thenReturn(new AgentQueryService.AgentResponse("重新排过的列表","1. 另一个岗位",List.of(),false,false,
                 "机会决策指数，不是录取概率",List.of(),FILTERS));
 
-        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.of("profile-7"));
+        when(sessions.profileVersionSeenBy(CANDIDATE_ID,SESSION_ID)).thenReturn(java.util.Optional.of("profile-7"));
         when(service.cannotResolve(anyString(),anyString(),anyInt()))
             .thenReturn(new AgentQueryService.AgentResponse("第二个怎么样？","你的资料已经更新，请重新查询后再指定序号。",
                 List.of(),false,false,"机会决策指数，不是录取概率",List.of(),FILTERS));
@@ -135,12 +135,12 @@ class DecisionAgentApiTest {
     }
 
     @Test void anOutOfRangeOrdinalSaysSoWithoutReRanking() throws Exception {
-        when(sessions.resolveOrdinal(SESSION_ID,9)).thenReturn(new Reference(Outcome.OUT_OF_RANGE,null));
+        when(sessions.resolveOrdinal(CANDIDATE_ID,SESSION_ID,9)).thenReturn(new Reference(Outcome.OUT_OF_RANGE,null));
         when(service.query(eq(CANDIDATE_ID),anyString(),eq(5),any()))
             .thenReturn(new AgentQueryService.AgentResponse("重新排过的列表","1. 另一个岗位",List.of(),false,false,
                 "机会决策指数，不是录取概率",List.of(),FILTERS));
 
-        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.of("profile-7"));
+        when(sessions.profileVersionSeenBy(CANDIDATE_ID,SESSION_ID)).thenReturn(java.util.Optional.of("profile-7"));
         when(service.cannotResolve(anyString(),anyString(),anyInt()))
             .thenReturn(new AgentQueryService.AgentResponse("第九个怎么样？","上一份列表里没有第 9 个。",
                 List.of(),false,false,"机会决策指数，不是录取概率",List.of(),FILTERS));
@@ -165,7 +165,7 @@ class DecisionAgentApiTest {
                 .content("{\"question\":\"第一学历有要求吗\",\"limit\":5,\"sessionId\":\""+SESSION_ID+"\"}"))
             .andExpect(status().isOk());
 
-        verify(sessions,never()).resolveOrdinal(any(),anyInt());
+        verify(sessions,never()).resolveOrdinal(any(),any(),anyInt());
         verify(service).query(eq(CANDIDATE_ID),eq("第一学历有要求吗"),eq(5),any());
     }
 
