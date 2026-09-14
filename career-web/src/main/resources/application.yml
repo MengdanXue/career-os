@@ -25,6 +25,8 @@ spring:
       moderation: none
     openai:
       api-key: ${OPENAI_API_KEY:}
+      # 任何 OpenAI 兼容端点都从这里换，不改代码：DeepSeek 用 https://api.deepseek.com。
+      base-url: ${CAREER_OS_AI_BASE_URL:https://api.openai.com}
     # 客户端自己的重试也要有界。默认 max-attempts 是 10，配上指数退避，一次"模型不可达"
     # 能让一个线程转好几分钟——请求侧的 20 秒截止时间到了就走了，这个线程还在那儿重试。
     # 截止时间管的是用户等多久，这里管的是线程被占多久，两个都要有上限。

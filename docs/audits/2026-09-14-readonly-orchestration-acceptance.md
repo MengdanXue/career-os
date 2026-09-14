@@ -159,12 +159,44 @@
 stage 从 `WRITTEN` 推进到 `RECOMPUTED`，资料版本只推高了一次
 （`profile-seed-1` → `profile-b424e795…`）。
 
+## 冻结小样本：脚本已就绪，本环境跑不了
+
+凭据这次拿到了（OpenAI 兼容的 DeepSeek key）。**跑不了的原因不是 key，是出网策略**：
+本会话的 egress 代理对 `api.deepseek.com:443` 与 `api.openai.com:443` 都返回
+`connect_rejected`（组织策略拒绝 CONNECT），只有 `api.anthropic.com` 可达——
+那是本会话自己的凭据通道，不是用户为这个应用授权的凭据，不拿它跑应用流量。
+
+已经落地的、等出网放开就能跑的东西：
+
+- `career-web/src/test/java/com/careeros/ModelPlannerLiveSampleTest.java`
+  （`@Tag("llm-integration")`，默认被 surefire 排除）。输入不走数据库——要测的是
+  模型的选择，不是数据层；状态用 `PlanningState` 手工冻结，工具目录与线上同源，
+  温度置零，所以同一份输入可以反复比对。四个样本：
+  1. **最小判据**：同一个问题、同一份目录，只有工具结果不同（有岗位 / 没岗位），
+     下一步必须不同。写死流程的实现在这两种输入下会调同一串工具；这条不过，
+     就没有理由把它叫作 Agent。
+  2. 非法参数被拒之后，模型要改用合法取值，而不是把 `tier=T9` 再报一遍。
+  3. 剩余预算只够一次调用时要自己收敛，而不是一直要求调工具直到撞上限。
+  4. 收尾文字的违规率——提示词与叙述校验器一旦对不上，回答会次次回落到事实块，
+     用户看到的东西变差而测试全绿。
+- `spring.ai.openai.base-url` 改为 `${CAREER_OS_AI_BASE_URL:https://api.openai.com}`，
+  换任何 OpenAI 兼容端点都不必改代码。
+
+跑法（在出网允许的机器上）：
+
+```
+OPENAI_API_KEY=...            CAREER_OS_AI_BASE_URL=https://api.deepseek.com CAREER_OS_AI_MODEL=deepseek-chat mvn -P llm-integration -pl career-web test -Dtest=ModelPlannerLiveSampleTest
+```
+
 ## 仍然没有做到的事
 
-- **还没有证明模型会依据不同工具结果选择不同下一步。** 本环境没有模型凭据。
+- **还没有证明模型会依据不同工具结果选择不同下一步。** 上面那条出网策略挡住了。
   `RecordedPlannerConfiguration` 回放的是写死的输出，
   `ScriptedPlannerConfiguration` 的分支也是写死的——两者都**不是 Agent**，
   它们证明的是"这条路径接通了、边界守得住"，不是"模型会选工具"。
-  冻结小样本对照要等真实凭据配置之后再跑。
+- **没有任何形式的按候选人授权。** 本轮补的是"会话 ID 要核对归属"；
+  但整套 API 仍是"通过认证的操作员可以对任何 candidateId 操作"，
+  路径里的 candidateId 不与登录身份比对。这是既有的全局设计，不是本轮引入的，
+  也不在本轮范围内——但不能因为补了会话归属就以为归属已经守住了。
 - 一个岗位算不出来仍会让整次排名查询失败（关注清单会降级，排名不会）。这条本轮未动。
 - 原环境（GitHub Actions 之外的部署）状态另行报告。
