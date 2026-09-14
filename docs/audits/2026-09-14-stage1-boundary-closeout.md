@@ -8,6 +8,7 @@
 - 已有交付记录 SHA：`525b5a134731e46b16ec4eac59a409366cd02b5c`，标题 `docs(stage1): record delivery evidence for c0054c4`；两者均保留。
 - 本轮分支：`codex/stage1-release-gates-20260914`。本轮新增只应是本记录及其 CI 追记，不改变上述功能代码。
 - 现状：工作树仅有既有 ` D scripts/start-career-os.ps1`；无暂存差异。Maven、Git、应用、测试和浏览器进程在收尾检查时均已结束。
+- 本记录提交 `f0eae14d226a545d6052d6b673aad52c7a35c638` 已推送到上述远端分支；GitHub Actions run `34803907729`（workflow run #100）核对的 `head_sha` 正是该完整 SHA，状态 `completed/success`：<https://github.com/career-os/actions/runs/34803907729>。该 CI 只验证文档提交，不替代功能代码或真实浏览器证据。
 
 ## A1—A12 核销口径
 
