@@ -138,13 +138,14 @@ class CandidateDecisionDiffServiceTest {
     void refusesToReportAPartialDifferenceWhenTheJobCountExceedsTheCallBudget() {
         var old = new ArrayList<DecisionBundle>();
         var current = new HashMap<UUID, DecisionBundle>();
-        for (int index = 0; index < com.careeros.application.ToolCallBudget.DEFAULT_LIMIT + 1; index++) {
+        var calls = new AtomicInteger();
+        for (int index = 0; index < 51; index++) {
             UUID jobId = UUID.randomUUID();
             old.add(bundle(jobId, "old-v1", EligibilityStatus.ELIGIBLE, Map.of()));
             current.put(jobId, bundle(jobId, "current-v2", EligibilityStatus.INELIGIBLE, Map.of()));
         }
         var service = new CandidateDecisionDiffService(candidates("current-v2"), snapshots(old),
-            (candidateId, jobId, now) -> current.get(jobId), CLOCK);
+            (candidateId, jobId, now) -> { calls.incrementAndGet(); return current.get(jobId); }, CLOCK);
 
         var result = service.recompute(CANDIDATE_ID, "old-v1", AS_OF);
 
@@ -154,6 +155,7 @@ class CandidateDecisionDiffServiceTest {
         assertThat(result.resolvedUncertaintyCount()).isNull();
         assertThat(result.newlyIneligibleCount()).isNull();
         assertThat(result.affectedJobs()).isEmpty();
+        assertThat(calls).hasValue(50);
     }
 
     /** 正好用满上限仍要给出完整结论——预算是防失控，不是提前放弃。 */
@@ -161,18 +163,20 @@ class CandidateDecisionDiffServiceTest {
     void stillReportsACompleteDifferenceAtExactlyTheCallBudget() {
         var old = new ArrayList<DecisionBundle>();
         var current = new HashMap<UUID, DecisionBundle>();
-        for (int index = 0; index < com.careeros.application.ToolCallBudget.DEFAULT_LIMIT; index++) {
+        var calls = new AtomicInteger();
+        for (int index = 0; index < 50; index++) {
             UUID jobId = UUID.randomUUID();
             old.add(bundle(jobId, "old-v1", EligibilityStatus.NEEDS_CONFIRMATION, Map.of()));
             current.put(jobId, bundle(jobId, "current-v2", EligibilityStatus.ELIGIBLE, Map.of()));
         }
         var service = new CandidateDecisionDiffService(candidates("current-v2"), snapshots(old),
-            (candidateId, jobId, now) -> current.get(jobId), CLOCK);
+            (candidateId, jobId, now) -> { calls.incrementAndGet(); return current.get(jobId); }, CLOCK);
 
         var result = service.recompute(CANDIDATE_ID, "old-v1", AS_OF);
 
         assertThat(result.available()).isTrue();
-        assertThat(result.newlyEligibleCount()).isEqualTo(com.careeros.application.ToolCallBudget.DEFAULT_LIMIT);
+        assertThat(result.newlyEligibleCount()).isEqualTo(50);
+        assertThat(calls).hasValue(50);
     }
 
     private static RepositoryPorts.CandidateProfiles candidates(String version) {

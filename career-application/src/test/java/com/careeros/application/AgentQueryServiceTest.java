@@ -30,12 +30,14 @@ class AgentQueryServiceTest {
         assertThat(result.fallbackUsed()).isFalse();
     }
 
-    @Test void modelFailureFallsBackAndContradictoryPhrasingCannotChangeStructuredDecision() {
+    @Test void configuredPhrasersAreNeverCalledOrDisplayedInStageOne() {
         AgentQueryService.RankingPort port=(candidateId,query,now)->new DecisionRankingService.RankingPage(List.of(bundle()),0,5,1);
-        var failing=new AgentQueryService(port,new DecisionExplanationService(),Optional.of(context->{throw new IllegalStateException("model down");}));
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var failing=new AgentQueryService(port,new DecisionExplanationService(),Optional.of(context->{calls.incrementAndGet();throw new IllegalStateException("model down");}));
         var fallback=failing.query(CANDIDATE_ID,"杭州稳定岗位",5,NOW);
 
-        assertThat(fallback.fallbackUsed()).isTrue();
+        assertThat(fallback.fallbackUsed()).isFalse();
+        assertThat(calls.get()).isZero();
         assertThat(fallback.decisions().getFirst().decision().tier()).isEqualTo(OpportunityTier.T1);
 
         // 此前这句矛盾表述会被原样展示，只有底层结构化数据还是对的——用户看到的仍是"T3岗位、匹配0分"。
@@ -43,8 +45,8 @@ class AgentQueryServiceTest {
         var contradictory=new AgentQueryService(port,new DecisionExplanationService(),Optional.of(context->"这是T3岗位，匹配0分"))
             .query(CANDIDATE_ID,"杭州稳定岗位",5,NOW);
         assertThat(contradictory.answer()).doesNotContain("T3岗位");
-        assertThat(contradictory.fallbackUsed()).isTrue();
-        assertThat(contradictory.violations()).isNotEmpty();
+        assertThat(contradictory.fallbackUsed()).isFalse();
+        assertThat(contradictory.violations()).isEmpty();
         assertThat(contradictory.answer()).contains("机会分层：T1");
         assertThat(contradictory.decisions().getFirst().decision().tier()).isEqualTo(OpportunityTier.T1);
         assertThat(contradictory.decisions().getFirst().decision().fitScore()).isEqualTo(70);
@@ -88,7 +90,7 @@ class AgentQueryServiceTest {
         var result=new AgentQueryService(port,new DecisionExplanationService(),
             Optional.of(context->"这个岗位你是可报的，放心投。")).query(CANDIDATE_ID,"杭州稳定岗位",5,NOW);
 
-        assertThat(result.fallbackUsed()).isTrue();
+        assertThat(result.fallbackUsed()).isFalse();
         assertThat(result.answer()).doesNotContain("放心投");
         assertThat(result.answer()).contains("限制条件：公告限中共党员，你的政治面貌待确认");
     }
@@ -101,6 +103,23 @@ class AgentQueryServiceTest {
             .query(CANDIDATE_ID,"杭州稳定岗位",5,NOW).answer();
 
         assertThat(answer).contains("岗位适配：70 分").contains("证据覆盖率：100%").contains("不是录取概率");
+    }
+
+    @Test void aSingleJobExplanationAlsoNeverCallsOrShowsFreeModelNarrative() {
+        var selected = bundle();
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var service = new AgentQueryService((candidate,query,now) -> {
+            throw new AssertionError("single-job explanation must not rerank");
+        }, new DecisionExplanationService(), Optional.of(context -> {
+            calls.incrementAndGet(); return "这份工作值得马上申请且一定适合你";
+        }), Optional.of((candidate,job,now) -> selected));
+
+        var result = service.describe(CANDIDATE_ID, selected.decision().jobPostingId(), "第二个怎么样", 5, NOW);
+
+        assertThat(calls.get()).isZero();
+        assertThat(result.modelPhrased()).isFalse();
+        assertThat(result.answer()).doesNotContain("值得马上申请").contains("证据覆盖率：100%");
+        assertThat(result.decisions()).containsExactly(selected);
     }
 
     /** 默认夹具带真实的复合版本串，否则每个用例都会莫名其妙地渲染出"已过期"。 */

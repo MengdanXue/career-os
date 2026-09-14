@@ -71,13 +71,50 @@ public class PersistenceAdaptersConfiguration {
             }
         };
     }
-    @Bean com.careeros.application.AgentSessionPorts.Sessions agentSessions(AgentSessionJpaRepository repository) {
+    @Bean com.careeros.application.AgentSessionPorts.Sessions agentSessions(AgentSessionJpaRepository repository,
+        org.springframework.transaction.PlatformTransactionManager transactionManager,
+        jakarta.persistence.EntityManager entityManager) {
+        var transactions = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
         return new com.careeros.application.AgentSessionPorts.Sessions() {
             public Optional<com.careeros.application.AgentSession> find(UUID sessionId) {
                 return repository.findById(sessionId).map(PersistenceAdaptersConfiguration.this::toAgentSession);
             }
             public com.careeros.application.AgentSession save(com.careeros.application.AgentSession session) {
-                return toAgentSession(repository.save(toAgentSessionEntity(session)));
+                return transactions.execute(status -> {
+                    var existing = repository.findByIdForUpdate(session.sessionId());
+                    existing.ifPresent(entity -> entityManager.refresh(entity, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE));
+                    if (existing.isPresent()
+                        && !existing.get().candidateProfileId.equals(session.candidateId())) {
+                        throw new com.careeros.application.AgentSessionService.SessionNotFoundException("session not found");
+                    }
+                    var entity = toAgentSessionEntity(session);
+                    if (existing.isEmpty()) {
+                        // Persist rather than merge: a concurrent first insert must
+                        // lose on the primary key, never replace another owner.
+                        entityManager.persist(entity);
+                        entityManager.flush();
+                        return toAgentSession(entity);
+                    }
+                    return toAgentSession(repository.saveAndFlush(entity));
+                });
+            }
+            public boolean compareAndSet(com.careeros.application.AgentSession expected,
+                                         com.careeros.application.AgentSession replacement) {
+                if (!expected.sessionId().equals(replacement.sessionId())
+                    || !expected.candidateId().equals(replacement.candidateId())) {
+                    throw new IllegalArgumentException("session identity must not change");
+                }
+                return Boolean.TRUE.equals(transactions.execute(status -> {
+                    var current = repository.findByIdForUpdate(expected.sessionId());
+                    if (current.isEmpty()) return false;
+                    // An outer query transaction may have read this entity
+                    // before another transaction committed. Locking alone does
+                    // not refresh JPA's first-level cache for the comparison.
+                    entityManager.refresh(current.get(), jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+                    if (!toAgentSession(current.get()).equals(expected)) return false;
+                    repository.saveAndFlush(toAgentSessionEntity(replacement));
+                    return true;
+                }));
             }
         };
     }

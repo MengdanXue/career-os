@@ -6,6 +6,7 @@ import com.careeros.application.agent.AgentTooling.ToolCall;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 /**
  * 验收专用的可控规划器，默认不启用。
@@ -14,14 +15,17 @@ import org.springframework.context.annotation.Configuration;
  * 它按工具结果分支（有岗位就看待确认事项，没岗位就转去追问），所以能验证执行器的行为；
  * 但它**不是模型，也不是 Agent**——它的分支是写死的，换个问题不会换策略。
  *
- * <p>用 {@code career-os.agent.planner=scripted} 显式打开。不要在生产启用：
+ * <p>只在 {@code agent-acceptance} profile 且 planner=scripted、dynamic-tools.enabled=true、
+ * acceptance.enabled=true 时打开。不要在生产启用：
  * 那会让这个接口后面看起来有个会自己选工具的东西，而实际上没有。
  */
 @Configuration
+@Profile("agent-acceptance")
 @ConditionalOnProperty(name = "career-os.agent.planner", havingValue = "scripted")
 class ScriptedPlannerConfiguration {
 
     @Bean
+    @ConditionalOnProperty(prefix="career-os.agent", name={"dynamic-tools.enabled","acceptance.enabled"}, havingValue="true")
     AgentPlanner scriptedAcceptancePlanner() {
         return state -> {
             var last = state.last();

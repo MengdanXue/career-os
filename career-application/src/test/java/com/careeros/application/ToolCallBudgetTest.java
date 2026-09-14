@@ -43,7 +43,19 @@ class ToolCallBudgetTest {
 
     @Test void theStandardBudgetIsBoundedAndReportsItsLimit() {
         var budget = ToolCallBudget.standard();
-        assertThat(budget.limit()).isEqualTo(ToolCallBudget.DEFAULT_LIMIT);
-        assertThat(ToolCallBudget.DEFAULT_LIMIT).isPositive();
+        assertThat(budget.limit()).isEqualTo(50);
+        for (int call = 0; call < 50; call++) assertThat(budget.tryConsume()).isTrue();
+        assertThat(budget.tryConsume()).isFalse();
+        assertThat(budget.spent()).isEqualTo(50);
+    }
+
+    @Test void independentRequestsDoNotShareSpentBudget() {
+        var first = ToolCallBudget.standard();
+        for (int call = 0; call < 50; call++) first.tryConsume();
+
+        var second = ToolCallBudget.standard();
+        assertThat(first.tryConsume()).isFalse();
+        assertThat(second.spent()).isZero();
+        assertThat(second.tryConsume()).isTrue();
     }
 }

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -23,14 +24,20 @@ import org.springframework.web.bind.annotation.*;
 class AgentRunController {
     private final AgentExecutor executor;
     private final ObjectProvider<AgentPlanner> planner;
+    private final boolean dynamicToolsEnabled;
 
-    AgentRunController(AgentExecutor executor, ObjectProvider<AgentPlanner> planner) {
+    AgentRunController(AgentExecutor executor, ObjectProvider<AgentPlanner> planner,
+                       @Value("${career-os.agent.dynamic-tools.enabled:false}") boolean dynamicToolsEnabled) {
         this.executor = executor;
         this.planner = planner;
+        this.dynamicToolsEnabled = dynamicToolsEnabled;
     }
 
     @PostMapping
     AgentRunResponse run(@PathVariable("candidateId") UUID candidateId, @RequestBody AgentRunRequest request) {
+        if (!dynamicToolsEnabled) {
+            throw new PlannerUnavailableException("动态工具规划未启用；首阶段仅提供确定性查询和明确的确认操作。");
+        }
         var active = planner.getIfAvailable();
         if (active == null) {
             throw new PlannerUnavailableException("没有可用的规划器：模型未启用，且不提供写死的替代流程。");

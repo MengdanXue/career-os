@@ -122,6 +122,64 @@ class AgentExecutorTest {
         assertThat(second.calls).hasSize(1);
     }
 
+    @Test void fiftyCallsCanFinishButTheFiftyFirstAcrossAlternatingToolsIsRefused() {
+        var first = new RecordingTool("search_jobs", Map.of());
+        var second = new RecordingTool("watchlist", Map.of());
+        // Increase only the test's step allowance so it reaches the production call-budget boundary.
+        var executor = new AgentExecutor(List.of(first, second), 52,
+            com.careeros.application.ToolCallBudget.DEFAULT_LIMIT);
+        var remaining = new ArrayList<Integer>();
+
+        var complete = executor.run(CANDIDATE, "查一圈", state -> {
+            remaining.add(state.remainingCalls());
+            if (state.observations().size() == 50) return new PlannerStep.Finish("整理好了。");
+            return new PlannerStep.CallTool(ToolCall.of(
+                state.observations().size() % 2 == 0 ? "search_jobs" : "watchlist"), "继续查询");
+        });
+        assertThat(complete.outcome()).isEqualTo(Outcome.FINISHED);
+        assertThat(complete.toolCallsSpent()).isEqualTo(50);
+        assertThat(first.calls).hasSize(25);
+        assertThat(second.calls).hasSize(25);
+        assertThat(remaining).hasSize(51);
+        assertThat(remaining.getFirst()).isEqualTo(50);
+        assertThat(remaining.getLast()).isZero();
+
+        first.calls.clear();
+        second.calls.clear();
+        var exhausted = executor.run(CANDIDATE, "继续查", state -> new PlannerStep.CallTool(ToolCall.of(
+            state.observations().size() % 2 == 0 ? "search_jobs" : "watchlist"), "继续查询"));
+
+        assertThat(exhausted.outcome()).isEqualTo(Outcome.BUDGET_EXHAUSTED);
+        assertThat(exhausted.toolCallsSpent()).isEqualTo(50);
+        assertThat(first.calls).hasSize(25);
+        assertThat(second.calls).hasSize(25);
+        assertThat(exhausted.trace()).hasSize(51);
+        assertThat(exhausted.trace().getLast().accepted()).isFalse();
+        assertThat(exhausted.trace().getLast().reason()).contains("共享调用预算");
+    }
+
+    @Test void failedRegisteredCallsSpendTheSharedBudget() {
+        var calls = new AtomicInteger();
+        ReadOnlyTool broken = new ReadOnlyTool() {
+            public String name() { return "watchlist"; }
+            public String description() { return "failed read"; }
+            public Observation invoke(UUID candidateId, ToolCall call) {
+                calls.incrementAndGet();
+                throw new IllegalStateException("assessment unavailable");
+            }
+        };
+        var executor = new AgentExecutor(List.of(broken), 52,
+            com.careeros.application.ToolCallBudget.DEFAULT_LIMIT);
+
+        var run = executor.run(CANDIDATE, "查关注清单",
+            state -> new PlannerStep.CallTool(ToolCall.of("watchlist"), "重试读取"));
+
+        assertThat(run.outcome()).isEqualTo(Outcome.BUDGET_EXHAUSTED);
+        assertThat(run.toolCallsSpent()).isEqualTo(50);
+        assertThat(calls).hasValue(50);
+        assertThat(run.observations()).hasSize(51).noneMatch(Observation::ok);
+    }
+
     /** 预算用完要说出来，不能让规划器以为工具本身没有结果。 */
     @Test void exhaustingTheBudgetIsReportedRatherThanLookingLikeAnEmptyResult() {
         var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of())), 8, 1);

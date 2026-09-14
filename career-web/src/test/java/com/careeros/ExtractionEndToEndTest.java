@@ -57,8 +57,8 @@ class ExtractionEndToEndTest {
         @Autowired JdbcTemplate jdbc,
         @Autowired JobPostingJpaRepository jobs
     ) throws Exception {
-        Path fixture = findWorkspaceFile("output/career-os-samples/raw/08-zj-2025-applicant-guide.pdf");
-        Assumptions.assumeTrue(Files.exists(fixture), "local official PDF fixture is not available");
+        Path fixture = requiredTrackedFixture("08-zj-2025-applicant-guide.pdf",
+            "59b0ccb3f374b2e60abf31532bed5c1c097c3db6bdaedc30cd01a6118513635b");
         long jobsBefore = jobs.count();
 
         JsonNode submitted = upload(
@@ -106,8 +106,8 @@ class ExtractionEndToEndTest {
         @Autowired ObjectMapper json,
         @Autowired ExtractionRunJpaRepository runs
     ) throws Exception {
-        Path fixture = findWorkspaceFile("output/career-os-samples/raw/10-hzfi-social-recruiting.html");
-        Assumptions.assumeTrue(Files.exists(fixture), "local official concurrent HTML fixture is not available");
+        Path fixture = requiredTrackedFixture("10-hzfi-social-recruiting.html",
+            "138dd654aaf75e4260c91f318e642c7ec0dbabcd51297596772fb093f147056e");
         long runsBefore = runs.count();
         CountDownLatch start = new CountDownLatch(1);
 
@@ -161,6 +161,16 @@ class ExtractionEndToEndTest {
             .andExpect(status().isOk())
             .andReturn();
         return json.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    /** Reuse preserved, hash-verified official samples already tracked in this repository. */
+    private Path requiredTrackedFixture(String name, String expectedSha256) throws Exception {
+        Path fixture = findWorkspaceFile("career-infrastructure/src/test/resources/fixtures/extraction/" + name);
+        assertThat(Files.isRegularFile(fixture)).as("required tracked official fixture: %s", name).isTrue();
+        String actual = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+            .digest(Files.readAllBytes(fixture)));
+        assertThat(actual).as("preserved official fixture SHA-256: %s", name).isEqualTo(expectedSha256);
+        return fixture;
     }
 
     private Path findWorkspaceFile(String relative) {

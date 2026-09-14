@@ -3,6 +3,7 @@ package com.careeros;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -18,6 +19,8 @@ import com.careeros.domain.DomainEnums.PoliticalAffiliation;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -138,7 +141,9 @@ class ProfileConfirmationApiTest {
      * "用户看到的那一版和现在的不一样"。
      */
     @Test void aClaimedProfileVersionCannotOverrideTheOneTheSessionRecorded() throws Exception {
-        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.of("profile-the-user-saw"));
+        when(sessions.requireOwned(CANDIDATE_ID,SESSION_ID)).thenReturn(new com.careeros.application.AgentSession(
+            SESSION_ID,CANDIDATE_ID,new com.careeros.application.AgentSession.SessionFilters(null,null,null,5),
+            java.util.List.of(),java.util.List.of(),"profile-the-user-saw",java.time.Instant.EPOCH));
         when(service.completeRecompute(any(), any())).thenReturn(new ConfirmationOutcome(Result.RECORDED,
             EvidenceStrength.SELF_REPORTED, "profile-the-user-saw", "profile-8", "已记录。", null, null));
 
@@ -154,13 +159,13 @@ class ProfileConfirmationApiTest {
 
     /** 会话不存在就不能确认：没有基准版本，那个检查无从谈起。 */
     @Test void aMissingSessionIsRefusedRatherThanFallingBackToTheClaimedVersion() throws Exception {
-        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.empty());
+        when(sessions.requireOwned(CANDIDATE_ID,SESSION_ID)).thenThrow(new AgentSessionService.SessionNotFoundException("session not found"));
 
         mvc.perform(post("/api/v1/candidates/{candidateId}/profile-confirmations", CANDIDATE_ID)
                 .param("asOf", "2026-08-24")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(sessionBody("POLITICAL_AFFILIATION", "CPC_MEMBER", SESSION_ID, "profile-current")))
-            .andExpect(status().isBadRequest());
+            .andExpect(status().isNotFound());
 
         verify(service, never()).recordAnswer(any());
     }
@@ -177,5 +182,72 @@ class ProfileConfirmationApiTest {
             .andExpect(status().isOk());
 
         verify(service).recordAnswer(argThat(ProfileConfirmationService.ConfirmationRequest::acknowledgedChange));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Result.class, names = {"RECORDED", "RECORDED_RECOMPUTE_DEFERRED", "ALREADY_RECORDED", "NO_CHANGE_NEEDED"})
+    void successfulAndDeferredConfirmationsRefreshTheSessionAfterCommittedRecording(Result result) throws Exception {
+        ownSession("profile-7");
+        String after = result == Result.NO_CHANGE_NEEDED ? "profile-7" : "profile-8";
+        var calls = new java.util.ArrayList<String>();
+        when(service.recordAnswer(any())).thenAnswer(call -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+            calls.add("record");
+            return null;
+        });
+        when(service.completeRecompute(any(), any())).thenAnswer(call -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            calls.add("recompute");
+            return new ConfirmationOutcome(result, EvidenceStrength.SELF_REPORTED,
+                "profile-7", after, "本人声明已记录", null, null);
+        });
+        when(sessions.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-7", after)).thenAnswer(call -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+            calls.add("refresh");
+            return true;
+        });
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/profile-confirmations", CANDIDATE_ID)
+                .param("asOf", "2026-08-24").contentType(MediaType.APPLICATION_JSON)
+                .content(sessionBody("POLITICAL_AFFILIATION", "CPC_MEMBER", SESSION_ID, "forged-current")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.result").value(result.name()));
+
+        assertThat(calls).containsExactly("record", "recompute", "refresh");
+        verify(sessions).advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-7", after);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Result.class, names = {"IDEMPOTENCY_KEY_REUSED", "CHANGE_REQUIRES_ACKNOWLEDGEMENT", "PROFILE_VERSION_CHANGED", "REQUIRES_DOCUMENT"})
+    void refusedOrConflictingAnswersNeverAdvanceTheSession(Result result) throws Exception {
+        ownSession("profile-7");
+        when(service.completeRecompute(any(), any())).thenReturn(new ConfirmationOutcome(result,
+            EvidenceStrength.SELF_REPORTED, "profile-7", "profile-8", "没有写入", null, null));
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/profile-confirmations", CANDIDATE_ID)
+                .param("asOf", "2026-08-24").contentType(MediaType.APPLICATION_JSON)
+                .content(sessionBody("POLITICAL_AFFILIATION", "CPC_MEMBER", SESSION_ID, "profile-8")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.result").value(result.name()));
+
+        verify(sessions, never()).advanceProfileVersion(any(), any(), any(), any());
+    }
+
+    @Test void aForeignSessionCannotReachRecordingRecomputationOrAdvancement() throws Exception {
+        UUID other = UUID.randomUUID();
+        when(sessions.requireOwned(other, SESSION_ID))
+            .thenThrow(new AgentSessionService.SessionNotFoundException("session not found"));
+
+        mvc.perform(post("/api/v1/candidates/{candidateId}/profile-confirmations", other)
+                .param("asOf", "2026-08-24").contentType(MediaType.APPLICATION_JSON)
+                .content(sessionBody("POLITICAL_AFFILIATION", "CPC_MEMBER", SESSION_ID, "profile-8")))
+            .andExpect(status().isNotFound());
+
+        verifyNoInteractions(service);
+        verify(sessions, never()).advanceProfileVersion(any(), any(), any(), any());
+    }
+
+    private void ownSession(String version) {
+        when(sessions.requireOwned(CANDIDATE_ID, SESSION_ID)).thenReturn(new com.careeros.application.AgentSession(
+            SESSION_ID, CANDIDATE_ID, new com.careeros.application.AgentSession.SessionFilters(null, null, null, 5),
+            java.util.List.of(), java.util.List.of(), version, java.time.Instant.EPOCH));
     }
 }

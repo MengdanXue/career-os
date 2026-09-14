@@ -5,7 +5,6 @@ import static com.careeros.domain.DomainEnums.*;
 
 import com.careeros.domain.AnswerBlock;
 import com.careeros.domain.AnswerFact;
-import com.careeros.domain.AnswerNarrativeValidator;
 import com.careeros.domain.EligibilityEvaluator;
 import java.time.Instant;
 import java.util.List;
@@ -13,11 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public final class AgentQueryService {
-    private static final AnswerNarrativeValidator VALIDATOR=new AnswerNarrativeValidator();
-
     private final RankingPort rankings;
-    private final DecisionExplanationService explanations;
-    private final Optional<AgentPhraser> phraser;
     private final Optional<DecisionPorts.DecisionAssessor> assessor;
 
     public AgentQueryService(RankingPort rankings,DecisionExplanationService explanations,Optional<AgentPhraser> phraser) {
@@ -25,7 +20,9 @@ public final class AgentQueryService {
     }
 
     public AgentQueryService(RankingPort rankings,DecisionExplanationService explanations,Optional<AgentPhraser> phraser,Optional<DecisionPorts.DecisionAssessor> assessor) {
-        this.rankings=rankings; this.explanations=explanations; this.phraser=phraser; this.assessor=assessor;
+        // Stage 1 exposes only typed, deterministically rendered facts. The legacy
+        // phraser parameter remains source-compatible but is deliberately never called.
+        this.rankings=rankings; this.assessor=assessor;
     }
 
     /**
@@ -35,6 +32,7 @@ public final class AgentQueryService {
      * 另一个岗位，而用户看不出系统换了个对象在回答。
      */
     public AgentResponse describe(UUID candidateId,UUID jobPostingId,String question,int limit,Instant now) {
+        validateRequest(question,limit);
         if (assessor.isEmpty()) {
             return cannotResolve(question,"当前无法单独评估这个岗位，请重新查询列表。",limit);
         }
@@ -43,19 +41,7 @@ public final class AgentQueryService {
         AnswerBlock block=block(decisions);
         var filters=new AgentSession.SessionFilters(null,null,null,limit);
         String deterministic=block.render();
-        if (phraser.isEmpty()) {
-            return new AgentResponse(question,deterministic,decisions,false,false,block.disclaimer(),List.of(),filters);
-        }
-        String narrative;
-        try {
-            narrative=phraser.get().phrase(new PhrasingContext(question,deterministic,summaries(decisions)));
-        } catch (RuntimeException failure) {
-            return new AgentResponse(question,deterministic,decisions,false,true,block.disclaimer(),
-                List.of("模型调用失败："+failure.getClass().getSimpleName()),filters);
-        }
-        var composed=VALIDATOR.compose(narrative,block);
-        return new AgentResponse(question,composed.answer(),decisions,composed.narrativeUsed(),
-            !composed.narrativeUsed(),block.disclaimer(),composed.violations(),filters);
+        return new AgentResponse(question,deterministic,decisions,false,false,block.disclaimer(),List.of(),filters);
     }
 
     /**
@@ -72,31 +58,22 @@ public final class AgentQueryService {
     /**
      * 核心答案由 {@link AnswerBlock} 从类型化事实确定性渲染，模型不参与。
      *
-     * <p>此前的做法是把整段确定性答案交给模型润色、再用模型的返回值**替换**它。那样模型
-     * 可以静默改掉分数、把"条件可报"说成"可报"、或者删掉一条限制条件，而唯一的约束只是
-     * prompt 里一句请求。现在模型只写连接性叙述，写进事实即被拒，整段不展示。
+     * <p>首阶段不生成或展示自由模型叙述；模型开关、API key 或旧 phraser bean 都不能
+     * 改变这个出口。限制条件与单位始终来自同一份确定性事实块。
      */
     public AgentResponse query(UUID candidateId,String question,int limit,Instant now) {
-        if (question == null || question.isBlank()) throw new IllegalArgumentException("question is required");
-        if (limit < 1 || limit > 20) throw new IllegalArgumentException("limit must be between 1 and 20");
+        validateRequest(question,limit);
         var filters=new AgentSession.SessionFilters(tier(question),location(question),jobFamily(question),limit);
         var query=new DecisionRankingService.RankingQuery(filters.tier(),filters.location(),filters.jobFamily(),0,limit,false);
         var page=rankings.rank(candidateId,query,now);
         AnswerBlock block=block(page.items());
         String deterministic=block.render();
-        if (phraser.isEmpty()) {
-            return new AgentResponse(question,deterministic,page.items(),false,false,block.disclaimer(),List.of(),filters);
-        }
-        String narrative;
-        try {
-            narrative=phraser.get().phrase(new PhrasingContext(question,deterministic,summaries(page.items())));
-        } catch (RuntimeException failure) {
-            return new AgentResponse(question,deterministic,page.items(),false,true,block.disclaimer(),
-                List.of("模型调用失败："+failure.getClass().getSimpleName()),filters);
-        }
-        var composed=VALIDATOR.compose(narrative,block);
-        return new AgentResponse(question,composed.answer(),page.items(),composed.narrativeUsed(),
-            !composed.narrativeUsed(),block.disclaimer(),composed.violations(),filters);
+        return new AgentResponse(question,deterministic,page.items(),false,false,block.disclaimer(),List.of(),filters);
+    }
+
+    private static void validateRequest(String question,int limit) {
+        if (question == null || question.isBlank()) throw new IllegalArgumentException("question is required");
+        if (limit < 1 || limit > 20) throw new IllegalArgumentException("limit must be between 1 and 20");
     }
 
     /**
@@ -139,7 +116,6 @@ public final class AgentQueryService {
         return AnswerBlock.of(List.copyOf(jobs),EligibilityEvaluator.VERSION);
     }
 
-    private static List<DecisionSummary> summaries(List<DecisionBundle> values) { return values.stream().map(value->new DecisionSummary(value.decision().jobPostingId(),value.jobContext().job().title(),value.jobContext().organization().name(),value.decision().eligibilityStatus(),value.decision().tier(),value.decision().fitScore(),value.decision().stabilityScore(),value.decision().coveragePercent())).toList(); }
     private static OpportunityTier tier(String q) { return q.toUpperCase().contains("T1") || q.contains("编制") ? OpportunityTier.T1 : q.toUpperCase().contains("T2") ? OpportunityTier.T2 : q.toUpperCase().contains("T3") ? OpportunityTier.T3 : null; }
     private static String location(String q) { if (q.contains("杭州")) return "杭州"; if (q.contains("浙江")) return "浙江"; return null; }
     private static JobFamily jobFamily(String q) {

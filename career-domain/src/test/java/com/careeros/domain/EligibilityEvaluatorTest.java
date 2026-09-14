@@ -349,6 +349,46 @@ class EligibilityEvaluatorTest {
         assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.ELIGIBLE);
     }
 
+    @Test void anUnknownGraduateClauseWithFalseFlagsIsStillUnknown() {
+        var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.UNDECLARED),
+            graduateRule(false, false, GraduateEligibilityRule.EvidenceState.UNKNOWN));
+        assertRule(result, RuleType.FRESH_GRADUATE_STATUS, EligibilityStatus.NEEDS_CONFIRMATION);
+        assertThat(result.status()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
+    }
+
+    @Test void aFailedOrUnverifiedGraduateClauseCannotPassThroughDefaultFalseFlags() {
+        for (var state : List.of(GraduateEligibilityRule.EvidenceState.PARSE_FAILED,
+            GraduateEligibilityRule.EvidenceState.NOT_COLLECTED,
+            GraduateEligibilityRule.EvidenceState.NOT_PUBLISHED,
+            GraduateEligibilityRule.EvidenceState.REVIEW_REQUIRED)) {
+            var result = evaluateWithGraduateRule(declaring(ApplicationTimeStatus.DECLARED_MET),
+                graduateRule(false, false, state));
+            assertThat(result.ruleResults().get(RuleType.FRESH_GRADUATE_STATUS).status()).as(state.name())
+                .isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
+            assertThat(result.status()).as(state.name()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
+        }
+    }
+
+    @Test void alternativePoliticalAffiliationsRequireReviewRegardlessOfTheSimpleCandidateEnum() {
+        for (var affiliation : List.of(DomainEnums.PoliticalAffiliation.NON_MEMBER,
+            DomainEnums.PoliticalAffiliation.CPC_MEMBER, DomainEnums.PoliticalAffiliation.UNKNOWN)) {
+            var result = evaluate(candidateWith(affiliation, Gender.FEMALE),
+                jobRequiring("须为中共党员或民主党派成员", null));
+            assertRule(result, RuleType.POLITICAL_AFFILIATION, EligibilityStatus.NEEDS_CONFIRMATION);
+            assertThat(result.status()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
+            assertThat(result.ruleResults().get(RuleType.POLITICAL_AFFILIATION).explanation()).contains("人工核对");
+        }
+    }
+
+    @Test void politicalPreferencesAndExplicitlyUnrestrictedFieldsRemainNonGating() {
+        for (String text : List.of("中共党员优先", "政治面貌不限", "中共党员或民主党派成员优先")) {
+            var result = evaluate(candidateWith(DomainEnums.PoliticalAffiliation.NON_MEMBER, Gender.FEMALE),
+                jobRequiring(text, null));
+            assertThat(result.ruleResults().get(RuleType.POLITICAL_AFFILIATION).status()).as(text)
+                .isEqualTo(EligibilityStatus.ELIGIBLE);
+        }
+    }
+
     /**
      * 声明"报名时将未落实工作单位"只能得出条件式结论。报名还没发生，把一个还没兑现的
      * 未来当成既成事实，正是基线禁止的。

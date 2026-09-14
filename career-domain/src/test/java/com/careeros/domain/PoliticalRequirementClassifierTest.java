@@ -19,10 +19,31 @@ class PoliticalRequirementClassifierTest {
         assertThat(classifier.hasHardRequirement(job(null, "中共党员，具有相关经验者优先", null))).isTrue();
     }
 
-    @Test void ignoresPreferencesUnrestrictedFieldsAndAlternativeAffiliations() {
+    @Test void ignoresPreferencesAndExplicitlyUnrestrictedFields() {
         assertThat(classifier.hasHardRequirement(job(null, "中共党员优先", null))).isFalse();
         assertThat(classifier.hasHardRequirement(job(null, "政治面貌不限", null))).isFalse();
-        assertThat(classifier.hasHardRequirement(job(null, "中共党员或民主党派", null))).isFalse();
+        assertThat(classifier.classify(job(null, "中共党员优先", null)))
+            .isEqualTo(PoliticalRequirementClassifier.Classification.NO_HARD_REQUIREMENT);
+        assertThat(classifier.classify(job(null, "政治面貌不限", null)))
+            .isEqualTo(PoliticalRequirementClassifier.Classification.NO_HARD_REQUIREMENT);
+    }
+
+    @Test void alternativeAffiliationsNeedReviewRatherThanBeingReadAsUnrestricted() {
+        for (String text : List.of("中共党员或民主党派", "须为中共党员或民主党派成员", "须为民主党派成员")) {
+            assertThat(classifier.classify(job(null, text, null))).as(text)
+                .isEqualTo(PoliticalRequirementClassifier.Classification.MANUAL_REVIEW);
+            assertThat(classifier.hasHardRequirement(job(null, text, null))).as(text).isFalse();
+        }
+    }
+
+    @Test void anAmbiguousClauseIsNotOverriddenByAnotherSimpleMembershipClause() {
+        assertThat(classifier.classify(job("限中共党员", "党员或民主党派", null)))
+            .isEqualTo(PoliticalRequirementClassifier.Classification.MANUAL_REVIEW);
+    }
+
+    @Test void alternativeMembershipAsAPreferenceStillDoesNotCreateAHardGate() {
+        assertThat(classifier.classify(job(null, "中共党员或民主党派成员优先", null)))
+            .isEqualTo(PoliticalRequirementClassifier.Classification.NO_HARD_REQUIREMENT);
     }
 
     @Test void unrelatedUnrestrictedClauseDoesNotCancelAHardPoliticalClause() {

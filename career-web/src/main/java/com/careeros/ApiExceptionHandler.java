@@ -72,6 +72,11 @@ class ApiExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", "Session not found", exception.getMessage());
     }
 
+    @ExceptionHandler(com.careeros.application.AgentSessionService.SessionChangedException.class)
+    ResponseEntity<ProblemDetail> sessionChanged(com.careeros.application.AgentSessionService.SessionChangedException exception) {
+        return problem(HttpStatus.CONFLICT, "SESSION_VERSION_CHANGED", "Session changed", exception.getMessage());
+    }
+
     @ExceptionHandler(CandidateProfileService.CandidateProfileNotFoundException.class)
     ResponseEntity<ProblemDetail> profileMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "CANDIDATE_NOT_FOUND", "Candidate not found", exception.getMessage());

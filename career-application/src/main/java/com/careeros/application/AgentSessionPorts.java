@@ -9,5 +9,7 @@ public final class AgentSessionPorts {
     public interface Sessions {
         Optional<AgentSession> find(UUID sessionId);
         AgentSession save(AgentSession session);
+        /** Atomically replace only the exact candidate-owned session observation. */
+        boolean compareAndSet(AgentSession expected, AgentSession replacement);
     }
 }
