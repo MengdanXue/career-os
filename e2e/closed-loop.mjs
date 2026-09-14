@@ -71,6 +71,12 @@ const pendingHeading = page.getByText('这些还要你确认')
 record('渲染待确认问题', await pendingHeading.count() > 0)
 record('先声明这是本人声明', await page.getByText(/不会把它当作官方核实/).count() > 0)
 
+// 每条问题要标出是哪个岗位提出的，否则用户看到的是一句悬空的"你的政治面貌是？"——
+// 他既不知道为什么现在问，也不知道答了对哪个岗位有影响。趁还没作答时查。
+const askingJob = page.getByRole('link', { name: '这个岗位' }).first()
+record('待确认标出提出它的岗位', await askingJob.count() > 0,
+  await askingJob.count() ? await askingJob.getAttribute('href') : '')
+
 // 连续确认：答第一个
 const first = page.getByRole('button', { name: '中共党员' })
 if (await first.count()) {
@@ -110,10 +116,11 @@ const restored = page.getByLabel('上一轮会话')
 await restored.waitFor({ timeout: 20000 }).catch(() => {})
 record('刷新后接着上一轮会话', await restored.count() > 0)
 
-// 待确认事项要标出是哪个岗位提出的，否则问题读起来是悬空的。
-const askingJob = page.getByRole('link', { name: '这个岗位' }).first()
-record('待确认标出提出它的岗位', await askingJob.count() > 0,
-  await askingJob.count() ? await askingJob.getAttribute('href') : '')
+// 已经答过的不能被再问一遍。原样回放会让用户分不出"还没答"和"答过了"，
+// 他会以为系统没收到回答再答一次；删掉则会让他以为这一条凭空消失了。
+const answeredNote = page.getByText(/已答过/)
+record('刷新后答过的标成已答过，而不是再问一遍', await answeredNote.count() > 0,
+  await answeredNote.count() ? (await answeredNote.first().innerText()).slice(0, 40) : '没有这条提示')
 
 // 只读工具编排：页面上要走得通，不能只是接口可调用。
 const runToggle = page.getByRole('button', { name: /让它自己选工具查/ })

@@ -34,6 +34,17 @@ export type ObservationView = {
 export type AgentRunOutcome =
   | 'FINISHED' | 'ASKED_USER' | 'BUDGET_EXHAUSTED' | 'STEP_LIMIT_REACHED' | 'PLANNER_FAILED'
 
+/** 程序渲染的岗位结果。字段全部来自确定性服务，模型改不了其中任何一个。 */
+export type AgentRunJob = {
+  jobPostingId: string
+  jobTitle: string | null
+  organizationName: string | null
+  eligibilityStatus: string | null
+  tier: string | null
+  applicationEndsOn: string | null
+  restrictions: string[]
+}
+
 export type AgentRunResponse = {
   outcome: AgentRunOutcome
   /** 通过校验时才有值；被拒时为空，页面回落到确定性事实块。 */
@@ -41,26 +52,28 @@ export type AgentRunResponse = {
   /** 追问通过校验时才有值。 */
   question: string | null
   violations: string[]
+  /** 这段话点名依据的观察序号。空表示没点名，或点名的依据不成立。 */
+  groundedOn: number[]
   /** 消耗的预算单位：工具调用次数 + 内部逐岗评估次数。 */
   budgetSpent: number
   budgetLimit: number
-  /** 这次回答背后有几条成功的工具结果。零表示没有依据。 */
-  groundedIn: number
   sessionId: string | null
   profileVersion: string | null
+  jobs: AgentRunJob[]
+  pendingConfirmations: PendingConfirmation[]
   tools: ToolView[]
   trace: TraceStep[]
   observations: ObservationView[]
 }
 
+/** 刷新之后取回的上一轮。带 answered，好区分"还没答"和"答过了"。 */
 export type AgentSessionView = {
   sessionId: string
   profileVersion: string
   /** 资料已变，这份列表与这些问题不再对应当前结论。 */
   stale: boolean
-  lastJobIdsInOrder: string[]
-  pendingConfirmations: PendingConfirmation[]
-  updatedAt: string
+  jobIdsInOrder: string[]
+  pendingConfirmations: (PendingConfirmation & { answered: boolean })[]
 }
 
 export function runAgent(candidateId: string, question: string, sessionId?: string) {
@@ -70,6 +83,12 @@ export function runAgent(candidateId: string, question: string, sessionId?: stri
   })
 }
 
+/**
+ * 取回上一轮会话。
+ *
+ * <p>走的是查询接口自己的会话读取，不另立一个：另立一个就会少掉 answered，
+ * 刷新之后已经答过的问题会被再问一遍，用户分不出"还没答"和"答过了"。
+ */
 export function fetchAgentSession(candidateId: string, sessionId: string) {
-  return requestJson<AgentSessionView>(`/api/v1/candidates/${candidateId}/agent-sessions/${sessionId}`)
+  return requestJson<AgentSessionView>(`/api/v1/candidates/${candidateId}/agent-queries/${sessionId}`)
 }

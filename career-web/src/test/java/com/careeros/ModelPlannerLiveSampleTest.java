@@ -3,16 +3,26 @@ package com.careeros;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.careeros.application.DecisionRankingService;
+import com.careeros.application.ToolCallBudget;
+import com.careeros.application.agent.AgentExecutor;
 import com.careeros.application.agent.AgentTooling.Observation;
 import com.careeros.application.agent.AgentTooling.PlannerStep;
 import com.careeros.application.agent.AgentTooling.PlanningState;
-import com.careeros.application.agent.AgentTooling.ToolParameter;
-import com.careeros.application.agent.AgentTooling.ToolSpec;
+import com.careeros.application.agent.AgentTooling.ReadOnlyTool;
+import com.careeros.application.agent.AgentTooling.SessionContext;
+import com.careeros.application.agent.AgentTooling.ToolContext;
 import com.careeros.application.agent.ModelPlanner;
+import com.careeros.application.agent.ReadOnlyTools;
 import com.careeros.domain.AnswerNarrativeValidator;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -27,8 +37,19 @@ import org.springframework.ai.openai.api.OpenAiApi;
  * 前者的输出事先写死，后者的分支事先写死，它们证明的是"路径接通、边界守得住"，
  * 不是"模型会选工具"。把它们当成模型证据，就是把硬编码流程叫作 Agent。
  *
- * <p>输入刻意不走数据库：这里要测的是模型的选择，不是数据层。
- * 状态用 {@link PlanningState} 手工冻结，工具目录与线上同源（同一套 {@link ToolSpec}），
+ * <p>四条约束是刻意的：
+ * <ul>
+ *   <li><b>目录从实际注册表生成。</b> 手写一份目录就是在测一份文档，不是测线上那份。
+ *       这里的目录来自真实的 {@link ReadOnlyTools} 与 {@link AgentExecutor}，
+ *       提示里写着能填什么，工具就按什么校验。</li>
+ *   <li><b>动作和参数必须有效。</b> 只看"它回了点什么"没有意义。模型选的工具要在注册表里，
+ *       参数要真的能过工具自己的校验；收尾要点名依据。每个样本都过同一套检查。</li>
+ *   <li><b>判据与测试名一致。</b> 名字说"大多数通过"，断言就得是大多数，不能是"至少一条通过"。</li>
+ *   <li><b>模型调用有明确时限。</b> 走与线上同一条 {@code boundedTurn}：超时、失败、
+ *       线程池满都返回空串，测试看到的是"这一步没有计划"，而不是挂在那里。</li>
+ * </ul>
+ *
+ * <p>输入不走数据库：要测的是模型的选择，不是数据层。状态用 {@link PlanningState} 手工冻结，
  * 温度置零，所以同一份输入可以反复比对。
  *
  * <p>默认不跑：{@code @Tag("llm-integration")} 被 surefire 排除。跑法：
@@ -43,19 +64,30 @@ import org.springframework.ai.openai.api.OpenAiApi;
 class ModelPlannerLiveSampleTest {
 
     private static final AnswerNarrativeValidator NARRATIVE = new AnswerNarrativeValidator();
-
-    /** 与线上注册表同源的工具目录。提示里写着能填什么，代码就认什么。 */
-    private static final List<ToolSpec> TOOLS = List.of(
-        new ToolSpec("search_jobs", "按城市、职位类别、机会分层查岗位，返回排好序的一页结果。", List.of(
-            ToolParameter.optional("location", "城市或地区名，按包含匹配，例如 杭州"),
-            ToolParameter.oneOf("tier", "机会分层", List.of("T1", "T2", "T3", "EXCLUDED")),
-            ToolParameter.optional("limit", "返回几个岗位，1 到 10，默认 5"))),
-        new ToolSpec("job_facts", "取一个岗位的硬资格、限制条件与截止日。", List.of(
-            ToolParameter.required("jobId", "岗位的 UUID，取自 search_jobs 或关注清单的结果"))),
-        new ToolSpec("pending_confirmations", "列出还需要用户确认的资料项，以及是哪个岗位提出的。", List.of()),
-        new ToolSpec("watchlist", "列出用户关注的岗位，以及自上次查看以来的变化。", List.of()));
-
+    private static final UUID CANDIDATE = UUID.randomUUID();
+    private static final UUID FIRST_JOB = UUID.randomUUID();
+    private static final UUID SECOND_JOB = UUID.randomUUID();
     private static final String QUESTION = "杭州有哪些岗位";
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-09-14T00:00:00Z"), ZoneOffset.UTC);
+
+    /** 与线上同一批工具。目录、参数定义和参数校验都从这里来，不另写一份。 */
+    private static final List<ReadOnlyTool> TOOLS = List.of(
+        ReadOnlyTools.searchJobs((candidateId, query, now, budget) ->
+            new DecisionRankingService.RankingPage(List.of(), 0, 5, 0), CLOCK),
+        ReadOnlyTools.jobFacts((candidateId, jobId, now) -> {
+            throw new IllegalStateException("样本只检查参数是否有效，不需要真的评估");
+        }, CLOCK),
+        ReadOnlyTools.pendingConfirmations((candidateId, budget) ->
+            new ReadOnlyTools.PendingList(List.of(), true)),
+        ReadOnlyTools.watchlist(null, CLOCK));
+
+    private static final AgentExecutor EXECUTOR = new AgentExecutor(TOOLS);
+
+    /** 模型往返走与线上同一条有界通道，测试不会挂在一次不返回的调用上。 */
+    private static final java.util.concurrent.ThreadPoolExecutor POOL =
+        DecisionAgentConfiguration.boundedModelTurnPool();
+
+    @AfterAll static void shutdown() { POOL.shutdownNow(); }
 
     private static ModelPlanner planner() {
         String apiKey = System.getenv("OPENAI_API_KEY");
@@ -69,8 +101,9 @@ class ModelPlannerLiveSampleTest {
             .defaultOptions(OpenAiChatOptions.builder().model(modelName).temperature(0.0).build())
             .build();
         var client = ChatClient.builder(model).build();
-        return new ModelPlanner((protocol, state) ->
-            client.prompt().system(protocol).user(state).call().content());
+        return new ModelPlanner((protocol, state) -> DecisionAgentConfiguration.boundedTurn(
+            POOL, DecisionAgentConfiguration.MODEL_TURN_DEADLINE,
+            () -> client.prompt().system(protocol).user(state).call().content()));
     }
 
     /**
@@ -84,12 +117,13 @@ class ModelPlannerLiveSampleTest {
         PlannerStep withJobs = planner.next(state(2, 5));
         PlannerStep empty = planner.next(state(0, 5));
 
-        System.out.println("[frozen-sample] 有岗位 -> " + describe(withJobs));
-        System.out.println("[frozen-sample] 无岗位 -> " + describe(empty));
-
-        assertThat(withJobs).isNotNull();
-        assertThat(empty).isNotNull();
-        assertThat(describe(withJobs)).isNotEqualTo(describe(empty));
+        report("有岗位", withJobs);
+        report("无岗位", empty);
+        assertUsable("有岗位", withJobs, 1);
+        assertUsable("无岗位", empty, 1);
+        assertThat(describe(withJobs))
+            .as("两种工具结果得到同一个下一步，那就是在走固定流程")
+            .isNotEqualTo(describe(empty));
     }
 
     /**
@@ -102,15 +136,12 @@ class ModelPlannerLiveSampleTest {
         var refused = Observation.failed("search_jobs",
             "参数「tier」的取值「T9」不在允许的范围里。可选：T1、T2、T3、EXCLUDED。");
 
-        PlannerStep next = planner.next(new PlanningState(QUESTION, List.of(refused), 5, TOOLS));
+        PlannerStep next = planner.next(new PlanningState(QUESTION, List.of(refused), 5,
+            EXECUTOR.toolCatalogue(), SessionContext.none()));
 
-        System.out.println("[frozen-sample] 被拒之后 -> " + describe(next));
-        assertThat(next).isNotNull();
-        if (next instanceof PlannerStep.CallTool call) {
-            String tier = call.call().argument("tier");
-            assertThat(tier == null || List.of("T1", "T2", "T3", "EXCLUDED").contains(tier.toUpperCase()))
-                .as("被拒之后又报了一次非法分层：%s", tier).isTrue();
-        }
+        report("被拒之后", next);
+        // 有效性检查本身就覆盖了"又报了一次 T9"：那样的调用过不了工具的参数校验。
+        assertUsable("被拒之后", next, 0);
     }
 
     /** 预算将尽时要自己收敛，而不是一直要求调工具直到撞上限。 */
@@ -119,10 +150,11 @@ class ModelPlannerLiveSampleTest {
 
         PlannerStep next = planner.next(state(2, 1));
 
-        System.out.println("[frozen-sample] 预算剩一个 -> " + describe(next));
+        report("预算剩一个", next);
         assertThat(next)
             .as("剩余预算只够一次调用时仍要求调工具")
             .isNotInstanceOf(PlannerStep.CallTool.class);
+        assertUsable("预算剩一个", next, 1);
     }
 
     /**
@@ -139,31 +171,84 @@ class ModelPlannerLiveSampleTest {
         }
         assumeTrue(!texts.isEmpty(), "这批样本里模型一次都没有收尾，没有可量的文字");
 
-        long violating = texts.stream().filter(text -> !NARRATIVE.validateNarrative(text).accepted()).count();
+        long passing = texts.stream().filter(text -> NARRATIVE.validateNarrative(text).accepted()).count();
         texts.forEach(text -> System.out.println("[frozen-sample] 收尾文字：" + text
             + " -> " + NARRATIVE.validateNarrative(text).violations()));
 
-        assertThat(violating)
-            .as("收尾文字几乎全部违规，说明提示词和叙述校验器已经对不上")
-            .isLessThan(texts.size());
+        // 名字说"大多数通过"，判据就得是大多数：过半。
+        assertThat(passing * 2)
+            .as("过半的收尾文字违规，说明提示词和叙述校验器已经对不上")
+            .isGreaterThan(texts.size());
     }
 
-    /** 冻结的规划状态。除了工具结果与剩余预算，其余完全相同。 */
+    /**
+     * 这一步必须是能真的执行的：工具在注册表里、参数过得了工具自己的校验；
+     * 收尾要点名依据，而且点到的必须是成功的观察。
+     *
+     * @param successfulObservations 这份冻结状态里有几条成功的观察，用来核对 BASIS 的范围
+     */
+    private static void assertUsable(String label, PlannerStep step, int successfulObservations) {
+        assertThat(step).as("%s：模型没有给出可解析的一步", label).isNotNull();
+        if (step instanceof PlannerStep.CallTool call) {
+            String name = call.call().tool();
+            assertThat(EXECUTOR.registeredTools())
+                .as("%s：选了一个不存在的工具 %s", label, name).contains(name);
+            var tool = TOOLS.stream().filter(candidate -> candidate.name().equals(name)).findFirst().orElseThrow();
+            Observation observation;
+            try {
+                observation = tool.invoke(new ToolContext(CANDIDATE, call.call(),
+                    ToolCallBudget.standard(), session()));
+            } catch (RuntimeException blewUp) {
+                // 下游被这里刻意打断（job_facts 的假评估器），参数本身没问题。
+                return;
+            }
+            assertThat(observation.ok())
+                .as("%s：参数过不了工具自己的校验——%s", label, observation.summary()).isTrue();
+            return;
+        }
+        if (step instanceof PlannerStep.Finish finish) {
+            assertThat(finish.basis().observationIndexes())
+                .as("%s：收尾没有点名依据", label).isNotEmpty();
+            assertThat(finish.basis().observationIndexes())
+                .as("%s：收尾点名的依据超出了这份状态里的成功结果", label)
+                .allMatch(index -> index >= 1 && index <= successfulObservations);
+            return;
+        }
+        var ask = (PlannerStep.AskUser) step;
+        assertThat(ask.question()).as("%s：追问不是一个问句", label).containsAnyOf("？", "?");
+        assertThat(ask.basis().declared()).as("%s：追问既没点名依据也没声明是纯澄清", label).isTrue();
+    }
+
+    private static void report(String label, PlannerStep step) {
+        System.out.println("[frozen-sample] " + label + " -> " + describe(step));
+    }
+
+    /** 冻结的规划状态。除了工具结果与剩余预算，其余完全相同；目录来自真实注册表。 */
     private static PlanningState state(int jobCount, int remainingBudget) {
         var data = new java.util.LinkedHashMap<String, Object>();
         data.put("count", jobCount);
         data.put("totalAvailable", jobCount);
         data.put("complete", true);
         data.put("jobs", jobCount == 0 ? List.of() : List.of(
-            Map.of("jobPostingId", "c0000000-0000-4000-8000-000000000001",
+            Map.of("jobPostingId", FIRST_JOB.toString(),
                 "jobTitle", "信息中心技术岗", "organizationName", "杭州市数字事业中心",
                 "eligibilityStatus", "NEEDS_CONFIRMATION", "tier", "T3"),
-            Map.of("jobPostingId", "c0000000-0000-4000-8000-000000000002",
+            Map.of("jobPostingId", SECOND_JOB.toString(),
                 "jobTitle", "档案管理岗", "organizationName", "杭州市数字事业中心",
                 "eligibilityStatus", "NEEDS_CONFIRMATION", "tier", "T3")));
         var observation = Observation.ok("search_jobs",
             jobCount == 0 ? "这个范围内没有岗位。" : "找到 " + jobCount + " 个岗位。", data);
-        return new PlanningState(QUESTION, List.of(observation), remainingBudget, TOOLS);
+        return new PlanningState(QUESTION, List.of(observation), remainingBudget,
+            EXECUTOR.toolCatalogue(), session());
+    }
+
+    private static SessionContext session() {
+        return new SessionContext(UUID.randomUUID(), "杭州", null, null,
+            List.of(new com.careeros.application.agent.AgentTooling.JobRef(
+                    1, FIRST_JOB, "信息中心技术岗", "杭州市数字事业中心", null, null),
+                new com.careeros.application.agent.AgentTooling.JobRef(
+                    2, SECOND_JOB, "档案管理岗", "杭州市数字事业中心", null, null)),
+            List.of(), "profile-1");
     }
 
     /** 把一步规划压成可比较的一行。比的是"选了什么"，不是措辞。 */
@@ -171,8 +256,10 @@ class ModelPlannerLiveSampleTest {
         if (step instanceof PlannerStep.CallTool call) {
             return "TOOL " + call.call().tool() + " " + new java.util.TreeMap<>(call.call().arguments());
         }
-        if (step instanceof PlannerStep.Finish) return "FINISH";
-        if (step instanceof PlannerStep.AskUser) return "ASK";
+        if (step instanceof PlannerStep.Finish finish) return "FINISH basis=" + finish.basis().observationIndexes();
+        if (step instanceof PlannerStep.AskUser ask) {
+            return "ASK" + (ask.basis().clarifyingOnly() ? " clarifying" : " basis=" + ask.basis().observationIndexes());
+        }
         return "(none)";
     }
 }

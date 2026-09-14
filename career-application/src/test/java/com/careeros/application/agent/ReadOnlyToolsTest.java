@@ -256,6 +256,67 @@ class ReadOnlyToolsTest {
             .singleElement().asString().contains("政治面貌");
     }
 
+    // --- "第几个"只在上一轮的顺序里解析 ---
+
+    /** 序号解析回上一轮那份列表的岗位，不重新排名。 */
+    @Test void anOrdinalResolvesAgainstThePreviousListing() {
+        var asked = new java.util.ArrayList<UUID>();
+        var tool = ReadOnlyTools.jobFacts((candidateId, jobId, now) -> {
+            asked.add(jobId);
+            return bundle(EligibilityStatus.ELIGIBLE);
+        }, CLOCK);
+        UUID second = UUID.randomUUID();
+        var session = new AgentTooling.SessionContext(UUID.randomUUID(), "杭州", null, null,
+            List.of(new AgentTooling.JobRef(1, UUID.randomUUID(), "第一个", "机构", null, null),
+                new AgentTooling.JobRef(2, second, "第二个", "机构", null, null)),
+            List.of(), "profile-1");
+
+        tool.invoke(new ToolContext(CANDIDATE, ToolCall.of("job_facts", "ordinal", "2"),
+            ToolCallBudget.standard(), session));
+
+        assertThat(asked).containsExactly(second);
+    }
+
+    /** 越界的序号要说清楚一共有几个，而不是给一个最接近的。 */
+    @Test void anOrdinalPastTheEndSaysHowManyThereWere() {
+        var tool = ReadOnlyTools.jobFacts((candidateId, jobId, now) -> {
+            throw new AssertionError("不该评估任何岗位");
+        }, CLOCK);
+        var session = new AgentTooling.SessionContext(UUID.randomUUID(), "杭州", null, null,
+            List.of(new AgentTooling.JobRef(1, UUID.randomUUID(), "唯一一个", "机构", null, null)),
+            List.of(), "profile-1");
+
+        var observation = tool.invoke(new ToolContext(CANDIDATE, ToolCall.of("job_facts", "ordinal", "5"),
+            ToolCallBudget.standard(), session));
+
+        assertThat(observation.ok()).isFalse();
+        assertThat(observation.summary()).contains("第 5 个").contains("只有 1 个");
+    }
+
+    /** jobId 与 ordinal 同时给出无法确定指的是哪个岗位，直接拒绝。 */
+    @Test void givingBothAJobIdAndAnOrdinalIsRefused() {
+        var tool = ReadOnlyTools.jobFacts((candidateId, jobId, now) -> {
+            throw new AssertionError("不该评估任何岗位");
+        }, CLOCK);
+
+        var observation = tool.invoke(context("job_facts", "jobId", JOB.toString(), "ordinal", "1"));
+
+        assertThat(observation.ok()).isFalse();
+        assertThat(observation.summary()).contains("只能给一个");
+    }
+
+    /** 两个都不给也要拒绝，不能默默取上一轮的第一个。 */
+    @Test void givingNeitherIsRefused() {
+        var tool = ReadOnlyTools.jobFacts((candidateId, jobId, now) -> {
+            throw new AssertionError("不该评估任何岗位");
+        }, CLOCK);
+
+        var observation = tool.invoke(context("job_facts"));
+
+        assertThat(observation.ok()).isFalse();
+        assertThat(observation.summary()).contains("其中之一");
+    }
+
     // --- 待确认 ---
 
     @Test void pendingConfirmationsCarryTheFieldAndTheAskingJob() {

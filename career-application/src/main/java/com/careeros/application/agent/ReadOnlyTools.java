@@ -92,19 +92,24 @@ public final class ReadOnlyTools {
     /** 看一个岗位的完整结论与限制条件。规划器用它回答"第 N 个怎么样"。 */
     public static ReadOnlyTool jobFacts(DecisionPortsAssessor assessor, Clock clock) {
         Objects.requireNonNull(assessor, "assessor");
-        var parameters = List.of(ToolParameter.required("jobId", "岗位的 UUID，取自 search_jobs 或关注清单的结果"));
+        var parameters = List.of(
+            ToolParameter.optional("jobId", "岗位的 UUID，取自 search_jobs 或关注清单的结果"),
+            ToolParameter.optional("ordinal",
+                "用户说的\"第几个\"，按上一轮列表的顺序解析，从 1 开始；与 jobId 二选一"));
         return new ReadOnlyTool() {
             public String name() { return "job_facts"; }
-            public String description() { return "取一个岗位的硬资格、限制条件与截止日。"; }
+            public String description() {
+                return "取一个岗位的硬资格、限制条件与截止日。用 jobId，或用 ordinal 指上一轮列表的第几个。";
+            }
             public List<ToolParameter> parameters() { return parameters; }
             public Observation invoke(ToolContext context) {
                 String rejection = reject(parameters, context);
                 if (rejection != null) return Observation.failed(name(), rejection);
                 UUID jobId;
                 try {
-                    jobId = UUID.fromString(context.argument("jobId").strip());
-                } catch (RuntimeException invalid) {
-                    return Observation.failed(name(), "jobId 不是一个合法的岗位标识。");
+                    jobId = resolve(context);
+                } catch (IllegalArgumentException invalid) {
+                    return Observation.failed(name(), invalid.getMessage());
                 }
                 // 单岗位也是一次逐岗评估，照扣。
                 if (!context.budget().tryConsume()) {
@@ -220,6 +225,42 @@ public final class ReadOnlyTools {
             }
         }
         return null;
+    }
+
+    /**
+     * 把 jobId 或"第几个"解析成一个岗位。
+     *
+     * <p>序号只在上一轮记下来的顺序里解析，从不重新排名——重新排出来的第二个可能是另一个岗位，
+     * 而用户看不出系统换了对象。没有上一轮列表时明说没有，不拿这一轮的结果顶上去。
+     */
+    private static UUID resolve(ToolContext context) {
+        String raw = blankToNull(context.argument("jobId"));
+        String ordinal = blankToNull(context.argument("ordinal"));
+        if (raw != null && ordinal != null) {
+            throw new IllegalArgumentException("jobId 和 ordinal 只能给一个，同时给了无法确定指的是哪个岗位。");
+        }
+        if (raw != null) {
+            try {
+                return UUID.fromString(raw);
+            } catch (RuntimeException invalid) {
+                throw new IllegalArgumentException("jobId 不是一个合法的岗位标识。");
+            }
+        }
+        if (ordinal == null) throw new IllegalArgumentException("要指定 jobId 或 ordinal 其中之一。");
+        int position;
+        try {
+            position = Integer.parseInt(ordinal);
+        } catch (NumberFormatException invalid) {
+            throw new IllegalArgumentException("ordinal 不是一个整数：" + ordinal);
+        }
+        var session = context.session();
+        if (!session.present() || session.jobsInOrder().isEmpty()) {
+            throw new IllegalArgumentException("没有上一轮的列表，无法解析\"第 " + position + " 个\"，请先查询。");
+        }
+        return session.atOrdinal(position)
+            .orElseThrow(() -> new IllegalArgumentException(
+                "上一轮列表里没有第 " + position + " 个，一共只有 " + session.jobsInOrder().size() + " 个。"))
+            .jobPostingId();
     }
 
     private static Map<String, Object> describe(DecisionBundle bundle) {

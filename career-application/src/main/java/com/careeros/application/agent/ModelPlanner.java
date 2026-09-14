@@ -4,6 +4,7 @@ import com.careeros.application.agent.AgentTooling.AgentPlanner;
 import com.careeros.application.agent.AgentTooling.PlannerStep;
 import com.careeros.application.agent.AgentTooling.PlanningState;
 import com.careeros.application.agent.AgentTooling.ToolCall;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,14 +43,22 @@ public final class ModelPlanner implements AgentPlanner {
         或者
 
           ASK <要问用户的问题>
+          BASIS <依据的结果序号，用逗号分隔；纯澄清写 none>
 
         或者
 
           FINISH <一两句连接性叙述>
+          BASIS <依据的结果序号，用逗号分隔>
+
+        一次只给一个动作。同一段里同时出现 TOOL 和 FINISH（或给了两个 TOOL）会被整段作废，
+        因为无法判断你要做哪一个。叙述可以写多行，会完整保留。
 
         只能调下面列出的工具，参数也只能用下面列出的键；工具名或参数名不在表里会被直接拒绝，
         取值不在允许范围里也会被拒绝，不会退化成"不加这个筛选"。
-        ASK 必须是一个问句。一次成功的工具结果都没有时不要 FINISH——那样的收尾没有依据，会被整段丢弃。
+        ASK 必须是一个问句。
+        FINISH 必须用 BASIS 点名它依据的是上面第几条结果，而且那几条必须是成功的结果；
+        点不出来就说明这段收尾没有依据，会被整段丢弃。
+        ASK 依据某条结果时同样要点名；只是问清楚用户想要什么、不依据任何结果时写 BASIS none。
 
         FINISH 和 ASK 的文字里都不准出现任何数字（含中文数字），不准出现"可报／不可报／条件可报／
         待确认／T1／T2／T3"这类判定词，不准把指数说成录取概率或上岸率。
@@ -60,7 +69,11 @@ public final class ModelPlanner implements AgentPlanner {
     private static final Pattern ASK_LINE = Pattern.compile("^\\s*ASK\\s+(.+)$");
     private static final Pattern FINISH_LINE = Pattern.compile("^\\s*FINISH\\s+(.+)$");
     private static final Pattern WHY_LINE = Pattern.compile("^\\s*WHY\\s+(.+)$");
+    private static final Pattern BASIS_LINE = Pattern.compile("^\\s*BASIS\\s+(.+)$");
     private static final Pattern ARGUMENT = Pattern.compile("([A-Za-z_][A-Za-z0-9_]*)=(\"[^\"]*\"|\\S+)");
+
+    /** BASIS 里表示"纯澄清，不依据任何结果"的写法。 */
+    private static final List<String> CLARIFYING_MARKERS = List.of("none", "NONE", "无", "澄清");
 
     private final ModelTurn model;
 
@@ -107,32 +120,96 @@ public final class ModelPlanner implements AgentPlanner {
     }
 
     /**
-     * 解析一段模型输出。
+     * 把模型的一段输出整段解析成一步计划。
      *
-     * @return 认不出来时返回 {@code null}——执行器会把它当作"没给出下一步"并结束运行，
+     * <p><b>整段看，不是看到第一行认识的就返回。</b> 逐行扫描有三处会静默出错：
+     * 多行的 FINISH 叙述被截成第一行（限制条件常常正好在第二行）；
+     * 同时出现 TOOL 和 FINISH 时按出现顺序选一个，等于替模型做了决定；
+     * 重复的 TOOL 只执行第一个，其余无声消失。这些都看不出异常。
+     *
+     * <p>所以：收集整段里出现的全部动作；出现<b>不止一个动作</b>就整段作废，
+     * 交给执行器按"没给出下一步"处理。宁可这一步没有计划，也不替它猜。
+     * FINISH / ASK 的文字一直取到下一个动作行或结尾，多行叙述完整保留。
+     *
+     * @return 认不出来、或同时给了多个动作时返回 {@code null}——执行器会结束运行，
      *         而不是凑一个工具调用出来。
      */
     public static PlannerStep parse(String raw) {
         if (raw == null || raw.isBlank()) return null;
-        String why = null;
-        for (String line : raw.split("\\R")) {
-            Matcher whyMatcher = WHY_LINE.matcher(line);
-            if (whyMatcher.matches()) why = whyMatcher.group(1).strip();
+        String[] lines = raw.split("\\R");
+
+        var actions = new ArrayList<Integer>();
+        for (int index = 0; index < lines.length; index++) {
+            if (isAction(lines[index])) actions.add(index);
         }
-        for (String line : raw.split("\\R")) {
-            Matcher finish = FINISH_LINE.matcher(line);
-            if (finish.matches()) return new PlannerStep.Finish(finish.group(1).strip());
-            Matcher ask = ASK_LINE.matcher(line);
-            if (ask.matches()) return new PlannerStep.AskUser(ask.group(1).strip());
-            Matcher tool = TOOL_LINE.matcher(line);
-            if (tool.matches()) {
-                String name = tool.group(1).strip();
-                if (name.isEmpty()) return null;
-                return new PlannerStep.CallTool(new ToolCall(name, arguments(tool.group(2))),
-                    why == null ? "(模型未说明原因)" : why);
-            }
+        // 一个动作都没有，或给了不止一个动作：两种都不是"这一步要做什么"的答案。
+        if (actions.size() != 1) return null;
+
+        int at = actions.get(0);
+        String line = lines[at];
+        // 动作行之后、下一个动作行之前的所有内容都属于这一个动作。
+        String trailing = String.join("\n", java.util.Arrays.copyOfRange(lines, at + 1, lines.length));
+
+        Matcher finish = FINISH_LINE.matcher(line);
+        if (finish.matches()) {
+            return new PlannerStep.Finish(continued(finish.group(1), trailing), basis(trailing));
+        }
+        Matcher ask = ASK_LINE.matcher(line);
+        if (ask.matches()) {
+            return new PlannerStep.AskUser(continued(ask.group(1), trailing), basis(trailing));
+        }
+        Matcher tool = TOOL_LINE.matcher(line);
+        if (tool.matches()) {
+            String name = tool.group(1).strip();
+            if (name.isEmpty()) return null;
+            return new PlannerStep.CallTool(new ToolCall(name, arguments(tool.group(2))), why(trailing));
         }
         return null;
+    }
+
+    private static boolean isAction(String line) {
+        return TOOL_LINE.matcher(line).matches()
+            || ASK_LINE.matcher(line).matches()
+            || FINISH_LINE.matcher(line).matches();
+    }
+
+    /**
+     * 把动作行之后的续行接回叙述。
+     *
+     * <p>WHY / BASIS 是协议自己的字段，不属于叙述；其余非空行都是模型接着说的话。
+     * 只取第一行的话，"限中共党员"这种常常单独成行的限制会被无声删掉，
+     * 剩下的读起来比原文更肯定。
+     */
+    private static String continued(String head, String trailing) {
+        var text = new StringBuilder(head.strip());
+        for (String line : trailing.split("\\R")) {
+            if (line.isBlank() || WHY_LINE.matcher(line).matches() || BASIS_LINE.matcher(line).matches()) continue;
+            text.append('\n').append(line.strip());
+        }
+        return text.toString().strip();
+    }
+
+    private static String why(String trailing) {
+        for (String line : trailing.split("\\R")) {
+            Matcher matcher = WHY_LINE.matcher(line);
+            if (matcher.matches()) return matcher.group(1).strip();
+        }
+        return "(模型未说明原因)";
+    }
+
+    /** 解析 BASIS：收尾这段话依据的是第几条观察，或者明说它只是澄清。 */
+    private static AgentTooling.Basis basis(String trailing) {
+        for (String line : trailing.split("\\R")) {
+            Matcher matcher = BASIS_LINE.matcher(line);
+            if (!matcher.matches()) continue;
+            String value = matcher.group(1).strip();
+            if (CLARIFYING_MARKERS.stream().anyMatch(value::contains)) return AgentTooling.Basis.clarifying();
+            var indexes = new ArrayList<Integer>();
+            Matcher number = Pattern.compile("\\d+").matcher(value);
+            while (number.find()) indexes.add(Integer.parseInt(number.group()));
+            return new AgentTooling.Basis(indexes, false);
+        }
+        return AgentTooling.Basis.none();
     }
 
     private static Map<String, String> arguments(String rest) {
@@ -149,10 +226,15 @@ public final class ModelPlanner implements AgentPlanner {
         return arguments;
     }
 
-    /** 把当前状态渲染给模型。包含剩余额度，好让它自己收敛而不是撞上限。 */
+    /**
+     * 把当前状态渲染给模型。包含剩余额度，好让它自己收敛而不是撞上限；
+     * 也包含上一轮会话，好让它接得上——用户追问之后只答一句"余杭"，
+     * 模型要看得见上一轮限定的是杭州，才知道这是在收窄范围而不是另起一问。
+     */
     static String render(PlanningState state) {
         var text = new StringBuilder();
         text.append("用户问题：").append(state.question()).append('\n');
+        appendSession(text, state.session());
         text.append("剩余预算单位：").append(state.remainingBudget())
             .append("（一次工具调用算一个单位，工具内部每评估一个岗位再算一个）\n");
         if (state.observations().isEmpty()) {
@@ -168,6 +250,48 @@ public final class ModelPlanner implements AgentPlanner {
             if (!observation.data().isEmpty()) text.append("   数据：").append(observation.data()).append('\n');
         }
         return text.toString();
+    }
+
+    /** 上一轮留下的范围、列表顺序与待确认项。没有会话就明说没有，不留空白让模型猜。 */
+    private static void appendSession(StringBuilder text, AgentTooling.SessionContext session) {
+        if (!session.present()) {
+            text.append("这是新的一轮，没有上一轮的范围或列表。\n");
+            return;
+        }
+        text.append("上一轮的范围：")
+            .append(describeFilters(session))
+            .append('\n');
+        if (session.jobsInOrder().isEmpty()) {
+            text.append("上一轮没有列出岗位。\n");
+        } else {
+            text.append("上一轮列表（用户说\"第几个\"指的就是这个顺序，不要重新排名）：\n");
+            for (AgentTooling.JobRef job : session.jobsInOrder()) {
+                text.append("  ").append(job.ordinal()).append(". jobId=").append(job.jobPostingId());
+                // 标题只有在会话里真的存了的时候才写。编一个占位标题会让模型以为它知道这是什么岗位。
+                if (job.jobTitle() != null && !job.jobTitle().isBlank()) {
+                    text.append("  ").append(job.jobTitle());
+                    if (job.organizationName() != null && !job.organizationName().isBlank()) {
+                        text.append("（").append(job.organizationName()).append("）");
+                    }
+                }
+                text.append('\n');
+            }
+            text.append("  要它们的标题和结论，用 job_facts（可以直接给 ordinal）。\n");
+        }
+        if (!session.pending().isEmpty()) {
+            text.append("上一轮问过、用户还没答的资料项：\n");
+            for (AgentTooling.PendingRef item : session.pending()) {
+                text.append("  - ").append(item.factKey()).append("：").append(item.question()).append('\n');
+            }
+        }
+    }
+
+    private static String describeFilters(AgentTooling.SessionContext session) {
+        var parts = new ArrayList<String>();
+        if (session.location() != null && !session.location().isBlank()) parts.add("地点=" + session.location());
+        if (session.jobFamily() != null && !session.jobFamily().isBlank()) parts.add("职位类别=" + session.jobFamily());
+        if (session.tier() != null && !session.tier().isBlank()) parts.add("机会分层=" + session.tier());
+        return parts.isEmpty() ? "（没有加过筛选）" : String.join("，", parts);
     }
 
     /** 一次模型往返。做成接口是为了能用录制的输出做回归，不必每次都真的调模型。 */

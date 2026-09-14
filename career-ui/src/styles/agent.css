@@ -100,3 +100,11 @@
 .agent-run-result li[data-accepted='false'] strong, .agent-run-result li[data-ok='false'] strong { color: #8a3b2f; }
 .agent-run-result code { display: block; margin-top: 2px; font-size: 10px; color: var(--muted); }
 .agent-run-result small { display: block; color: var(--muted); }
+
+/* 岗位结果由程序渲染，不是模型那段话。 */
+.agent-run-jobs { margin: 8px 0 0; padding: 0; list-style: none; }
+.agent-run-jobs > li { padding: 7px 0; border-top: 1px solid var(--line); }
+.agent-run-jobs strong { display: block; }
+.agent-run-jobs small { display: block; color: var(--muted); }
+.agent-run-restrictions { margin: 4px 0 0; padding-left: 14px; list-style: disc; color: #78532e; }
+.agent-restored-answered { margin: 0 0 6px; color: var(--muted); font-size: 11px; }

@@ -5,6 +5,7 @@ import { AgentAnswer } from './AgentAnswer'
 import { AgentRunPanel } from './AgentRunPanel'
 import { askCareerOs } from './agentApi'
 import { fetchAgentSession } from './agentRunApi'
+import { factLabels } from './confirmationApi'
 import { PendingConfirmations } from './PendingConfirmations'
 
 const examples = ['本周最值得准备什么？', '为什么把这个岗位放在 T1？', '哪些岗位还缺关键证据？']
@@ -81,9 +82,15 @@ export function AgentComposer({ expanded = false }: { expanded?: boolean }) {
         {recovered.stale && <p className="agent-restored-stale" role="status">
           你的资料已经更新，上一份列表的排序不再对应当前结论，请重新查询后再按序号提问。
         </p>}
-        {recovered.pendingConfirmations.length > 0 && <PendingConfirmations
+        {/* 答过的标出来，不删掉：删掉就看不出系统问过这一条，用户会以为它凭空消失了；
+            原样再问一遍则更糟——他分不出"还没答"和"答过了"。 */}
+        {recovered.pendingConfirmations.some(item => item.answered) && <p className="agent-restored-answered">
+          已答过：{recovered.pendingConfirmations.filter(item => item.answered)
+            .map(item => factLabels[item.factKey] ?? item.factKey).join('、')}
+        </p>}
+        {recovered.pendingConfirmations.some(item => !item.answered) && <PendingConfirmations
           candidateId={candidateId} sessionId={recovered.sessionId}
-          items={recovered.pendingConfirmations} />}
+          items={recovered.pendingConfirmations.filter(item => !item.answered)} />}
       </section>}
       {query.data && <AgentAnswer result={query.data} candidateId={candidateId} />}
       {error && <p className="agent-error" role="alert">{error}</p>}
