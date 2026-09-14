@@ -85,13 +85,23 @@ public final class JobWatchlistService {
      * 否则光是刷新一下页面就会把变化标记清掉。
      */
     public Watchlist list(UUID candidateId, LocalDate asOf) {
+        return list(candidateId, asOf, ToolCallBudget.standard());
+    }
+
+    /**
+     * 用调用方给的预算列清单。
+     *
+     * <p>Agent 工具面要传自己那一份共享预算进来：一次"看看我关注的有没有动静"背后是逐岗评估，
+     * 只按"调了一次工具"记一次，模型几次调用就能触发上百次评估。
+     */
+    public Watchlist list(UUID candidateId, LocalDate asOf, ToolCallBudget budget) {
         Objects.requireNonNull(candidateId, "candidateId");
         Objects.requireNonNull(asOf, "asOf");
+        Objects.requireNonNull(budget, "budget");
         var entries = new ArrayList<WatchedJobView>();
         var now = clock.instant();
         // 扇出由用户数据决定：关注 500 个岗位就是 500 次评估。上限之外的岗位照样列出来，
         // 但明确标成"未刷新"——静默省略会让人以为那些岗位没有变化。
-        var budget = ToolCallBudget.standard();
         for (WatchedJob watched : watchlist.findByCandidate(candidateId)) {
             if (!budget.tryConsume()) {
                 entries.add(WatchedJobView.notRefreshed(watched.jobPostingId(), watched.lastSeenStatus()));

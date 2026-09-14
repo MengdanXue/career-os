@@ -115,8 +115,13 @@ class ApplicationConfiguration {
         DecisionRankingService rankings, DecisionIntelligenceService decisions,
         JobWatchlistService watchlist, AgentSessionService sessions, Clock clock
     ) {
-        var pending = (com.careeros.application.agent.ReadOnlyTools.PendingConfirmationsView) candidateId ->
-            sessions.pendingFor(candidateId, rankings.rankAll(candidateId, clock.instant()));
+        // 待确认清单背后是一次全量逐岗评估。预算不够扫完时 complete 为 false，
+        // 工具据此拒绝给出清单——短了的"还差哪些确认"读起来就是"都齐了"。
+        var pending = (com.careeros.application.agent.ReadOnlyTools.PendingConfirmationsView) (candidateId, budget) -> {
+            var page = rankings.rankAll(candidateId, clock.instant(), budget);
+            return new com.careeros.application.agent.ReadOnlyTools.PendingList(
+                sessions.pendingFor(candidateId, page.items()), page.complete());
+        };
         return new com.careeros.application.agent.AgentExecutor(java.util.List.of(
             com.careeros.application.agent.ReadOnlyTools.searchJobs(rankings::rank, clock),
             com.careeros.application.agent.ReadOnlyTools.jobFacts(decisions::assess, clock),

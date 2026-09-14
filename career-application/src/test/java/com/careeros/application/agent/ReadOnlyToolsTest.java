@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.careeros.application.DecisionPorts.DecisionBundle;
 import com.careeros.application.DecisionPorts.JobContext;
 import com.careeros.application.DecisionRankingService;
+import com.careeros.application.ToolCallBudget;
 import com.careeros.application.agent.AgentTooling.ToolCall;
+import com.careeros.application.agent.AgentTooling.ToolContext;
 import com.careeros.domain.*;
 import java.time.Clock;
 import java.time.Instant;
@@ -19,8 +21,12 @@ import org.junit.jupiter.api.Test;
 /**
  * 工具面的参数处理。
  *
- * <p>规划器会给出各种参数，包括认不出来的。认不出来必须当作"没筛选"，不能猜——
- * 猜错会静默把用户问的范围换掉，而回答看起来完全正常。
+ * <p>规划器会给出各种参数，包括认不出来的。<b>认不出来必须失败，而不是降级成"没筛选"。</b>
+ * 之前这里的约定是"认不出来当作没筛选"，理由是"不猜"；但那实际上也是猜——
+ * 猜用户不在乎这个条件。{@code tier=T9} 返回全量结果，读起来和"T9 就是这些"没有区别，
+ * 用户问的范围被静默换掉，回答却看不出任何异常。失败观察是规划器能看见、能改、能重试的。
+ *
+ * <p>内部的逐岗评估都要扣执行器给的那份共享预算，所以每次调用都带一个 {@link ToolContext}。
  */
 class ReadOnlyToolsTest {
     private static final UUID CANDIDATE = UUID.randomUUID();
@@ -31,13 +37,23 @@ class ReadOnlyToolsTest {
         return new DecisionRankingService.RankingPage(items, 0, 5, items.size());
     }
 
+    private static ToolContext context(String tool, String... keyValues) {
+        return new ToolContext(CANDIDATE, ToolCall.of(tool, keyValues), ToolCallBudget.standard());
+    }
+
+    private static ToolContext context(ToolCallBudget budget, String tool, String... keyValues) {
+        return new ToolContext(CANDIDATE, ToolCall.of(tool, keyValues), budget);
+    }
+
     private AtomicReference<DecisionRankingService.RankingQuery> queryCaptor;
 
     private AgentTooling.ReadOnlyTool searchWith(List<DecisionBundle> items) {
         var captor = new AtomicReference<DecisionRankingService.RankingQuery>();
         this.queryCaptor = captor;
-        return ReadOnlyTools.searchJobs((candidateId, query, now) -> {
+        return ReadOnlyTools.searchJobs((candidateId, query, now, budget) -> {
             captor.set(query);
+            // 真实实现会在这里一岗一扣；测试里照做，才能验证扇出真的计进了预算。
+            for (int index = 0; index < items.size(); index++) budget.tryConsume();
             return page(items);
         }, CLOCK);
     }
@@ -47,7 +63,7 @@ class ReadOnlyToolsTest {
     @Test void aRecognisedFilterIsPassedThrough() {
         var tool = searchWith(List.of(bundle(EligibilityStatus.ELIGIBLE)));
 
-        tool.invoke(CANDIDATE, ToolCall.of("search_jobs", "location", "杭州", "jobFamily", "DATA", "tier", "T1"));
+        tool.invoke(context("search_jobs", "location", "杭州", "jobFamily", "DATA", "tier", "T1"));
 
         assertThat(queryCaptor.get().location()).isEqualTo("杭州");
         assertThat(queryCaptor.get().jobFamily()).isEqualTo(JobFamily.DATA);
@@ -55,33 +71,151 @@ class ReadOnlyToolsTest {
     }
 
     /**
-     * 认不出来的取值当作"没筛选"。猜一个最接近的会静默换掉用户问的范围，
-     * 而回答读起来完全正常——那是最难发现的一类错。
+     * 认不出来的取值直接失败，不降级成"没筛选"。
+     *
+     * <p>降级返回的是全量结果，而它读起来和"这个分层就是这些"完全一样。用户问的范围
+     * 被静默换掉，回答却看不出任何异常——这是最难发现的一类错。失败观察至少是可见的。
      */
-    @Test void anUnrecognisedFilterBecomesNoFilterRatherThanAGuess() {
+    @Test void anUnrecognisedFilterFailsInsteadOfSilentlyBecomingNoFilter() {
         var tool = searchWith(List.of());
 
-        tool.invoke(CANDIDATE, ToolCall.of("search_jobs", "jobFamily", "NOT_A_FAMILY", "tier", "T9"));
+        var observation = tool.invoke(context("search_jobs", "tier", "T9"));
 
-        assertThat(queryCaptor.get().jobFamily()).isNull();
-        assertThat(queryCaptor.get().tier()).isNull();
+        assertThat(observation.ok()).isFalse();
+        assertThat(observation.summary()).contains("tier").contains("T9");
+        // 允许的取值要写出来，规划器才改得掉。
+        assertThat(observation.summary()).contains("T1");
+        // 查询根本没有发出去。
+        assertThat(queryCaptor.get()).isNull();
     }
 
-    /** 规划器报再大的 limit 也要截断，否则它能一次把预算外的负载放大。 */
-    @Test void anOversizedLimitIsClamped() {
+    @Test void anUnrecognisedJobFamilyFailsToo() {
         var tool = searchWith(List.of());
 
-        tool.invoke(CANDIDATE, ToolCall.of("search_jobs", "limit", "500"));
+        var observation = tool.invoke(context("search_jobs", "jobFamily", "NOT_A_FAMILY"));
 
-        assertThat(queryCaptor.get().size()).isEqualTo(ReadOnlyTools.MAX_LIMIT);
+        assertThat(observation.ok()).isFalse();
+        assertThat(queryCaptor.get()).isNull();
     }
 
-    @Test void anUnparseableLimitFallsBackToTheDefault() {
+    /**
+     * 参数名打错也要失败。
+     *
+     * <p>忽略不认识的键，等于把那个筛选条件静默丢掉：{@code locaiton=杭州} 查的是全国。
+     * {@code candidateId=...} 更是想越权——执行器本来就会忽略它，但"忽略"和"拒绝"
+     * 给规划器的信号完全不同。
+     */
+    @Test void anUnknownArgumentNameFailsRatherThanBeingDropped() {
         var tool = searchWith(List.of());
 
-        tool.invoke(CANDIDATE, ToolCall.of("search_jobs", "limit", "很多"));
+        var typo = tool.invoke(context("search_jobs", "locaiton", "杭州"));
+        var impersonation = tool.invoke(context("search_jobs", "candidateId", UUID.randomUUID().toString()));
 
-        assertThat(queryCaptor.get().size()).isEqualTo(5);
+        assertThat(typo.ok()).isFalse();
+        assertThat(typo.summary()).contains("locaiton");
+        assertThat(impersonation.ok()).isFalse();
+        assertThat(queryCaptor.get()).isNull();
+    }
+
+    /** 超范围的 limit 直接拒绝。悄悄截断到上限，等于把用户问的范围换掉还不说。 */
+    @Test void anOversizedLimitFailsInsteadOfBeingClamped() {
+        var tool = searchWith(List.of());
+
+        var observation = tool.invoke(context("search_jobs", "limit", "500"));
+
+        assertThat(observation.ok()).isFalse();
+        assertThat(observation.summary()).contains("limit").contains(String.valueOf(ReadOnlyTools.MAX_LIMIT));
+        assertThat(queryCaptor.get()).isNull();
+    }
+
+    @Test void anUnparseableLimitFailsInsteadOfFallingBackToADefault() {
+        var tool = searchWith(List.of());
+
+        var observation = tool.invoke(context("search_jobs", "limit", "很多"));
+
+        assertThat(observation.ok()).isFalse();
+        assertThat(observation.summary()).contains("整数");
+        assertThat(queryCaptor.get()).isNull();
+    }
+
+    /** 没给 limit 时才取默认值——不给和给错是两回事。 */
+    @Test void anAbsentLimitTakesTheDefault() {
+        var tool = searchWith(List.of());
+
+        tool.invoke(context("search_jobs"));
+
+        assertThat(queryCaptor.get().size()).isEqualTo(ReadOnlyTools.DEFAULT_LIMIT);
+    }
+
+    // --- 逐岗评估计入共享预算 ---
+
+    /** 一次 search_jobs 背后是几十次评估。预算必须按真实扇出扣，否则形同虚设。 */
+    @Test void theFanOutBehindASearchIsChargedToTheSharedBudget() {
+        var budget = ToolCallBudget.of(20);
+        var tool = searchWith(List.of(bundle(EligibilityStatus.ELIGIBLE), bundle(EligibilityStatus.ELIGIBLE)));
+
+        tool.invoke(context(budget, "search_jobs"));
+
+        assertThat(budget.spent()).isEqualTo(2);
+    }
+
+    /** 单岗位评估也是一次评估，照扣；预算见底时明说没评估，不返回一个空结论。 */
+    @Test void aSingleJobAssessmentIsChargedAndRefusedOnceTheBudgetIsGone() {
+        var assessed = new java.util.concurrent.atomic.AtomicInteger();
+        var tool = ReadOnlyTools.jobFacts((candidateId, jobId, now) -> {
+            assessed.incrementAndGet();
+            return bundle(EligibilityStatus.ELIGIBLE);
+        }, CLOCK);
+        var budget = ToolCallBudget.of(1);
+
+        var first = tool.invoke(context(budget, "job_facts", "jobId", JOB.toString()));
+        var second = tool.invoke(context(budget, "job_facts", "jobId", JOB.toString()));
+
+        assertThat(first.ok()).isTrue();
+        assertThat(second.ok()).isFalse();
+        assertThat(second.summary()).contains("预算");
+        // 预算用完之后不该再打下游。
+        assertThat(assessed).hasValue(1);
+    }
+
+    /**
+     * 待确认清单扫不完时返回失败，不返回一份短清单。
+     *
+     * <p>"还差哪些确认"是个结论。少列几项读起来就是"这些都齐了"，用户据此以为可以直接投。
+     */
+    @Test void anIncompletePendingScanRefusesRatherThanReturningAShortList() {
+        var tool = ReadOnlyTools.pendingConfirmations((candidateId, budget) ->
+            new ReadOnlyTools.PendingList(List.of(), false));
+
+        var observation = tool.invoke(context("pending_confirmations"));
+
+        assertThat(observation.ok()).isFalse();
+        assertThat(observation.summary()).contains("不完整");
+    }
+
+    /** 预算吃完只评估了一部分时，结果要标成不完整，不能读成"就这么多"。 */
+    @Test void aTruncatedSearchSaysSoInsteadOfLookingComplete() {
+        var tool = ReadOnlyTools.searchJobs((candidateId, query, now, budget) ->
+            new DecisionRankingService.RankingPage(List.of(), 0, 5, 0, 7), CLOCK);
+
+        var observation = tool.invoke(context("search_jobs"));
+
+        assertThat(observation.<Boolean>value("complete", true)).isFalse();
+        assertThat(observation.<Integer>value("notAssessed", 0)).isEqualTo(7);
+        assertThat(observation.summary()).contains("不完整");
+    }
+
+    // --- 工具目录 ---
+
+    /** 参数定义是契约：模型收到的目录和工具校验用的是同一份。 */
+    @Test void everyDeclaredEnumParameterListsItsAllowedValues() {
+        var tool = searchWith(List.of());
+
+        var tier = tool.parameters().stream().filter(p -> p.name().equals("tier")).findFirst().orElseThrow();
+
+        assertThat(tier.allowedValues()).contains("T1", "T2", "T3");
+        assertThat(tool.parameters()).extracting(AgentTooling.ToolParameter::name)
+            .containsExactly("location", "jobFamily", "tier", "limit");
     }
 
     // --- 观察里要有可分支的东西 ---
@@ -89,9 +223,9 @@ class ReadOnlyToolsTest {
     /** 规划器要能据此选下一步，所以数量必须是结构化的，不能只有一句话。 */
     @Test void theObservationCarriesACountThePlannerCanBranchOn() {
         var withJobs = searchWith(List.of(bundle(EligibilityStatus.ELIGIBLE)));
-        var withJobsResult = withJobs.invoke(CANDIDATE, ToolCall.of("search_jobs"));
+        var withJobsResult = withJobs.invoke(context("search_jobs"));
         var none = searchWith(List.of());
-        var noneResult = none.invoke(CANDIDATE, ToolCall.of("search_jobs"));
+        var noneResult = none.invoke(context("search_jobs"));
 
         assertThat(withJobsResult.<Integer>value("count", -1)).isEqualTo(1);
         assertThat(noneResult.<Integer>value("count", -1)).isZero();
@@ -104,7 +238,7 @@ class ReadOnlyToolsTest {
     @Test void anInvalidJobIdBecomesAFailedObservation() {
         var tool = ReadOnlyTools.jobFacts((candidateId, jobId, now) -> bundle(EligibilityStatus.ELIGIBLE), CLOCK);
 
-        var observation = tool.invoke(CANDIDATE, ToolCall.of("job_facts", "jobId", "not-a-uuid"));
+        var observation = tool.invoke(context("job_facts", "jobId", "not-a-uuid"));
 
         assertThat(observation.ok()).isFalse();
         assertThat(observation.summary()).contains("合法");
@@ -115,7 +249,7 @@ class ReadOnlyToolsTest {
         var tool = ReadOnlyTools.jobFacts((candidateId, jobId, now) ->
             bundle(EligibilityStatus.NEEDS_CONFIRMATION), CLOCK);
 
-        var observation = tool.invoke(CANDIDATE, ToolCall.of("job_facts", "jobId", JOB.toString()));
+        var observation = tool.invoke(context("job_facts", "jobId", JOB.toString()));
 
         assertThat(observation.<Integer>value("restrictionCount", 0)).isEqualTo(1);
         assertThat(observation.<List<String>>value("restrictions", List.of()))
@@ -125,20 +259,21 @@ class ReadOnlyToolsTest {
     // --- 待确认 ---
 
     @Test void pendingConfirmationsCarryTheFieldAndTheAskingJob() {
-        var tool = ReadOnlyTools.pendingConfirmations(candidateId -> List.of(
-            new com.careeros.application.AgentSession.PendingConfirmation(
-                CandidateFacts.CandidateFactKey.POLITICAL_AFFILIATION, "候选人政治面貌尚未确认", JOB)));
+        var tool = ReadOnlyTools.pendingConfirmations((candidateId, budget) ->
+            new ReadOnlyTools.PendingList(List.of(new com.careeros.application.AgentSession.PendingConfirmation(
+                CandidateFacts.CandidateFactKey.POLITICAL_AFFILIATION, "候选人政治面貌尚未确认", JOB)), true));
 
-        var observation = tool.invoke(CANDIDATE, ToolCall.of("pending_confirmations"));
+        var observation = tool.invoke(context("pending_confirmations"));
 
         assertThat(observation.<Integer>value("count", 0)).isEqualTo(1);
         assertThat(observation.summary()).contains("1 项");
     }
 
     @Test void anEmptyPendingListSaysSoPlainly() {
-        var tool = ReadOnlyTools.pendingConfirmations(candidateId -> List.of());
+        var tool = ReadOnlyTools.pendingConfirmations((candidateId, budget) ->
+            new ReadOnlyTools.PendingList(List.of(), true));
 
-        var observation = tool.invoke(CANDIDATE, ToolCall.of("pending_confirmations"));
+        var observation = tool.invoke(context("pending_confirmations"));
 
         assertThat(observation.<Integer>value("count", -1)).isZero();
         assertThat(observation.summary()).contains("没有待确认");

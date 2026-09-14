@@ -60,4 +60,43 @@ class ModelTurnDeadlineTest {
             .isLessThanOrEqualTo(Duration.ofSeconds(60))
             .isGreaterThan(Duration.ZERO);
     }
+    /**
+     * 超时之后线程收不回来，所以并发必须有界。
+     *
+     * <p>{@code Future.cancel(true)} 只是打个中断标记；卡在 socket 读上的线程收不到。
+     * 模型不可达时每个请求都留下一个这样的线程，无界线程池就是"每来一个请求多一个线程，
+     * 永远不还"。有界之后超出的请求当场被拒，解析成"这一步没有计划"，而不是把进程拖垮。
+     */
+    @Test void turnsBeyondTheConcurrencyLimitAreRefusedInsteadOfPilingUpThreads() throws Exception {
+        var bounded = DecisionAgentConfiguration.boundedModelTurnPool();
+        int limit = DecisionAgentConfiguration.MAX_CONCURRENT_MODEL_TURNS;
+        var occupied = new CountDownLatch(limit);
+        var release = new CountDownLatch(1);
+        try {
+            // 先把上限占满：这些往返都不会在截止时间内返回，线程也不会被真的中断掉。
+            for (int index = 0; index < limit; index++) {
+                bounded.submit(() -> { occupied.countDown(); release.await(); return "占着"; });
+            }
+            assertThat(occupied.await(5, TimeUnit.SECONDS)).isTrue();
+
+            long before = System.nanoTime();
+            String answer = DecisionAgentConfiguration.boundedTurn(bounded, Duration.ofSeconds(20),
+                () -> "不该跑到这里");
+            long elapsedMillis = (System.nanoTime() - before) / 1_000_000;
+
+            assertThat(answer).isEmpty();
+            // 当场被拒，不是排队等满 20 秒——排队只是把等待时间藏起来。
+            assertThat(elapsedMillis).isLessThan(1_000);
+            assertThat(bounded.getPoolSize()).isLessThanOrEqualTo(limit);
+        } finally {
+            release.countDown();
+            bounded.shutdownNow();
+        }
+    }
+
+    /** 上限本身要是个合理的值：改成几千就等于没有上限。 */
+    @Test void theConcurrencyLimitIsSmallEnoughToMatter() {
+        assertThat(DecisionAgentConfiguration.MAX_CONCURRENT_MODEL_TURNS)
+            .isGreaterThan(0).isLessThanOrEqualTo(64);
+    }
 }

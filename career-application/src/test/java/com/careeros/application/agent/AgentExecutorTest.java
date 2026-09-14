@@ -33,9 +33,9 @@ class AgentExecutorTest {
         RecordingTool(String name, Map<String, Object> data) { this.name = name; this.data = data; }
         public String name() { return name; }
         public String description() { return name; }
-        public Observation invoke(UUID candidateId, ToolCall call) {
-            invokedFor.add(candidateId);
-            calls.add(call);
+        public Observation invoke(AgentTooling.ToolContext context) {
+            invokedFor.add(context.candidateId());
+            calls.add(context.call());
             return Observation.ok(name, name + " 返回结果", data);
         }
     }
@@ -68,7 +68,7 @@ class AgentExecutorTest {
             assertThat(entry.accepted()).isFalse();
             assertThat(entry.reason()).contains("未注册");
         });
-        assertThat(run.toolCallsSpent()).isZero();
+        assertThat(run.budgetSpent()).isZero();
     }
 
     /** 未注册的工具不消耗预算——否则模型乱报工具名就能把额度耗光。 */
@@ -79,7 +79,7 @@ class AgentExecutorTest {
             ? new PlannerStep.CallTool(ToolCall.of("nope_" + state.observations().size()), "乱报")
             : new PlannerStep.Finish("好的。"));
 
-        assertThat(run.toolCallsSpent()).isZero();
+        assertThat(run.budgetSpent()).isZero();
         assertThat(run.outcome()).isEqualTo(Outcome.FINISHED);
     }
 
@@ -117,7 +117,7 @@ class AgentExecutorTest {
         });
 
         assertThat(run.outcome()).isEqualTo(Outcome.BUDGET_EXHAUSTED);
-        assertThat(run.toolCallsSpent()).isEqualTo(2);
+        assertThat(run.budgetSpent()).isEqualTo(2);
         assertThat(first.calls).hasSize(1);
         assertThat(second.calls).hasSize(1);
     }
@@ -170,7 +170,7 @@ class AgentExecutorTest {
         ReadOnlyTool broken = new ReadOnlyTool() {
             public String name() { return "search_jobs"; }
             public String description() { return "坏掉的搜索"; }
-            public Observation invoke(UUID candidateId, ToolCall call) { throw new IllegalStateException("boom"); }
+            public Observation invoke(AgentTooling.ToolContext context) { throw new IllegalStateException("boom"); }
         };
         var executor = new AgentExecutor(List.of(broken));
 
@@ -241,19 +241,20 @@ class AgentExecutorTest {
 
         assertThat(run.outcome()).isEqualTo(Outcome.FINISHED);
         assertThat(run.narrative()).isNull();
-        assertThat(run.narrativeRejected()).isTrue();
-        assertThat(run.narrativeViolations()).isNotEmpty();
+        assertThat(run.textRejected()).isTrue();
+        assertThat(run.violations()).isNotEmpty();
     }
 
-    /** 合格的连接性叙述照常放行。 */
+    /** 合格的连接性叙述照常放行——前提是背后真的读到了东西。 */
     @Test void aPlainConnectiveNarrativeSurvives() {
         var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
 
-        var run = executor.run(CANDIDATE, "查岗位",
-            state -> new PlannerStep.Finish("下面按稳定性排序，其中一处仍需你补充材料后才能定。"));
+        var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("下面按稳定性排序，其中一处仍需你补充材料后才能定。"));
 
         assertThat(run.narrative()).isEqualTo("下面按稳定性排序，其中一处仍需你补充材料后才能定。");
-        assertThat(run.narrativeRejected()).isFalse();
+        assertThat(run.textRejected()).isFalse();
     }
 
     /** 轨迹要能回答"它为什么这么选"，否则事后分不清依据结果还是走固定流程。 */
@@ -276,12 +277,152 @@ class AgentExecutorTest {
         var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of())), 8, 3);
 
         executor.run(CANDIDATE, "查岗位", state -> {
-            seen.add(state.remainingCalls());
+            seen.add(state.remainingBudget());
             return state.observations().size() < 2
                 ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "查")
                 : new PlannerStep.Finish("好的。");
         });
 
         assertThat(seen).containsExactly(3, 2, 1);
+    }
+    // --- 收尾的话也要有依据 ---
+
+    /**
+     * 一次成功的工具结果都没有，收尾叙述就没有依据，整段丢弃。
+     *
+     * <p>叙述校验器管的是"别写数字和判定词"，管不了"凭空说话"：
+     * 「这些岗位都挺适合你的」一个数字一个判定词都没有，但它背后一条数据也没有。
+     * 这两件事必须分开拦，只靠校验器会漏掉后一种。
+     */
+    @Test void aFinishWithNothingRetrievedKeepsNoNarrative() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "有什么合适的",
+            state -> new PlannerStep.Finish("这些岗位都挺适合你的，可以先从前面几个看起。"));
+
+        assertThat(run.outcome()).isEqualTo(Outcome.FINISHED);
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).contains(AgentExecutor.UNGROUNDED_FINISH);
+        assertThat(run.groundedIn()).isZero();
+    }
+
+    /** 工具全都失败也算没有依据——"读不到"不是"没有"。 */
+    @Test void aFinishAfterOnlyFailedToolsIsAlsoUngrounded() {
+        ReadOnlyTool broken = new ReadOnlyTool() {
+            public String name() { return "search_jobs"; }
+            public String description() { return "坏掉的搜索"; }
+            public Observation invoke(AgentTooling.ToolContext context) { throw new IllegalStateException("boom"); }
+        };
+        var executor = new AgentExecutor(List.of(broken));
+
+        var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("这个范围里目前没有值得看的机会。"));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).contains(AgentExecutor.UNGROUNDED_FINISH);
+    }
+
+    /** 拿到一条真结果之后，同样一句话就能留下。 */
+    @Test void theSameNarrativeSurvivesOnceSomethingWasActuallyRead() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "有什么合适的", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("下面按稳定性排序，先看前面几个。"));
+
+        assertThat(run.narrative()).isEqualTo("下面按稳定性排序，先看前面几个。");
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.groundedIn()).isEqualTo(1);
+    }
+
+    /**
+     * 追问和收尾走同一套校验。
+     *
+     * <p>只校验 FINISH 的话，判定词换成疑问句就整句溜出去了——用户看到的是同一段话，
+     * 末尾多了个问号而已。
+     */
+    @Test void anAskCarryingAVerdictIsRejectedJustLikeANarrative() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "查岗位",
+            state -> new PlannerStep.AskUser("这个岗位你是可报的，适配 72 分，要我继续往下看吗？"));
+
+        assertThat(run.outcome()).isEqualTo(Outcome.ASKED_USER);
+        assertThat(run.question()).isNull();
+        assertThat(run.textRejected()).isTrue();
+    }
+
+    /** 陈述句不能借追问的通道发出去，否则"没有依据的结论"绕开 FINISH 就能出去。 */
+    @Test void aStatementSentThroughTheAskChannelIsRejected() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "查岗位",
+            state -> new PlannerStep.AskUser("这些岗位都挺适合你的。"));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).contains(AgentExecutor.ASK_IS_NOT_A_QUESTION);
+    }
+
+    /** 澄清式追问本来就不需要依据：还没查之前就该能问"你说的是哪个范围"。 */
+    @Test void aClarifyingQuestionNeedsNoEvidence() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "杭州有什么",
+            state -> new PlannerStep.AskUser("你说的杭州是指市区，还是整个杭州市？"));
+
+        assertThat(run.outcome()).isEqualTo(Outcome.ASKED_USER);
+        assertThat(run.question()).contains("市区");
+        assertThat(run.violations()).isEmpty();
+    }
+
+    // --- 预算按真实扇出计，不是按工具调用次数 ---
+
+    /**
+     * 工具内部的逐岗评估要扣同一份预算。
+     *
+     * <p>只按"调了一次工具"记一个单位的话，一次 search_jobs 背后的几十次评估全是白嫖的——
+     * 模型调三次工具就能触发上百次评估，预算写了等于没写。
+     */
+    @Test void aToolsInternalPerJobAssessmentsAreChargedToTheSharedBudget() {
+        var executor = new AgentExecutor(List.of(fansOutTo(4, "search_jobs")), 8, 20);
+
+        var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("下面按稳定性排序。"));
+
+        // 一次调用本身算一个单位，内部四次评估再算四个。
+        assertThat(run.budgetSpent()).isEqualTo(5);
+        assertThat(run.trace()).singleElement()
+            .satisfies(entry -> assertThat(entry.budgetUnits()).isEqualTo(5));
+    }
+
+    /** 扇出把预算吃完之后，下一次调用就该被拒——共享的意思就是一个人花完了别人也没有。 */
+    @Test void aLargeFanOutExhaustsTheBudgetForLaterCalls() {
+        var executor = new AgentExecutor(List.of(fansOutTo(6, "search_jobs"), fansOutTo(1, "watchlist")), 8, 7);
+
+        var run = executor.run(CANDIDATE, "查一圈", state -> switch (state.observations().size()) {
+            case 0 -> new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查岗位");
+            default -> new PlannerStep.CallTool(ToolCall.of("watchlist"), "再看关注");
+        });
+
+        assertThat(run.outcome()).isEqualTo(Outcome.BUDGET_EXHAUSTED);
+        assertThat(run.observations().getLast().summary()).contains("预算");
+    }
+
+    /** 一个每次调用都在内部评估若干岗位的工具。 */
+    private static ReadOnlyTool fansOutTo(int jobs, String name) {
+        return new ReadOnlyTool() {
+            public String name() { return name; }
+            public String description() { return name; }
+            public Observation invoke(AgentTooling.ToolContext context) {
+                int assessed = 0;
+                for (int index = 0; index < jobs; index++) {
+                    if (!context.budget().tryConsume()) break;
+                    assessed++;
+                }
+                return Observation.ok(name, name + " 评估了若干岗位", Map.of("count", assessed));
+            }
+        };
     }
 }

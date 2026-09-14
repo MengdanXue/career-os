@@ -43,9 +43,9 @@ class AgentSessionServiceTest {
         UUID second = UUID.randomUUID();
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(first), bundle(second)));
 
-        assertThat(service.resolveOrdinal(SESSION_ID, 2))
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 2))
             .isEqualTo(new AgentSessionService.Reference(Outcome.RESOLVED, second));
-        assertThat(service.resolveOrdinal(SESSION_ID, 1).jobPostingId()).isEqualTo(first);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 1).jobPostingId()).isEqualTo(first);
     }
 
     /**
@@ -59,7 +59,7 @@ class AgentSessionServiceTest {
 
         profiles.stored = candidate("profile-2");
 
-        var reference = service.resolveOrdinal(SESSION_ID, 2);
+        var reference = service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 2);
         assertThat(reference.outcome()).isEqualTo(Outcome.STALE_LISTING);
         assertThat(reference.jobPostingId()).isNull();
     }
@@ -67,12 +67,12 @@ class AgentSessionServiceTest {
     @Test void anOrdinalOutsideTheListIsNotGuessed() {
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
 
-        assertThat(service.resolveOrdinal(SESSION_ID, 4).outcome()).isEqualTo(Outcome.OUT_OF_RANGE);
-        assertThat(service.resolveOrdinal(SESSION_ID, 0).outcome()).isEqualTo(Outcome.OUT_OF_RANGE);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 4).outcome()).isEqualTo(Outcome.OUT_OF_RANGE);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 0).outcome()).isEqualTo(Outcome.OUT_OF_RANGE);
     }
 
     @Test void anUnknownSessionResolvesNothing() {
-        assertThat(service.resolveOrdinal(UUID.randomUUID(), 1).outcome()).isEqualTo(Outcome.NO_SESSION);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, UUID.randomUUID(), 1).outcome()).isEqualTo(Outcome.NO_SESSION);
     }
 
     /** 同一个岗位不能在一份列表里出现两次，否则序号不再唯一指向一个岗位。 */
@@ -82,6 +82,38 @@ class AgentSessionServiceTest {
             List.of(job, job), List.of(), "profile-1", Instant.now()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("repeat");
+    }
+
+    // --- 归属：会话 ID 可猜，每个入口都要核对 ---
+
+    /**
+     * 报出别人的会话 ID 解析不出任何东西。
+     *
+     * <p>会话 ID 是随机 UUID，但"随机"不是访问控制。不核对归属的话，拿到一个别人的会话 ID
+     * 就能把它的"第二个"解析成一个岗位，再顺着讲下去——讲的是别人那一轮的内容。
+     * 而且要和"没有这轮会话"返回同一个结果，否则分得出来就等于可以枚举。
+     */
+    @Test void anotherCandidatesSessionResolvesNothingAndLooksLikeAMissingOne() {
+        UUID other = UUID.randomUUID();
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+
+        assertThat(service.resolveOrdinal(other, SESSION_ID, 1).outcome()).isEqualTo(Outcome.NO_SESSION);
+        assertThat(service.resolveOrdinal(other, UUID.randomUUID(), 1).outcome()).isEqualTo(Outcome.NO_SESSION);
+    }
+
+    /** 也拿不到别人会话里的资料版本——那是用来过版本检查的，等于绕开检查。 */
+    @Test void anotherCandidateCannotReadTheProfileVersionASessionSaw() {
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+
+        assertThat(service.profileVersionSeenBy(UUID.randomUUID(), SESSION_ID)).isEmpty();
+    }
+
+    /** 更不能推进别人会话里的版本：那会让那个人的下一次确认静默跳过版本检查。 */
+    @Test void anotherCandidateCannotAdvanceSomeoneElsesSessionVersion() {
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+
+        assertThat(service.advanceProfileVersion(UUID.randomUUID(), SESSION_ID, "profile-1", "profile-2")).isFalse();
+        assertThat(service.profileVersionSeenBy(CANDIDATE_ID, SESSION_ID)).contains("profile-1");
     }
 
     // --- 筛选条件与资料版本 ---
@@ -101,7 +133,7 @@ class AgentSessionServiceTest {
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
         profiles.stored = candidate("profile-2");
 
-        assertThat(service.profileVersionSeenBy(SESSION_ID)).contains("profile-1");
+        assertThat(service.profileVersionSeenBy(CANDIDATE_ID, SESSION_ID)).contains("profile-1");
     }
 
     @Test void aSecondListingReplacesTheOrderButKeepsTheSession() {
@@ -114,7 +146,7 @@ class AgentSessionServiceTest {
 
         assertThat(session.sessionId()).isEqualTo(SESSION_ID);
         assertThat(session.filters()).isEqualTo(narrowed);
-        assertThat(service.resolveOrdinal(SESSION_ID, 1).jobPostingId()).isEqualTo(later);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 1).jobPostingId()).isEqualTo(later);
     }
 
     // --- 连续确认：会话版本要跟着自己的写入推进 ---
@@ -126,8 +158,8 @@ class AgentSessionServiceTest {
     @Test void theSessionVersionAdvancesWithTheUsersOwnConfirmation() {
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
 
-        assertThat(service.advanceProfileVersion(SESSION_ID, "profile-1", "profile-2")).isTrue();
-        assertThat(service.profileVersionSeenBy(SESSION_ID)).contains("profile-2");
+        assertThat(service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-1", "profile-2")).isTrue();
+        assertThat(service.profileVersionSeenBy(CANDIDATE_ID, SESSION_ID)).contains("profile-2");
     }
 
     /**
@@ -137,8 +169,8 @@ class AgentSessionServiceTest {
     @Test void anAdvanceFromAVersionTheSessionNoLongerHoldsIsRefused() {
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
 
-        assertThat(service.advanceProfileVersion(SESSION_ID, "someone-elses-version", "profile-9")).isFalse();
-        assertThat(service.profileVersionSeenBy(SESSION_ID)).contains("profile-1");
+        assertThat(service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "someone-elses-version", "profile-9")).isFalse();
+        assertThat(service.profileVersionSeenBy(CANDIDATE_ID, SESSION_ID)).contains("profile-1");
     }
 
     /** 推进版本不能顺手清掉岗位顺序：用户看到的还是同一份列表，序号仍然有效。 */
@@ -149,10 +181,10 @@ class AgentSessionServiceTest {
             Map.of(RuleType.POLITICAL_AFFILIATION, new EligibilityAssessment.RuleResult(
                 EligibilityStatus.NEEDS_CONFIRMATION, "候选人政治面貌尚未确认")))));
 
-        service.advanceProfileVersion(SESSION_ID, "profile-1", "profile-2");
+        service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-1", "profile-2");
         profiles.stored = candidate("profile-2");
 
-        assertThat(service.resolveOrdinal(SESSION_ID, 2).jobPostingId()).isEqualTo(second);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 2).jobPostingId()).isEqualTo(second);
         assertThat(sessions.stored.get(SESSION_ID).pendingConfirmations()).hasSize(1);
     }
 

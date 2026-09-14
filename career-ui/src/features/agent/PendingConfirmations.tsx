@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ApiProblem } from '../../api/http'
 import type { PendingConfirmation } from './agentApi'
 import {
@@ -20,6 +21,13 @@ import {
  *
  * <p>算不出变化时说"算不出来"，不显示零。三个计数都是 null 时显示成 0，
  * 会读成"确认了也没用"，那是另一回事。
+ *
+ * <p>每条问题都标出是哪个岗位提出的。不标的话，用户看到的是一句悬空的"你的政治面貌是？"——
+ * 他既不知道为什么现在问，也不知道答了对哪个岗位有影响，只能凭感觉决定要不要交出这条信息。
+ *
+ * <p>重算没做完时给一个按钮，不是让用户"稍后重试"。用原来那把幂等钥匙重放，
+ * 不会写第二次，也不会再推高一次资料版本；没有按钮的话，这条恢复路径在页面上根本不存在，
+ * 接口能单独调用不等于用户走得通。
  */
 export function PendingConfirmations({ candidateId, sessionId, items }: {
   candidateId: string
@@ -59,6 +67,9 @@ export function PendingConfirmations({ candidateId, sessionId, items }: {
           <strong>{factLabels[item.factKey] ?? item.factKey}</strong>
           <span>{item.question}</span>
         </p>
+        <p className="confirmation-asking-job">
+          由 <Link to={`/opportunities/${item.jobPostingId}`}>这个岗位</Link> 的报考条件提出
+        </p>
         {!outcome && <div className="confirmation-options">
           {(answerOptions[item.factKey] ?? []).map(option => <button
             key={option.value}
@@ -74,6 +85,11 @@ export function PendingConfirmations({ candidateId, sessionId, items }: {
             value: pendingValue[item.factKey],
             acknowledged: true,
           })}
+          onRetryRecompute={() => submit.mutate({
+            factKey: item.factKey,
+            value: pendingValue[item.factKey],
+            acknowledged: true,
+          })}
           acknowledging={submit.isPending}
         />}
       </article>
@@ -82,9 +98,10 @@ export function PendingConfirmations({ candidateId, sessionId, items }: {
   </section>
 }
 
-function Outcome({ outcome, onAcknowledge, acknowledging }: {
+function Outcome({ outcome, onAcknowledge, onRetryRecompute, acknowledging }: {
   outcome: ConfirmationResponse
   onAcknowledge: () => void
+  onRetryRecompute: () => void
   acknowledging: boolean
 }) {
   if (outcome.result === 'CHANGE_REQUIRES_ACKNOWLEDGEMENT' && outcome.pendingChange) {
@@ -98,8 +115,13 @@ function Outcome({ outcome, onAcknowledge, acknowledging }: {
   }
   return <div className="confirmation-outcome">
     <p>{outcome.message}</p>
-    {outcome.result === 'RECORDED_RECOMPUTE_DEFERRED' &&
-      <p className="confirmation-deferred">岗位结论还没刷新，稍后重试即可，回答不会重复记录。</p>}
+    {outcome.result === 'RECORDED_RECOMPUTE_DEFERRED' && <div className="confirmation-deferred">
+      <p>你的回答已经记下了，但岗位结论还没重算完。</p>
+      {/* 用同一把幂等钥匙重放：只接着做重算，不会再写一次，也不会再推高一次资料版本。 */}
+      <button type="button" onClick={onRetryRecompute} disabled={acknowledging}>
+        {acknowledging ? '重算中…' : '继续重算'}
+      </button>
+    </div>}
     {outcome.changes && <Changes changes={outcome.changes} />}
   </div>
 }

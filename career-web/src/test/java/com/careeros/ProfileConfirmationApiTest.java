@@ -138,7 +138,7 @@ class ProfileConfirmationApiTest {
      * "用户看到的那一版和现在的不一样"。
      */
     @Test void aClaimedProfileVersionCannotOverrideTheOneTheSessionRecorded() throws Exception {
-        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.of("profile-the-user-saw"));
+        when(sessions.profileVersionSeenBy(CANDIDATE_ID, SESSION_ID)).thenReturn(java.util.Optional.of("profile-the-user-saw"));
         when(service.completeRecompute(any(), any())).thenReturn(new ConfirmationOutcome(Result.RECORDED,
             EvidenceStrength.SELF_REPORTED, "profile-the-user-saw", "profile-8", "已记录。", null, null));
 
@@ -154,7 +154,7 @@ class ProfileConfirmationApiTest {
 
     /** 会话不存在就不能确认：没有基准版本，那个检查无从谈起。 */
     @Test void aMissingSessionIsRefusedRatherThanFallingBackToTheClaimedVersion() throws Exception {
-        when(sessions.profileVersionSeenBy(SESSION_ID)).thenReturn(java.util.Optional.empty());
+        when(sessions.profileVersionSeenBy(CANDIDATE_ID, SESSION_ID)).thenReturn(java.util.Optional.empty());
 
         mvc.perform(post("/api/v1/candidates/{candidateId}/profile-confirmations", CANDIDATE_ID)
                 .param("asOf", "2026-08-24")
