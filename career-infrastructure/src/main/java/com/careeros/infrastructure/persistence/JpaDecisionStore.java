@@ -142,9 +142,23 @@ public class JpaDecisionStore implements JobContexts, OrganizationStabilityFacts
                 facts.registrationUrl,facts.qualificationReviewEndsOn,facts.paymentEndsOn,
                 facts.admissionTicketStartsOn,facts.admissionTicketEndsOn,facts.writtenExamOn,
                 facts.writtenExamSubjects,facts.graduateRule,facts.overseasDegreeRule,
-                facts.experienceEvidenceRule,facts.employmentStatement,facts.interviewRule),
+                facts.experienceEvidenceRule,facts.employmentStatement,facts.interviewRule,facts.graduateRuleJson,
+                facts.writtenExamState,facts.professionalTestState,facts.interviewState,facts.interviewOn,
+                facts.interviewMethod,facts.scoreFormula,new RecruitmentProcessFacts(
+                    stage(facts.noticeState,null),stage(facts.applicationState,null),
+                    stage(facts.qualificationReviewState,null),stage(facts.paymentState,null),
+                    stage(facts.admissionTicketState,null),stage(facts.writtenExamState,null),
+                    stage(facts.professionalTestState,null),stage(facts.interviewState,facts.interviewRule),
+                    stage(facts.physicalExamState,facts.physicalExamRule),
+                    stage(facts.investigationState,facts.investigationRule),
+                    stage(facts.publicationState,facts.publicationRule),stage(facts.appointmentState,facts.appointmentRule))),
             fingerprint, job.active
         );
+    }
+
+    private static RecruitmentProcessFacts.ProcessStage stage(
+        GraduateEligibilityRule.EvidenceState state, String detail) {
+        return new RecruitmentProcessFacts.ProcessStage(state, detail);
     }
 
     private Map<UUID,String> latestAttachmentUrls(Collection<JpaModels.JobPostingEntity> jobValues) {

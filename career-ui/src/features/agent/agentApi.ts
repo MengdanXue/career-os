@@ -5,6 +5,21 @@ export type PendingConfirmation = {
   factKey: string
   question: string
   jobPostingId: string
+  answered?: boolean
+}
+
+/** 服务端会话的只读投影；读取不重新排名、重算或推进资料版本。 */
+export type AgentSessionResponse = {
+  sessionId: string
+  profileVersion: string
+  currentProfileVersion: string
+  stale: boolean
+  jobIdsInOrder: string[]
+  pendingConfirmations: PendingConfirmation[]
+}
+
+export function getAgentSession(candidateId: string, sessionId: string) {
+  return requestJson<AgentSessionResponse>(`/api/v1/candidates/${candidateId}/agent-queries/${sessionId}`)
 }
 
 export type AgentResponse = {

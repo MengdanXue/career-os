@@ -15,6 +15,9 @@ export type WatchedJob = {
   applicationEndsOn: string | null
   applicationClosed: boolean
   evaluatorVersion: string | null
+  readState?: 'CHANGED' | 'UNCHANGED' | 'BASELINE_MISSING' | 'UNAVAILABLE' | 'NOT_REFRESHED'
+  errorCode?: 'EVALUATION_FAILED' | 'CALL_BUDGET_EXHAUSTED' | null
+  evaluationCounted?: boolean
   deepLink: string
 }
 
@@ -22,6 +25,8 @@ export type Watchlist = {
   candidateId: string
   asOf: string
   items: WatchedJob[]
+  assessmentCallsSpent?: number
+  assessmentCallLimit?: number
 }
 
 export function getWatchlist(candidateId: string, asOf: string) {

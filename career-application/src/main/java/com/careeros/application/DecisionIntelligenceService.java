@@ -14,7 +14,10 @@ import java.util.Objects;
 import java.util.UUID;
 
 public final class DecisionIntelligenceService implements DecisionAssessor {
-    public static final String VERSION = "decision-v3-qualification-cutoff";
+    // v3 snapshots may have been assessed through a persistence projection that
+    // discarded parsed graduate clauses. Preserve them as history, never reuse
+    // them as current assessments after the projection is corrected.
+    public static final String VERSION = "decision-v4-graduate-projection";
     private final RepositoryPorts.CandidateProfiles candidates;
     private final RepositoryPorts.CandidateFactConfirmations candidateFacts;
     private final RepositoryPorts.EligibilityAssessments eligibilityAssessments;

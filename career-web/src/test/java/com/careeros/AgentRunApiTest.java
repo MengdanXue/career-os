@@ -39,7 +39,7 @@ class AgentRunApiTest {
 
     private static org.springframework.test.web.servlet.MockMvc mvc(AgentPlanner planner) {
         var executor = new AgentExecutor(List.of(tool("search_jobs", Map.of("count", 1))));
-        return MockMvcBuilders.standaloneSetup(new AgentRunController(executor, provider(planner)))
+        return MockMvcBuilders.standaloneSetup(new AgentRunController(executor, provider(planner), true))
             .setControllerAdvice(new ApiExceptionHandler()).build();
     }
 
@@ -54,6 +54,22 @@ class AgentRunApiTest {
                 .contentType(MediaType.APPLICATION_JSON).content("{\"question\":\"杭州有哪些岗位\"}"))
             .andExpect(status().isServiceUnavailable())
             .andExpect(jsonPath("$.code").value("PLANNER_UNAVAILABLE"));
+    }
+
+    @Test void theStageOneGateRefusesEvenAnAlreadyRegisteredPlannerWithoutInvokingIt() throws Exception {
+        var executor = org.mockito.Mockito.mock(AgentExecutor.class);
+        var planner = org.mockito.Mockito.mock(AgentPlanner.class);
+        var available = provider(planner);
+        var closed = MockMvcBuilders.standaloneSetup(new AgentRunController(executor, available, false))
+            .setControllerAdvice(new ApiExceptionHandler()).build();
+
+        closed.perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"question\":\"杭州有哪些岗位\"}"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.code").value("PLANNER_UNAVAILABLE"));
+
+        org.mockito.Mockito.verifyNoInteractions(executor, planner);
+        org.mockito.Mockito.verify(available, org.mockito.Mockito.never()).getIfAvailable();
     }
 
     /** 可用工具要外露：调用方能核对边界，而不是只能相信它是只读的。 */

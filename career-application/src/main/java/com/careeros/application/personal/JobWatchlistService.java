@@ -114,7 +114,11 @@ public final class JobWatchlistService {
                     deadline,
                     deadline != null && deadline.isBefore(asOf),
                     bundle.decision().evaluatorVersion(),
-                    "/opportunities/" + watched.jobPostingId()));
+                    "/opportunities/" + watched.jobPostingId(),
+                    watched.lastSeenStatus() == null ? ReadState.BASELINE_MISSING
+                        : watched.lastSeenStatus() == current ? ReadState.UNCHANGED : ReadState.CHANGED,
+                    null,
+                    true));
             } catch (RuntimeException failure) {
                 // 一个岗位算不出来不该让整张清单消失，但也不能假装它还是老样子。
                 entries.add(WatchedJobView.unavailable(watched.jobPostingId(), watched.lastSeenStatus()));
@@ -124,7 +128,7 @@ public final class JobWatchlistService {
             .comparing(WatchedJobView::changedSinceLastSeen).reversed()
             .thenComparing(WatchedJobView::applicationEndsOn, Comparator.nullsLast(Comparator.naturalOrder()))
             .thenComparing(WatchedJobView::jobPostingId));
-        return new Watchlist(candidateId, asOf, List.copyOf(entries));
+        return new Watchlist(candidateId, asOf, List.copyOf(entries), budget.spent(), budget.limit());
     }
 
     /**
@@ -147,6 +151,9 @@ public final class JobWatchlistService {
      *        下一次变化也发现不了，必须让用户能把基准补上。
      * @param applicationClosed    报名窗口是否已经关闭。结论仍是"可报"但窗口关了，
      *        只显示"可报"会让人以为还来得及。
+     * @param readState           本次读取是否完成、是否可比。未知不能被渲染成"无变化"。
+     * @param errorCode           稳定的失败原因；不向客户端暴露内部异常详情。
+     * @param evaluationCounted   本行是否实际发起评估并计入预算；评估失败也占额度。
      */
     public record WatchedJobView(
         UUID jobPostingId,
@@ -159,23 +166,35 @@ public final class JobWatchlistService {
         LocalDate applicationEndsOn,
         boolean applicationClosed,
         String evaluatorVersion,
-        String deepLink
+        String deepLink,
+        ReadState readState,
+        String errorCode,
+        boolean evaluationCounted
     ) {
         static WatchedJobView unavailable(UUID jobPostingId, EligibilityStatus lastSeenStatus) {
             return new WatchedJobView(jobPostingId, null, null, lastSeenStatus, null, false, false,
-                null, false, null, "/opportunities/" + jobPostingId);
+                null, false, null, "/opportunities/" + jobPostingId,
+                ReadState.UNAVAILABLE, "EVALUATION_FAILED", true);
         }
 
         /** 本次超出调用预算，没有重新评估。与"算不出来"一样是读不到，不是"没变化"。 */
         static WatchedJobView notRefreshed(UUID jobPostingId, EligibilityStatus lastSeenStatus) {
-            return unavailable(jobPostingId, lastSeenStatus);
+            return new WatchedJobView(jobPostingId, null, null, lastSeenStatus, null, false, false,
+                null, false, null, "/opportunities/" + jobPostingId,
+                ReadState.NOT_REFRESHED, "CALL_BUDGET_EXHAUSTED", false);
         }
 
         /** 当前结论算不出来。不是"没变化"，是读不到。 */
         public boolean available() { return currentStatus != null; }
     }
 
-    public record Watchlist(UUID candidateId, LocalDate asOf, List<WatchedJobView> items) {
+    public enum ReadState {
+        CHANGED, UNCHANGED, BASELINE_MISSING, UNAVAILABLE, NOT_REFRESHED
+    }
+
+    /** 预算统计按本次列表请求的逐岗评估计数，不是模型工具调用次数。 */
+    public record Watchlist(UUID candidateId, LocalDate asOf, List<WatchedJobView> items,
+                            int assessmentCallsSpent, int assessmentCallLimit) {
         public Watchlist { items = List.copyOf(items == null ? List.of() : items); }
     }
 }

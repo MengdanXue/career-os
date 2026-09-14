@@ -9,6 +9,7 @@ import com.careeros.application.DecisionPorts.DecisionBundle;
 import com.careeros.application.DecisionPorts.JobContext;
 import com.careeros.application.personal.JobWatchlistPorts.WatchedJob;
 import com.careeros.application.personal.JobWatchlistService.WatchedJobView;
+import com.careeros.application.personal.JobWatchlistService.ReadState;
 import com.careeros.domain.*;
 import java.time.Clock;
 import java.time.Instant;
@@ -140,6 +141,9 @@ class JobWatchlistServiceTest {
             assertThat(item.changedSinceLastSeen()).isFalse();
             assertThat(item.baselineMissing()).isFalse();
             assertThat(item.currentStatus()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
+            assertThat(item.readState()).isEqualTo(ReadState.UNCHANGED);
+            assertThat(item.errorCode()).isNull();
+            assertThat(item.evaluationCounted()).isTrue();
         });
     }
 
@@ -163,6 +167,7 @@ class JobWatchlistServiceTest {
             assertThat(item.changedSinceLastSeen()).isTrue();
             assertThat(item.lastSeenStatus()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
             assertThat(item.baselineMissing()).isFalse();
+            assertThat(item.readState()).isEqualTo(ReadState.CHANGED);
         });
     }
 
@@ -187,6 +192,7 @@ class JobWatchlistServiceTest {
         assertThat(service.list(CANDIDATE_ID, AS_OF).items()).singleElement().satisfies(item -> {
             assertThat(item.baselineMissing()).isTrue();
             assertThat(item.changedSinceLastSeen()).isFalse();
+            assertThat(item.readState()).isEqualTo(ReadState.BASELINE_MISSING);
         });
     }
 
@@ -252,6 +258,9 @@ class JobWatchlistServiceTest {
                 assertThat(item.available()).isFalse();
                 assertThat(item.currentStatus()).isNull();
                 assertThat(item.changedSinceLastSeen()).isFalse();
+                assertThat(item.readState()).isEqualTo(ReadState.UNAVAILABLE);
+                assertThat(item.errorCode()).isEqualTo("EVALUATION_FAILED");
+                assertThat(item.evaluationCounted()).isTrue();
             });
         assertThat(items).filteredOn(item -> item.jobPostingId().equals(JOB_A)).singleElement()
             .satisfies(item -> assertThat(item.available()).isTrue());
@@ -282,6 +291,76 @@ class JobWatchlistServiceTest {
         assertThat(items).filteredOn(item -> !item.available()).hasSize(5);
         assertThat(items).filteredOn(WatchedJobView::available)
             .hasSize(com.careeros.application.ToolCallBudget.DEFAULT_LIMIT);
+    }
+
+    @Test void exactlyFiftyAssessmentsAreCompleteAndTheFiftyFirstIsExplicitlyNotRefreshed() {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var service = new JobWatchlistService(watchlist, (candidateId, jobId, now) -> {
+            calls.incrementAndGet();
+            return bundle(jobId, EligibilityStatus.NEEDS_CONFIRMATION, AS_OF.plusDays(3));
+        }, CLOCK);
+        for (int index = 0; index < 50; index++) {
+            service.watch(CANDIDATE_ID, UUID.randomUUID(), EligibilityStatus.NEEDS_CONFIRMATION, "v7");
+        }
+
+        var complete = service.list(CANDIDATE_ID, AS_OF);
+        assertThat(calls).hasValue(50);
+        assertThat(complete.assessmentCallsSpent()).isEqualTo(50);
+        assertThat(complete.assessmentCallLimit()).isEqualTo(50);
+        assertThat(complete.items()).hasSize(50).allSatisfy(item -> {
+            assertThat(item.readState()).isEqualTo(ReadState.UNCHANGED);
+            assertThat(item.evaluationCounted()).isTrue();
+            assertThat(item.errorCode()).isNull();
+        });
+
+        UUID overBudget = UUID.randomUUID();
+        service.watch(CANDIDATE_ID, overBudget, EligibilityStatus.ELIGIBLE, "v7");
+        int writesBeforeRead = watchlist.writes.get();
+        calls.set(0);
+        var partial = service.list(CANDIDATE_ID, AS_OF);
+        assertThat(calls).hasValue(50);
+        assertThat(partial.assessmentCallsSpent()).isEqualTo(50);
+        assertThat(partial.assessmentCallLimit()).isEqualTo(50);
+        assertThat(partial.items()).hasSize(51);
+        assertThat(partial.items()).filteredOn(item -> item.jobPostingId().equals(overBudget))
+            .singleElement().satisfies(item -> {
+                assertThat(item.readState()).isEqualTo(ReadState.NOT_REFRESHED);
+                assertThat(item.errorCode()).isEqualTo("CALL_BUDGET_EXHAUSTED");
+                assertThat(item.evaluationCounted()).isFalse();
+                assertThat(item.currentStatus()).isNull();
+                assertThat(item.lastSeenStatus()).isEqualTo(EligibilityStatus.ELIGIBLE);
+                assertThat(item.available()).isFalse();
+            });
+        assertThat(watchlist.writes).hasValue(writesBeforeRead);
+    }
+
+    @Test void failedAssessmentsSpendBudgetAndCannotBeMistakenForSkippedOrUnchangedRows() {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var service = new JobWatchlistService(watchlist, (candidateId, jobId, now) -> {
+            calls.incrementAndGet();
+            throw new IllegalStateException("private assessment failure");
+        }, CLOCK);
+        for (int index = 0; index < 51; index++) {
+            service.watch(CANDIDATE_ID, UUID.randomUUID(), EligibilityStatus.NEEDS_CONFIRMATION, "v7");
+        }
+
+        var result = service.list(CANDIDATE_ID, AS_OF);
+
+        assertThat(calls).hasValue(50);
+        assertThat(result.assessmentCallsSpent()).isEqualTo(50);
+        assertThat(result.items()).hasSize(51);
+        assertThat(result.items()).filteredOn(item -> item.readState() == ReadState.UNAVAILABLE)
+            .hasSize(50).allSatisfy(item -> {
+                assertThat(item.errorCode()).isEqualTo("EVALUATION_FAILED");
+                assertThat(item.evaluationCounted()).isTrue();
+                assertThat(item.currentStatus()).isNull();
+            });
+        assertThat(result.items()).filteredOn(item -> item.readState() == ReadState.NOT_REFRESHED)
+            .singleElement().satisfies(item -> {
+                assertThat(item.errorCode()).isEqualTo("CALL_BUDGET_EXHAUSTED");
+                assertThat(item.evaluationCounted()).isFalse();
+            });
+        assertThat(result.items()).noneMatch(item -> item.readState() == ReadState.UNCHANGED);
     }
 
     // --- 排序与移除 ---

@@ -85,6 +85,10 @@ public record AgentSession(
             pendingConfirmations, profileVersion, at);
     }
 
+    public AgentSession withPendingAndVersion(List<PendingConfirmation> pending, String version, Instant at) {
+        return new AgentSession(sessionId, candidateId, filters, lastJobIdsInOrder, pending, version, at);
+    }
+
     public AgentSession withListing(
         SessionFilters filters, List<UUID> jobIds, List<PendingConfirmation> pending,
         String profileVersion, Instant at

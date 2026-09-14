@@ -104,6 +104,60 @@ class JpaDecisionStoreTest {
         verify(evidence, times(1)).findAllById(Set.of(firstEvidence.id, secondEvidence.id));
     }
 
+    @Test void parsedAnnouncementFactsKeepTheirEvidenceStatesAndTheOriginalEventIdentity() {
+        var jobs = mock(JobPostingJpaRepository.class);
+        var organizations = mock(OrganizationJpaRepository.class);
+        var events = mock(RecruitmentEventJpaRepository.class);
+        var evidence = mock(EvidenceJpaRepository.class);
+        var job = job();
+        var organization = organization(job);
+        var original = event(job);
+        var announcement = event(job);
+        announcement.id = UUID.randomUUID();
+        announcement.sourceUrl = job.sourceUrl;
+        announcement.title = "官网当前公告";
+        announcement.graduateRuleJson = new com.careeros.domain.GraduateEligibilityRule(2026, Set.of(2026),
+            Set.of(com.careeros.domain.GraduateEligibilityRule.CohortScope.CURRENT_YEAR), false,
+            com.careeros.domain.GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null,
+            com.careeros.domain.GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null,
+            true, true, "报名时未落实单位且无社保",
+            com.careeros.domain.GraduateEligibilityRule.EvidenceState.CONFIRMED);
+        announcement.noticeState = com.careeros.domain.GraduateEligibilityRule.EvidenceState.CONFIRMED;
+        announcement.applicationState = com.careeros.domain.GraduateEligibilityRule.EvidenceState.REVIEW_REQUIRED;
+        announcement.writtenExamState = com.careeros.domain.GraduateEligibilityRule.EvidenceState.NOT_REQUIRED;
+        announcement.interviewState = com.careeros.domain.GraduateEligibilityRule.EvidenceState.CONFIRMED;
+        announcement.interviewRule = "结构化面试";
+        announcement.interviewMethod = "现场";
+        announcement.scoreFormula = "面试成绩";
+        announcement.appointmentState = com.careeros.domain.GraduateEligibilityRule.EvidenceState.REVIEW_REQUIRED;
+        announcement.appointmentRule = "聘用前复核";
+        UUID originalEvidence = UUID.randomUUID();
+        UUID announcementEvidence = UUID.randomUUID();
+        original.evidenceIds.add(originalEvidence);
+        announcement.evidenceIds.add(announcementEvidence);
+        when(jobs.findAllById(Set.of(job.id))).thenReturn(List.of(job));
+        when(organizations.findAllById(Set.of(organization.id))).thenReturn(List.of(organization));
+        when(events.findAllById(Set.of(original.id))).thenReturn(List.of(original));
+        when(events.findBySourceUrlIn(Set.of(job.sourceUrl))).thenReturn(List.of(announcement));
+        when(evidence.findAllById(Set.copyOf(job.evidenceIds))).thenReturn(List.of());
+
+        var projected = store(jobs, organizations, events, evidence).findActiveByJobIds(Set.of(job.id)).getFirst().event();
+
+        assertThat(projected.id()).isEqualTo(original.id);
+        assertThat(projected.title()).isEqualTo(announcement.title);
+        assertThat(projected.sourceUrl()).isEqualTo(original.sourceUrl);
+        assertThat(projected.evidenceIds()).containsExactly(originalEvidence, announcementEvidence);
+        assertThat(projected.graduateEligibilityRule()).isEqualTo(announcement.graduateRuleJson);
+        assertThat(projected.writtenExamState()).isEqualTo(announcement.writtenExamState);
+        assertThat(projected.interviewMethod()).isEqualTo(announcement.interviewMethod);
+        assertThat(projected.scoreFormula()).isEqualTo(announcement.scoreFormula);
+        assertThat(projected.processFacts().notice().state()).isEqualTo(announcement.noticeState);
+        assertThat(projected.processFacts().application().state()).isEqualTo(announcement.applicationState);
+        assertThat(projected.processFacts().interview().detail()).isEqualTo(announcement.interviewRule);
+        assertThat(projected.processFacts().appointment().state()).isEqualTo(announcement.appointmentState);
+        assertThat(projected.processFacts().appointment().detail()).isEqualTo(announcement.appointmentRule);
+    }
+
     private static JpaDecisionStore store(JobPostingJpaRepository jobs,
                                           OrganizationJpaRepository organizations,
                                           RecruitmentEventJpaRepository events,

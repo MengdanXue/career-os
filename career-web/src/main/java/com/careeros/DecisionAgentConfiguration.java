@@ -6,7 +6,6 @@ import com.careeros.application.DecisionIntelligenceService;
 import com.careeros.application.DecisionRankingService;
 import java.util.Optional;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -35,7 +34,7 @@ class DecisionAgentConfiguration {
     }
 
     /**
-     * 模型驱动的规划器。与叙述助手共用同一个开关。
+     * 模型驱动的规划器。必须额外显式启用动态工具，旧 LLM 开关本身不开放执行端点。
      *
      * <p>它只负责把模型输出解析成一步计划；能不能调、调谁的、调几次由 {@code AgentExecutor} 决定。
      * 所以这里不需要"请模型不要写入"——写入工具没有注册，请求了也会被拒。
@@ -47,7 +46,7 @@ class DecisionAgentConfiguration {
     static final java.time.Duration MODEL_TURN_DEADLINE=java.time.Duration.ofSeconds(20);
 
     @Bean
-    @ConditionalOnProperty(prefix="career-os.agent.llm",name="enabled",havingValue="true")
+    @ConditionalOnProperty(prefix="career-os.agent",name={"llm.enabled","dynamic-tools.enabled"},havingValue="true")
     com.careeros.application.agent.AgentTooling.AgentPlanner modelAgentPlanner(ChatClient.Builder builder) {
         ChatClient client=builder.build();
         // 每次往返起一个守护线程并设截止时间。客户端自身的重试与退避可能远超一次请求该等的时间：
@@ -88,8 +87,8 @@ class DecisionAgentConfiguration {
         }
     }
 
-    @Bean AgentQueryService agentQueryService(DecisionRankingService rankings,DecisionExplanationService explanations,ObjectProvider<AgentQueryService.AgentPhraser> phraser,DecisionIntelligenceService decisions) {
+    @Bean AgentQueryService agentQueryService(DecisionRankingService rankings,DecisionExplanationService explanations,DecisionIntelligenceService decisions) {
         return new AgentQueryService(rankings::rank,explanations,
-            Optional.ofNullable(phraser.getIfAvailable()),Optional.of(decisions::assess));
+            Optional.empty(),Optional.of(decisions::assess));
     }
 }

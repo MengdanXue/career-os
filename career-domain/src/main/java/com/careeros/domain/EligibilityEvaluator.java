@@ -21,7 +21,8 @@ import java.util.stream.Stream;
 import static com.careeros.domain.CandidateFacts.CandidateFactKey.*;
 
 public final class EligibilityEvaluator {
-    public static final String VERSION = "eligibility-hard-verdict-v7";
+    // Recompute snapshots produced before unverified/alternative clauses were kept pending.
+    public static final String VERSION = "eligibility-hard-verdict-v8";
 
     public EligibilityAssessment evaluate(CandidateProfile candidate, JobPosting job) {
         return evaluate(candidate, CandidateFacts.confirmed(candidate), job, "unversioned", Instant.now());
@@ -254,15 +255,20 @@ public final class EligibilityEvaluator {
     /**
      * 政治面貌（产品需求 §5 EligibilityRule）。
      *
-     * <p>只认公告里明确写死的硬性要求。"中共党员优先"、"党员或民主党派"、"不限"都不是
-     * 硬条件——把偏好当成门槛会凭空滤掉可报的岗位，PoliticalRequirementClassifier 已经
-     * 保守地划出了这条线。
+     * <p>只认公告里明确写死的硬性要求。"中共党员优先"和"不限"不构成门槛；
+     * "党员或民主党派"等未能完整表达的复合条件则需要核对原文，不能当作无限制。
      *
      * <p>预备党员单列：多数公告写"中共党员（含预备党员）"，但也有明确只要正式党员的。
      * 公告原文没说清楚时不替它决定，落到待确认。
      */
     RuleResult evaluatePoliticalAffiliation(CandidateProfile candidate, CandidateFacts facts, JobPosting job) {
-        if (!POLITICAL_CLASSIFIER.hasHardRequirement(job)) return eligible("岗位未限定政治面貌");
+        var requirement = POLITICAL_CLASSIFIER.classify(job);
+        if (requirement == PoliticalRequirementClassifier.Classification.NO_HARD_REQUIREMENT) {
+            return eligible("岗位未限定政治面貌");
+        }
+        if (requirement == PoliticalRequirementClassifier.Classification.MANUAL_REVIEW) {
+            return needsConfirmation("公告政治面貌包含复合或无法可靠解析的条件，需人工核对原文");
+        }
         if (!facts.isConfirmed(POLITICAL_AFFILIATION)) return needsConfirmation("候选人政治面貌尚未确认");
         return switch (candidate.politicalAffiliation()) {
             case CPC_MEMBER -> eligible("政治面貌满足公告的中共党员要求");
@@ -323,11 +329,11 @@ public final class EligibilityEvaluator {
         if (rule.evidenceState() == GraduateEligibilityRule.EvidenceState.NOT_REQUIRED) {
             return eligible("公告已处理，未提出应届身份限制");
         }
-        if (!rule.requiresNoEmployer() && !rule.restrictsSocialInsurance()) {
-            return eligible("公告的应届条款未限制工作单位或社保");
-        }
         if (rule.evidenceState() != GraduateEligibilityRule.EvidenceState.CONFIRMED) {
             return needsConfirmation("公告的应届身份条款尚未确认，需人工核对原文");
+        }
+        if (!rule.requiresNoEmployer() && !rule.restrictsSocialInsurance()) {
+            return eligible("公告的应届条款未限制工作单位或社保");
         }
         // 两项限定各自独立判定，取最严重的一条。不能判到第一条非 ELIGIBLE 就返回：
         // 工作单位那条是 CONDITIONAL、社保那条是 INELIGIBLE 时，提前返回会把"明确不可报"

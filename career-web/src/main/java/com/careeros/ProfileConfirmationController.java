@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*;
 /**
  * 记录用户对"待确认"问题的回答。
  *
- * <p>整条链路是一个事务：资料写入与幂等台账必须一起提交。分开提交的话，两者之间崩溃会让
+ * <p>资料写入与幂等台账在同一事务提交。分开提交的话，两者之间崩溃会让
  * 重试误判成尚未写入，于是重复写一次、再推高一次资料版本。
  *
  * <p>这是写接口，与读接口分开：查询岗位、看待确认事项走各自的 GET，不经过这里。
@@ -41,9 +41,9 @@ class ProfileConfirmationController {
     }
 
     /**
-     * 两段式，不能合成一个事务。
+     * 写入、重算、会话刷新分开处理，不能合成一个事务。
      *
-     * <p>第一段在事务里写资料和台账并提交。第二段在事务之外重算。
+     * <p>第一段在事务里写资料和台账并提交；第二段在事务之外重算；最后用短事务刷新会话。
      *
      * <p>合成一个事务会毁掉失败恢复，而且不是理论问题：重算内部的评估失败会把整个事务标成
      * rollback-only，服务层 catch 住异常、返回"已记录但未重算"之后，提交阶段仍然整体回滚，
@@ -57,7 +57,7 @@ class ProfileConfirmationController {
         @RequestBody ConfirmationBody body
     ) {
         var request = new ConfirmationRequest(candidateId, body.factKey(), declared(body),
-            expectedProfileVersion(body), body.idempotencyKey(), body.acknowledgedChange());
+            expectedProfileVersion(candidateId, body), body.idempotencyKey(), body.acknowledgedChange());
         var recorded = transactions.execute(status -> confirmations.recordAnswer(request));
         // 写入已提交。到这里重算再失败，也只是"结论还没刷新"，回答不会丢。
         var outcome = confirmations.completeRecompute(recorded, asOf);
@@ -65,9 +65,9 @@ class ProfileConfirmationController {
         // 下一个待确认问题必定撞上版本检查——连续确认走不完第二步。
         // 只从这次写入的 before 推进到 after：期间若有别处改动，会话版本已不是 before，
         // 这里什么都不做，版本检查照样会拦。
-        if (body.sessionId() != null) {
-            sessions.advanceProfileVersion(body.sessionId(),
-                outcome.profileVersionBefore(), outcome.profileVersionAfter());
+        if (body.sessionId() != null && canRefreshSession(outcome.result())) {
+            transactions.executeWithoutResult(status -> sessions.advanceProfileVersion(candidateId, body.sessionId(),
+                outcome.profileVersionBefore(), outcome.profileVersionAfter()));
         }
         return new ConfirmationResponse(outcome.result(), outcome.evidenceStrength(),
             outcome.profileVersionBefore(), outcome.profileVersionAfter(), outcome.message(),
@@ -85,10 +85,16 @@ class ProfileConfirmationController {
      * <p>没有会话的直连调用（资料页自己的表单）才用请求里的版本：那里没有会话可依，
      * 版本是页面渲染时拿到的，仍然是"用户看到的那一版"。
      */
-    private String expectedProfileVersion(ConfirmationBody body) {
+    private String expectedProfileVersion(UUID candidateId, ConfirmationBody body) {
         if (body.sessionId() == null) return body.expectedProfileVersion();
-        return sessions.profileVersionSeenBy(body.sessionId()).orElseThrow(() ->
-            new IllegalArgumentException("会话不存在或已过期，请重新查询后再确认"));
+        return sessions.requireOwned(candidateId, body.sessionId()).profileVersion();
+    }
+
+    private static boolean canRefreshSession(Result result) {
+        return switch (result) {
+            case RECORDED, RECORDED_RECOMPUTE_DEFERRED, ALREADY_RECORDED, NO_CHANGE_NEEDED -> true;
+            default -> false;
+        };
     }
 
     /**

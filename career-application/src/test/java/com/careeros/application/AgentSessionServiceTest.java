@@ -27,12 +27,14 @@ class AgentSessionServiceTest {
 
     private InMemorySessions sessions;
     private InMemoryProfiles profiles;
+    private InMemoryConfirmations confirmations;
     private AgentSessionService service;
 
     @BeforeEach void setUp() {
         sessions = new InMemorySessions();
         profiles = new InMemoryProfiles(candidate("profile-1"));
-        service = new AgentSessionService(sessions, profiles, CLOCK);
+        confirmations = new InMemoryConfirmations();
+        service = new AgentSessionService(sessions, profiles, confirmations, CLOCK);
     }
 
     // --- 序号只在记下来的顺序里解析 ---
@@ -43,9 +45,9 @@ class AgentSessionServiceTest {
         UUID second = UUID.randomUUID();
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(first), bundle(second)));
 
-        assertThat(service.resolveOrdinal(SESSION_ID, 2))
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 2))
             .isEqualTo(new AgentSessionService.Reference(Outcome.RESOLVED, second));
-        assertThat(service.resolveOrdinal(SESSION_ID, 1).jobPostingId()).isEqualTo(first);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 1).jobPostingId()).isEqualTo(first);
     }
 
     /**
@@ -59,7 +61,7 @@ class AgentSessionServiceTest {
 
         profiles.stored = candidate("profile-2");
 
-        var reference = service.resolveOrdinal(SESSION_ID, 2);
+        var reference = service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 2);
         assertThat(reference.outcome()).isEqualTo(Outcome.STALE_LISTING);
         assertThat(reference.jobPostingId()).isNull();
     }
@@ -67,12 +69,12 @@ class AgentSessionServiceTest {
     @Test void anOrdinalOutsideTheListIsNotGuessed() {
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
 
-        assertThat(service.resolveOrdinal(SESSION_ID, 4).outcome()).isEqualTo(Outcome.OUT_OF_RANGE);
-        assertThat(service.resolveOrdinal(SESSION_ID, 0).outcome()).isEqualTo(Outcome.OUT_OF_RANGE);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 4).outcome()).isEqualTo(Outcome.OUT_OF_RANGE);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 0).outcome()).isEqualTo(Outcome.OUT_OF_RANGE);
     }
 
     @Test void anUnknownSessionResolvesNothing() {
-        assertThat(service.resolveOrdinal(UUID.randomUUID(), 1).outcome()).isEqualTo(Outcome.NO_SESSION);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, UUID.randomUUID(), 1).outcome()).isEqualTo(Outcome.NO_SESSION);
     }
 
     /** 同一个岗位不能在一份列表里出现两次，否则序号不再唯一指向一个岗位。 */
@@ -101,7 +103,7 @@ class AgentSessionServiceTest {
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
         profiles.stored = candidate("profile-2");
 
-        assertThat(service.profileVersionSeenBy(SESSION_ID)).contains("profile-1");
+        assertThat(service.profileVersionSeenBy(CANDIDATE_ID, SESSION_ID)).contains("profile-1");
     }
 
     @Test void aSecondListingReplacesTheOrderButKeepsTheSession() {
@@ -114,7 +116,7 @@ class AgentSessionServiceTest {
 
         assertThat(session.sessionId()).isEqualTo(SESSION_ID);
         assertThat(session.filters()).isEqualTo(narrowed);
-        assertThat(service.resolveOrdinal(SESSION_ID, 1).jobPostingId()).isEqualTo(later);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 1).jobPostingId()).isEqualTo(later);
     }
 
     // --- 连续确认：会话版本要跟着自己的写入推进 ---
@@ -125,9 +127,10 @@ class AgentSessionServiceTest {
      */
     @Test void theSessionVersionAdvancesWithTheUsersOwnConfirmation() {
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+        profiles.stored = candidate("profile-2");
 
-        assertThat(service.advanceProfileVersion(SESSION_ID, "profile-1", "profile-2")).isTrue();
-        assertThat(service.profileVersionSeenBy(SESSION_ID)).contains("profile-2");
+        assertThat(service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-1", "profile-2")).isTrue();
+        assertThat(service.profileVersionSeenBy(CANDIDATE_ID, SESSION_ID)).contains("profile-2");
     }
 
     /**
@@ -137,8 +140,8 @@ class AgentSessionServiceTest {
     @Test void anAdvanceFromAVersionTheSessionNoLongerHoldsIsRefused() {
         service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
 
-        assertThat(service.advanceProfileVersion(SESSION_ID, "someone-elses-version", "profile-9")).isFalse();
-        assertThat(service.profileVersionSeenBy(SESSION_ID)).contains("profile-1");
+        assertThat(service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "someone-elses-version", "profile-9")).isFalse();
+        assertThat(service.profileVersionSeenBy(CANDIDATE_ID, SESSION_ID)).contains("profile-1");
     }
 
     /** 推进版本不能顺手清掉岗位顺序：用户看到的还是同一份列表，序号仍然有效。 */
@@ -149,10 +152,10 @@ class AgentSessionServiceTest {
             Map.of(RuleType.POLITICAL_AFFILIATION, new EligibilityAssessment.RuleResult(
                 EligibilityStatus.NEEDS_CONFIRMATION, "候选人政治面貌尚未确认")))));
 
-        service.advanceProfileVersion(SESSION_ID, "profile-1", "profile-2");
         profiles.stored = candidate("profile-2");
+        service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-1", "profile-2");
 
-        assertThat(service.resolveOrdinal(SESSION_ID, 2).jobPostingId()).isEqualTo(second);
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 2).jobPostingId()).isEqualTo(second);
         assertThat(sessions.stored.get(SESSION_ID).pendingConfirmations()).hasSize(1);
     }
 
@@ -222,8 +225,176 @@ class AgentSessionServiceTest {
         profiles.others.put(other, candidate("profile-other", other));
 
         assertThatThrownBy(() -> service.remember(SESSION_ID, other, FILTERS, List.of(bundle(UUID.randomUUID()))))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("another candidate");
+            .isInstanceOf(AgentSessionService.SessionNotFoundException.class)
+            .hasMessageContaining("session not found");
+    }
+
+    @Test void everySessionOperationKeepsTheCandidateOwnershipBoundary() {
+        var before = service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+        UUID foreign = UUID.randomUUID();
+
+        assertThat(service.profileVersionSeenBy(foreign, SESSION_ID)).isEmpty();
+        assertThat(service.resolveOrdinal(foreign, SESSION_ID, 1).outcome()).isEqualTo(Outcome.NO_SESSION);
+        assertThatThrownBy(() -> service.requireOwned(foreign, SESSION_ID))
+            .isInstanceOf(AgentSessionService.SessionNotFoundException.class);
+        assertThatThrownBy(() -> service.rememberDescription(foreign, SESSION_ID, List.of()))
+            .isInstanceOf(AgentSessionService.SessionNotFoundException.class);
+        assertThatThrownBy(() -> service.advanceProfileVersion(foreign, SESSION_ID, "profile-1", "profile-2"))
+            .isInstanceOf(AgentSessionService.SessionNotFoundException.class);
+        assertThat(sessions.stored.get(SESSION_ID)).isEqualTo(before);
+    }
+
+    @Test void aFocusedExplanationRefreshesItsQuestionsWithoutReplacingTheSavedOrder() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        var political = needs(RuleType.POLITICAL_AFFILIATION);
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS,
+            List.of(bundle(first, political), bundle(second, political)));
+
+        var focused = service.rememberDescription(CANDIDATE_ID, SESSION_ID, List.of(bundle(second, political)));
+
+        assertThat(focused.lastJobIdsInOrder()).containsExactly(first, second);
+        assertThat(focused.filters()).isEqualTo(FILTERS);
+        assertThat(focused.profileVersion()).isEqualTo("profile-1");
+        assertThat(focused.pendingConfirmations()).singleElement().satisfies(item -> {
+            assertThat(item.factKey()).isEqualTo(CandidateFactKey.POLITICAL_AFFILIATION);
+            assertThat(item.jobPostingId()).isEqualTo(second);
+        });
+        assertThat(service.resolveOrdinal(CANDIDATE_ID, SESSION_ID, 2).jobPostingId()).isEqualTo(second);
+    }
+
+    @Test void aFocusedExplanationCannotSilentlyReplaceAConcurrentSessionUpdate() {
+        UUID job = UUID.randomUUID();
+        var before = service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(job)));
+        sessions.rejectNextCas = true;
+        assertThatThrownBy(() -> service.rememberDescription(CANDIDATE_ID, SESSION_ID,
+            List.of(bundle(job, needs(RuleType.GENDER)))))
+            .isInstanceOf(AgentSessionService.SessionChangedException.class);
+        assertThat(sessions.stored.get(SESSION_ID)).isEqualTo(before);
+    }
+
+    @Test void aNewListingCannotSilentlyReplaceAConcurrentConfirmationUpdate() {
+        var before = service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+        sessions.rejectNextCas = true;
+        assertThatThrownBy(() -> service.remember(SESSION_ID, CANDIDATE_ID, FILTERS,
+            List.of(bundle(UUID.randomUUID())))).isInstanceOf(AgentSessionService.SessionChangedException.class);
+        assertThat(sessions.stored.get(SESSION_ID)).isEqualTo(before);
+    }
+
+    @Test void focusedQuestionsRejectStaleProfilesAndJobsOutsideTheSavedList() {
+        UUID job = UUID.randomUUID();
+        var before = service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(job)));
+        assertThatThrownBy(() -> service.rememberDescription(CANDIDATE_ID, SESSION_ID,
+            List.of(bundle(UUID.randomUUID())))).isInstanceOf(AgentSessionService.SessionChangedException.class);
+        profiles.stored = candidate("profile-2");
+        assertThatThrownBy(() -> service.rememberDescription(CANDIDATE_ID, SESSION_ID,
+            List.of(bundle(job)))).isInstanceOf(AgentSessionService.SessionChangedException.class);
+        assertThat(sessions.stored.get(SESSION_ID)).isEqualTo(before);
+    }
+
+    @Test void advancementRemovesOnlyResolvedFieldsAndSupportsTheNextConfirmation() {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(
+            bundle(first, needs(RuleType.POLITICAL_AFFILIATION)), bundle(second, needs(RuleType.GENDER))));
+        profiles.stored = candidate("profile-2").withPoliticalAffiliation(PoliticalAffiliation.CPC_MEMBER);
+        confirm(CandidateFactKey.POLITICAL_AFFILIATION);
+
+        assertThat(service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-1", "profile-2")).isTrue();
+        assertThat(sessions.stored.get(SESSION_ID).pendingConfirmations())
+            .extracting(AgentSession.PendingConfirmation::factKey).containsExactly(CandidateFactKey.GENDER);
+        profiles.stored = candidate("profile-3").withPoliticalAffiliation(PoliticalAffiliation.CPC_MEMBER)
+            .withGender(Gender.MALE);
+        confirm(CandidateFactKey.GENDER);
+
+        assertThat(service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-2", "profile-3")).isTrue();
+        assertThat(sessions.stored.get(SESSION_ID).pendingConfirmations()).isEmpty();
+        assertThat(sessions.stored.get(SESSION_ID).lastJobIdsInOrder()).containsExactly(first, second);
+    }
+
+    @Test void advancementDoesNotPromoteOverAnUnrelatedProfileEditOrFailedCas() {
+        var before = service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(bundle(UUID.randomUUID())));
+        profiles.stored = candidate("profile-unrelated");
+        assertThat(service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-1", "profile-2")).isFalse();
+        profiles.stored = candidate("profile-2");
+        sessions.rejectNextCas = true;
+        assertThat(service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-1", "profile-2")).isFalse();
+        assertThat(sessions.stored.get(SESSION_ID)).isEqualTo(before);
+    }
+
+    @Test void unknownAndUndeclaredAnswersRemainPendingEvenWithAnErroneousConfirmedMarker() {
+        UUID job = UUID.randomUUID();
+        var decision = withGraduateClause(bundle(job, Map.of(
+            RuleType.GENDER, needs(RuleType.GENDER).get(RuleType.GENDER),
+            RuleType.POLITICAL_AFFILIATION, needs(RuleType.POLITICAL_AFFILIATION).get(RuleType.POLITICAL_AFFILIATION))),
+            graduateClause(true, true, GraduateEligibilityRule.EvidenceState.CONFIRMED));
+        for (var key : List.of(CandidateFactKey.GENDER, CandidateFactKey.POLITICAL_AFFILIATION,
+            CandidateFactKey.EMPLOYER_SETTLEMENT_AT_APPLICATION, CandidateFactKey.SOCIAL_INSURANCE_AT_APPLICATION)) confirm(key);
+
+        service.remember(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(decision));
+        profiles.stored = candidate("profile-2");
+        service.advanceProfileVersion(CANDIDATE_ID, SESSION_ID, "profile-1", "profile-2");
+
+        assertThat(sessions.stored.get(SESSION_ID).pendingConfirmations())
+            .extracting(AgentSession.PendingConfirmation::factKey).containsExactlyInAnyOrder(
+                CandidateFactKey.GENDER, CandidateFactKey.POLITICAL_AFFILIATION,
+                CandidateFactKey.EMPLOYER_SETTLEMENT_AT_APPLICATION, CandidateFactKey.SOCIAL_INSURANCE_AT_APPLICATION);
+    }
+
+    @Test void applicationQuestionsRequireEachActualConfirmedSourceRestrictionIndependently() {
+        UUID job = UUID.randomUUID();
+        var empty = bundle(job);
+        assertThat(service.pendingFor(CANDIDATE_ID, List.of(empty))).isEmpty();
+        assertThat(service.pendingFor(CANDIDATE_ID, List.of(withGraduateClause(empty,
+            graduateClause(true, true, GraduateEligibilityRule.EvidenceState.REVIEW_REQUIRED))))).isEmpty();
+        assertThat(service.pendingFor(CANDIDATE_ID, List.of(withGraduateClause(empty,
+            graduateClause(true, false, GraduateEligibilityRule.EvidenceState.CONFIRMED)))))
+            .extracting(AgentSession.PendingConfirmation::factKey)
+            .containsExactly(CandidateFactKey.EMPLOYER_SETTLEMENT_AT_APPLICATION);
+        assertThat(service.pendingFor(CANDIDATE_ID, List.of(withGraduateClause(empty,
+            graduateClause(false, true, GraduateEligibilityRule.EvidenceState.CONFIRMED)))))
+            .extracting(AgentSession.PendingConfirmation::factKey)
+            .containsExactly(CandidateFactKey.SOCIAL_INSURANCE_AT_APPLICATION);
+    }
+
+    @Test void unsupportedSourceRulesAreNotTurnedIntoPersonalQuestions() {
+        var original = bundle(UUID.randomUUID());
+        var wrongRule = bundle(original.decision().jobPostingId(), needs(RuleType.POLITICAL_AFFILIATION));
+        var noSourceRestriction = new DecisionBundle(wrongRule.eligibility(), wrongRule.fit(), wrongRule.stability(),
+            wrongRule.decision(), original.jobContext());
+        assertThat(service.pendingFor(CANDIDATE_ID, List.of(noSourceRestriction))).isEmpty();
+    }
+
+    private static Map<RuleType, EligibilityAssessment.RuleResult> needs(RuleType rule) {
+        return Map.of(rule, new EligibilityAssessment.RuleResult(EligibilityStatus.NEEDS_CONFIRMATION, "请确认候选人资料"));
+    }
+
+    private void confirm(CandidateFactKey key) {
+        var values = new ArrayList<>(confirmations.stored);
+        values.removeIf(item -> item.factKey() == key);
+        values.add(new CandidateFacts.CandidateFactConfirmation(CANDIDATE_ID, key,
+            CandidateFacts.CandidateFactStatus.CONFIRMED, CandidateFacts.fingerprint(profiles.stored, key),
+            CandidateFacts.CandidateFactSource.USER_CONFIRMED, CLOCK.instant(), CLOCK.instant()));
+        confirmations.stored = values;
+    }
+
+    private static GraduateEligibilityRule graduateClause(boolean employer, boolean insurance,
+                                                          GraduateEligibilityRule.EvidenceState evidence) {
+        return new GraduateEligibilityRule(2026, Set.of(2026), Set.of(GraduateEligibilityRule.CohortScope.CURRENT_YEAR),
+            false, GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null,
+            GraduateEligibilityRule.RequirementTiming.UNSPECIFIED, null, employer, insurance,
+            "报名时未落实工作单位及社保限制", evidence);
+    }
+
+    private static DecisionBundle withGraduateClause(DecisionBundle bundle, GraduateEligibilityRule clause) {
+        var context = bundle.jobContext();
+        var old = context.event();
+        var event = new RecruitmentEvent(old.id(), old.title(), old.recruitmentYear(), old.eventType(),
+            old.publishedOn(), old.applicationStartsOn(), old.applicationEndsOn(), old.sourceUrl(),
+            old.defaultEmploymentType(), old.evidenceIds(), null, null, null, null, null, null, null, null, null,
+            List.of(), clause.rawText(), null, null, null, null, clause, null, null, null, null, null, null);
+        return new DecisionBundle(bundle.eligibility(), bundle.fit(), bundle.stability(), bundle.decision(),
+            new JobContext(context.job(), context.organization(), event, context.contentFingerprint(), context.active()));
     }
 
     // --- 固定装置 ---
@@ -247,7 +418,11 @@ class AgentSessionServiceTest {
         var job = new JobPosting(jobId, eventId, organizationId, "J-1", "信息技术岗位",
             JobFamily.INFORMATION_SYSTEMS, EmploymentType.ESTABLISHMENT, "杭州", 1,
             EducationLevel.BACHELOR, Set.of(), Set.of(), null, null, null, Set.of(), "",
-            "https://example.gov.cn/job", evidence);
+            "https://example.gov.cn/job", evidence,
+            null, null, null, null, null, null, null,
+            rules.containsKey(RuleType.GENDER) ? "男性" : null,
+            rules.containsKey(RuleType.POLITICAL_AFFILIATION) ? "限中共党员" : null,
+            null, null, null, null, null);
         var organization = new Organization(organizationId, "杭州市信息中心", OrganizationType.PUBLIC_INSTITUTION,
             "市级", "浙江", "杭州", null, null, "https://example.gov.cn");
         var event = new RecruitmentEvent(eventId, "公开招聘", 2026, EventType.PUBLIC_INSTITUTION,
@@ -268,8 +443,21 @@ class AgentSessionServiceTest {
 
     private static final class InMemorySessions implements AgentSessionPorts.Sessions {
         private final Map<UUID, AgentSession> stored = new HashMap<>();
+        boolean rejectNextCas;
         public Optional<AgentSession> find(UUID sessionId) { return Optional.ofNullable(stored.get(sessionId)); }
         public AgentSession save(AgentSession session) { stored.put(session.sessionId(), session); return session; }
+        public boolean compareAndSet(AgentSession expected, AgentSession replacement) {
+            if (rejectNextCas) { rejectNextCas = false; return false; }
+            return stored.replace(expected.sessionId(), expected, replacement);
+        }
+    }
+
+    private static final class InMemoryConfirmations implements RepositoryPorts.CandidateFactConfirmations {
+        private List<CandidateFacts.CandidateFactConfirmation> stored = List.of();
+        public List<CandidateFacts.CandidateFactConfirmation> findByCandidateId(UUID id) { return stored; }
+        public List<CandidateFacts.CandidateFactConfirmation> saveAll(List<CandidateFacts.CandidateFactConfirmation> values) {
+            stored = List.copyOf(values); return stored;
+        }
     }
 
     private static final class InMemoryProfiles implements RepositoryPorts.CandidateProfiles {

@@ -56,8 +56,9 @@ career-os:
     lock-pool-size: ${CAREER_OS_EXTRACTION_LOCK_POOL_SIZE:8}
     lock-connection-timeout-ms: ${CAREER_OS_EXTRACTION_LOCK_CONNECTION_TIMEOUT_MS:5000}
     # 相同指纹的并发提交在此等待前一次抽取完成（含模型往返）。
-    # 模型调用已不在数据库事务内，但仍在 advisory lock 内以保证只调用一次；
-    # 若使用较慢的模型，这个值需要大于模型的最坏往返时间。
+    # 已知未修：抽取模型调用仍在事务及 advisory lock 内，会占用主池连接。
+    # 不能用调大等待时间或 Agent 规划器的 20 秒上限声称连接资源问题已解决。
+    # 详情与回退原因见 docs/PHASE2_API.md「并发与事务边界」。
     lock-wait-timeout-ms: ${CAREER_OS_EXTRACTION_LOCK_WAIT_TIMEOUT_MS:30000}
     llm:
       enabled: ${CAREER_OS_LLM_ENABLED:false}
@@ -77,5 +78,10 @@ career-os:
     lock-poll-interval-ms: ${CAREER_OS_ACQUISITION_LOCK_POLL_INTERVAL_MS:50}
     live-smoke-enabled: ${CAREER_OS_ACQUISITION_LIVE_SMOKE_ENABLED:false}
   agent:
+    # 第一阶段放行条件未齐：旧 LLM 开关不能单独开启动态工具选择。
+    dynamic-tools:
+      enabled: ${CAREER_OS_AGENT_DYNAMIC_TOOLS_ENABLED:false}
+    acceptance:
+      enabled: ${CAREER_OS_AGENT_ACCEPTANCE_ENABLED:false}
     llm:
       enabled: ${CAREER_OS_AGENT_LLM_ENABLED:false}

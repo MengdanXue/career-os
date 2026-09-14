@@ -143,4 +143,64 @@ describe('WatchlistPanel', () => {
     expect(await screen.findByText('还没有关注任何岗位')).toBeInTheDocument()
     expect(screen.getByText(/点「关注」/)).toBeInTheDocument()
   })
+
+  it('shows an unread loading state instead of an empty or unchanged list', () => {
+    renderPanel([], vi.fn(() => new Promise<Response>(() => {})))
+    expect(screen.getByText('关注清单尚未读取')).toBeInTheDocument()
+    expect(screen.queryByText('还没有关注任何岗位')).not.toBeInTheDocument()
+    expect(screen.queryByText('关注岗位暂无结论变化')).not.toBeInTheDocument()
+  })
+
+  it('shows a failed fetch with a real read-only retry and only then confirms an empty list', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ detail: '测试读取失败' }), {
+      status: 503, headers: { 'Content-Type': 'application/json' },
+    })).mockResolvedValueOnce(json({ candidateId, asOf, items: [] }))
+    renderPanel([], fetch)
+    expect(await screen.findByText('关注清单刷新失败，不能判断是否有变化')).toBeInTheDocument()
+    expect(screen.queryByText('还没有关注任何岗位')).not.toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('测试读取失败')
+    await userEvent.click(screen.getByRole('button', { name: '刷新关注清单' }))
+    expect(await screen.findByText('还没有关注任何岗位')).toBeInTheDocument()
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(fetch.mock.calls.every(call => !call[1]?.method || call[1].method === 'GET')).toBe(true)
+  })
+
+  it('does not call a budget-skipped row unchanged or evaluation-failed', async () => {
+    renderPanel([job({ currentStatus: null, changedSinceLastSeen: false, readState: 'NOT_REFRESHED',
+      errorCode: 'CALL_BUDGET_EXHAUSTED', evaluationCounted: false })])
+    expect(await screen.findByText('这个岗位尚未刷新')).toBeInTheDocument()
+    expect(screen.getByText(/本次评估预算已用完/)).toBeInTheDocument()
+    expect(screen.queryByText('关注岗位暂无结论变化')).not.toBeInTheDocument()
+    expect(screen.queryByText('这个岗位这次读不到结论')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '知道了' })).not.toBeInTheDocument()
+  })
+
+  it('does not report no changes while any row has an unknown comparison baseline', async () => {
+    renderPanel([job({ lastSeenStatus: null, baselineMissing: true, changedSinceLastSeen: false })])
+    expect(await screen.findByText('1 个关注岗位尚未建立对照基准')).toBeInTheDocument()
+    expect(screen.queryByText('关注岗位暂无结论变化')).not.toBeInTheDocument()
+  })
+
+  it('keeps an old changed snapshot explicitly stale on refresh failure and prevents acknowledgement', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(json({ candidateId, asOf, items: [job()] }))
+      .mockResolvedValueOnce(new Response('{}', { status: 503, headers: { 'Content-Type': 'application/json' } }))
+    renderPanel([job()], fetch)
+    await screen.findByText('待确认 → 可报')
+    await userEvent.click(screen.getByRole('button', { name: '刷新关注清单' }))
+    expect(await screen.findByText('关注清单刷新失败，不能判断是否有变化')).toBeInTheDocument()
+    expect(screen.getByText(/上次读取的快照，不代表当前结论/)).toBeInTheDocument()
+    expect(screen.getByText('待确认 → 可报')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '知道了' })).toBeDisabled()
+  })
+
+  it('displays the exact evaluator version and keeps a failed acknowledgement visible', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(json({ candidateId, asOf, items: [job()] }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: '确认已读没有成功' }), { status: 503, headers: { 'Content-Type': 'application/json' } }))
+    renderPanel([job()], fetch)
+    expect(await screen.findByText('v7')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '知道了' }))
+    expect(await screen.findByText('确认已读没有成功')).toBeInTheDocument()
+    expect(screen.getByText('待确认 → 可报')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '知道了' })).toBeEnabled()
+  })
 })
