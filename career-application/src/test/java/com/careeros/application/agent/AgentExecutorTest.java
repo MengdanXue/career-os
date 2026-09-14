@@ -475,6 +475,67 @@ class AgentExecutorTest {
             }
         };
     }
+    // --- G3：仍被放行的无依据文本 ---
+
+    /**
+     * 声明成"纯澄清"的追问照样可以夹带结论。
+     *
+     * <p>这是复现包里仍被放行的反例：{@code BASIS none} 一写，这段话就完全不受依据检查，
+     * 而它说的"这些岗位都挺适合你的"既没有数字也没有判定词，叙述校验器也放行。
+     * 用户看到的是一句系统从来没算过的判断。
+     */
+    @Test void aClarifyingQuestionCannotSmuggleAJudgement() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "有什么合适的",
+            state -> new PlannerStep.AskUser("这些岗位都挺适合你的，要继续看吗？",
+                AgentTooling.Basis.clarifying()));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).isNotEmpty();
+    }
+
+    /** 陈述句加一个问号也不行：句号之前那半句仍然是个没算过的判断。 */
+    @Test void aStatementFollowedByAQuestionIsRefused() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "有什么合适的",
+            state -> new PlannerStep.AskUser("这批里有几个值得报。要我接着看吗？",
+                AgentTooling.Basis.clarifying()));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).isNotEmpty();
+    }
+
+    /**
+     * 点名了依据，也不能替系统下推荐结论。
+     *
+     * <p>"适合你""建议优先报考"是判定，和"可报""T1"一样只能由确定性事实块给出。
+     * 有依据说明这段话背后有数据，不说明这个判断是系统算出来的。
+     */
+    @Test void aRecommendationIsRefusedEvenWhenItNamesEvidence() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "有什么合适的", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("这些岗位都很适合你，建议优先准备。", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).isNotEmpty();
+    }
+
+    /** 正常的连接性叙述不能被上面几条误伤。 */
+    @Test void aPlainConnectiveNarrativeIsStillAccepted() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "有什么合适的", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("下面按稳定性排序，先看前面几个。", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isEqualTo("下面按稳定性排序，先看前面几个。");
+        assertThat(run.violations()).isEmpty();
+    }
+
     // --- 多轮：上一轮的上下文必须真的被用上 ---
 
     /**

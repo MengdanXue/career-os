@@ -213,9 +213,13 @@ public final class ReadOnlyTools {
             }
         }
         for (ToolParameter parameter : parameters) {
+            boolean given = context.call().arguments().containsKey(parameter.name());
             String raw = context.argument(parameter.name());
             if (raw == null || raw.isBlank()) {
                 if (parameter.required()) return "缺少必填参数「" + parameter.name() + "」。";
+                // 给了键却是空值，和"没给"不是一回事：当成没给就又变回静默降级——
+                // tier= 会返回全量结果，读起来和"这个分层就是这些"完全一样。
+                if (given) return "参数「" + parameter.name() + "」给了空值。要么不写，要么给一个取值。";
                 continue;
             }
             if (!parameter.allowedValues().isEmpty()

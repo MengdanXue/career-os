@@ -55,6 +55,34 @@ public final class AgentSessionService {
     }
 
     /**
+     * 记下一轮动态运行的结果：这一轮的范围、列表顺序和还没答的问题。
+     *
+     * <p>与 {@link #remember} 的区别是它不需要 {@code DecisionBundle}——动态运行拿到的是工具
+     * 已经算好的岗位顺序，再评估一遍只会多一次逐岗扇出，而且可能算出和用户屏幕上不同的结果。
+     *
+     * <p><b>只读入不写回，会话就永远停在第一轮。</b> 用户在"余杭"那一轮看到的是新列表，
+     * 下一句"第二个"却解析回上一轮的杭州列表，系统一本正经地讲另一个岗位，而他看不出来。
+     */
+    public AgentSession rememberRun(UUID sessionId, UUID candidateId, SessionFilters filters,
+                                    List<UUID> jobIdsInOrder, List<PendingConfirmation> pending) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        Objects.requireNonNull(candidateId, "candidateId");
+        var profile = candidates.findById(candidateId).orElseThrow(() ->
+            new CandidateProfileService.CandidateProfileNotFoundException("Candidate not found: " + candidateId));
+        var existing = sessions.find(sessionId).orElse(null);
+        if (existing != null && !existing.candidateId().equals(candidateId)) {
+            throw new IllegalArgumentException("session belongs to another candidate");
+        }
+        var order = jobIdsInOrder == null ? List.<UUID>of() : jobIdsInOrder.stream().distinct().toList();
+        var items = pending == null ? List.<PendingConfirmation>of() : pending;
+        var session = existing == null
+            ? new AgentSession(sessionId, candidateId, filters, order, items,
+                profile.profileVersion(), clock.instant())
+            : existing.withListing(filters, order, items, profile.profileVersion(), clock.instant());
+        return sessions.save(session);
+    }
+
+    /**
      * 把"第 N 个"解析回岗位。
      *
      * @return 解析结果。资料已变时返回 {@link Reference#staleListing()}——不重新排名，

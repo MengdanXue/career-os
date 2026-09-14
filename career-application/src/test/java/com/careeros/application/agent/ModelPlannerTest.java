@@ -142,6 +142,62 @@ class ModelPlannerTest {
         assertThat(finish.narrative()).isEqualTo("下面按稳定性排序。");
     }
 
+    // --- G1：参数没被解释掉的部分不能静默消失 ---
+
+    /**
+     * TOOL 行上不是 {@code 键=值} 的内容会被整段丢掉，剩下的变成一次"没有筛选"的查询。
+     *
+     * <p>这是复现包里仍被放行的旧参数反例：模型写 {@code TOOL search_jobs 杭州}，
+     * 意思清清楚楚是杭州，系统却发出一次全量查询，然后把全国的岗位当成杭州的答复给用户。
+     * 比参数取值不认识更隐蔽——那种至少还有个失败观察。
+     */
+    @Test void bareArgumentTextIsNotSilentlyDropped() {
+        assertThat(ModelPlanner.parse("TOOL search_jobs 杭州")).isNull();
+        assertThat(ModelPlanner.parse("TOOL search_jobs location:杭州")).isNull();
+        assertThat(ModelPlanner.parse("TOOL search_jobs location=杭州 而且要事业编")).isNull();
+    }
+
+    /**
+     * 同一个键给了两个值，不能静默留下最后一个。
+     *
+     * <p>{@code tier=T1 tier=T9} 现在会按 T9 查——模型自相矛盾的一步被悄悄解释成了其中一种，
+     * 而用户看到的答复对应的是他从没要求过的范围。
+     */
+    @Test void aRepeatedArgumentKeyVoidsTheTurnRatherThanKeepingTheLastValue() {
+        assertThat(ModelPlanner.parse("TOOL search_jobs tier=T1 tier=T9")).isNull();
+    }
+
+    /** 引号里的空格照常支持，这条不能被上面几条误伤。 */
+    @Test void quotedValuesWithSpacesStillParse() {
+        var step = (PlannerStep.CallTool) ModelPlanner.parse("TOOL search_jobs location=\"杭州 余杭\"");
+        assertThat(step.call().argument("location")).isEqualTo("杭州 余杭");
+    }
+
+    // --- G2：BASIS 的声明不能被一个字悄悄改写 ---
+
+    /**
+     * "无"出现在任何位置都会把整条依据翻成"纯澄清"。
+     *
+     * <p>{@code BASIS 1，无其他依据} 本意是"依据第 1 条"，却被当成"不依据任何结果"——
+     * 点名的那条再也不会被核对。判定靠的是整串里出现过某个字，不是这串写的是什么。
+     */
+    @Test void aClarifyingMarkerBuriedInProseDoesNotVoidNamedEvidence() {
+        assertThat(ModelPlanner.parse("ASK 要放宽吗？\nBASIS 1，无其他依据")).isNull();
+        assertThat(ModelPlanner.parse("FINISH 下面按稳定性排序。\nBASIS 依据第 1 条，无别的")).isNull();
+    }
+
+    /** 给了两条互相矛盾的 BASIS，不能静默取第一条。 */
+    @Test void twoBasisLinesVoidTheTurnRatherThanTakingTheFirst() {
+        assertThat(ModelPlanner.parse("ASK 要放宽吗？\nBASIS none\nBASIS 1")).isNull();
+        assertThat(ModelPlanner.parse("FINISH 好的。\nBASIS 1\nBASIS 2")).isNull();
+    }
+
+    /** 干净的 none 照常识别，这条不能被上面两条误伤。 */
+    @Test void aPlainNoneIsStillRecognisedAsClarifying() {
+        var ask = (PlannerStep.AskUser) ModelPlanner.parse("ASK 你说的杭州是指市区吗？\nBASIS none");
+        assertThat(ask.basis().clarifyingOnly()).isTrue();
+    }
+
     // --- 越权请求由执行器拒绝，不是这里悄悄过滤 ---
 
     /**

@@ -20,10 +20,18 @@ import { runAgent, type AgentRunResponse } from './agentRunApi'
  *
  * <p><b>没有模型就明说。</b> 后端返回 503 时这里写"模型未启用"，不退化成一个写死的流程冒充它。
  */
-export function AgentRunPanel({ candidateId, sessionId }: { candidateId: string; sessionId?: string }) {
+export function AgentRunPanel({ candidateId, sessionId, onSession }: {
+  candidateId: string
+  sessionId?: string
+  /** 这一轮开出来或续上的会话。不交回去，下一句又是从零开始。 */
+  onSession?: (sessionId: string) => void
+}) {
   const [question, setQuestion] = useState('')
   const [open, setOpen] = useState(false)
-  const run = useMutation({ mutationFn: (value: string) => runAgent(candidateId, value, sessionId) })
+  const run = useMutation({
+    mutationFn: (value: string) => runAgent(candidateId, value, sessionId),
+    onSuccess: result => { if (result.sessionId) onSession?.(result.sessionId) },
+  })
 
   function submit(event: FormEvent) {
     event.preventDefault()

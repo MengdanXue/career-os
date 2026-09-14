@@ -95,7 +95,8 @@ export function AgentComposer({ expanded = false }: { expanded?: boolean }) {
       {query.data && <AgentAnswer result={query.data} candidateId={candidateId} />}
       {error && <p className="agent-error" role="alert">{error}</p>}
       <form onSubmit={submit}><label htmlFor="career-agent-question">向 Career OS 提问</label><div><textarea id="career-agent-question" rows={2} value={question} onChange={event => setQuestion(event.target.value)} placeholder="例如：本周最值得准备什么？" /><button type="submit" disabled={!question.trim() || query.isPending}>{query.isPending ? '分析中…' : '分析'}</button></div></form>
-      <AgentRunPanel candidateId={candidateId} sessionId={sessionId} />
+      <AgentRunPanel candidateId={candidateId} sessionId={sessionId}
+        onSession={next => { setSessionId(next); rememberSession(next) }} />
     </div>}
   </aside>
 }
