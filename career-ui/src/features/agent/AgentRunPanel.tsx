@@ -1,6 +1,9 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { ApiProblem } from '../../api/http'
+import { statusLabels, type EligibilityStatus } from './confirmationApi'
+import { PendingConfirmations } from './PendingConfirmations'
 import { runAgent, type AgentRunResponse } from './agentRunApi'
 
 /**
@@ -53,7 +56,7 @@ export function AgentRunPanel({ candidateId, sessionId }: { candidateId: string;
       </p>}
       {problem && problem.code !== 'PLANNER_UNAVAILABLE' &&
         <p className="agent-error" role="alert">{problem.message}</p>}
-      {run.data && <RunResult result={run.data} />}
+      {run.data && <RunResult result={run.data} candidateId={candidateId} />}
     </>}
   </section>
 }
@@ -66,7 +69,7 @@ const outcomeLabels: Record<AgentRunResponse['outcome'], string> = {
   PLANNER_FAILED: '这一步没有给出计划',
 }
 
-function RunResult({ result }: { result: AgentRunResponse }) {
+function RunResult({ result, candidateId }: { result: AgentRunResponse; candidateId: string }) {
   return <div className="agent-run-result" aria-live="polite">
     <p className="agent-run-outcome">{outcomeLabels[result.outcome]}</p>
 
@@ -78,10 +81,30 @@ function RunResult({ result }: { result: AgentRunResponse }) {
       <ul className="answer-violations">{result.violations.map(reason => <li key={reason}>{reason}</li>)}</ul>
     </div>}
 
+    {/* 岗位由程序渲染。让模型复述标题和结论就等于把事实交给它——写错写漏都看不出来。 */}
+    {result.jobs.length > 0 && <ul className="agent-run-jobs" aria-label="岗位结果">
+      {result.jobs.map(job => <li key={job.jobPostingId}>
+        <strong>{job.jobTitle ?? job.jobPostingId}</strong>
+        <small>{[job.organizationName, job.tier && `分层 ${job.tier}`,
+          job.eligibilityStatus && statusLabels[job.eligibilityStatus as EligibilityStatus] ]
+          .filter(Boolean).join(' · ')}</small>
+        {job.applicationEndsOn && <small>报名截止 {job.applicationEndsOn}</small>}
+        {job.restrictions.length > 0 && <ul className="agent-run-restrictions">
+          {job.restrictions.map(reason => <li key={reason}>{reason}</li>)}
+        </ul>}
+        <Link to={`/opportunities/${job.jobPostingId}`}>查看档案 →</Link>
+      </li>)}
+    </ul>}
+
+    {result.sessionId && result.pendingConfirmations.length > 0 && <PendingConfirmations
+      candidateId={candidateId} sessionId={result.sessionId} items={result.pendingConfirmations} />}
+
     <p className="agent-run-budget">
       本次消耗预算 {result.budgetSpent} / {result.budgetLimit} 个单位
       （一次工具调用算一个，工具内部每评估一个岗位再算一个）；
-      背后有 {result.groundedIn} 条成功的工具结果。
+      {result.groundedOn.length > 0
+        ? `这段话依据第 ${result.groundedOn.join('、')} 条结果。`
+        : '这段话没有点名依据。'}
     </p>
 
     <details className="agent-run-trace">

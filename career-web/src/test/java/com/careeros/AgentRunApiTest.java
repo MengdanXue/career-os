@@ -1,11 +1,13 @@
 package com.careeros;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.careeros.application.AgentSession;
 import com.careeros.application.AgentSessionService;
+import com.careeros.application.CandidateProfileService;
 import com.careeros.application.agent.AgentExecutor;
 import com.careeros.application.agent.AgentTooling;
 import com.careeros.application.agent.AgentTooling.AgentPlanner;
@@ -54,9 +56,12 @@ class AgentRunApiTest {
         return sessions;
     }
 
+    private static final UUID FIRST_JOB = UUID.randomUUID();
+    private static final UUID SECOND_JOB = UUID.randomUUID();
+
     private static AgentSession session() {
-        return new AgentSession(SESSION, CANDIDATE, new AgentSession.SessionFilters(null, null, null, 5),
-            List.of(), List.of(), "profile-7", Instant.parse("2026-09-01T00:00:00Z"));
+        return new AgentSession(SESSION, CANDIDATE, new AgentSession.SessionFilters(null, "杭州", null, 5),
+            List.of(FIRST_JOB, SECOND_JOB), List.of(), "profile-7", Instant.parse("2026-09-01T00:00:00Z"));
     }
 
     private static org.springframework.test.web.servlet.MockMvc mvc(AgentPlanner planner) {
@@ -64,10 +69,20 @@ class AgentRunApiTest {
     }
 
     private static org.springframework.test.web.servlet.MockMvc mvc(AgentPlanner planner, AgentSessionService s) {
-        var executor = new AgentExecutor(List.of(tool("search_jobs", Map.of("count", 1))));
-        return MockMvcBuilders.standaloneSetup(new AgentRunController(executor, provider(planner), s))
+        var executor = new AgentExecutor(List.of(tool("search_jobs", Map.of("count", 1,
+            "jobs", List.of(Map.of("jobPostingId", JOB.toString(), "jobTitle", "信息中心技术岗",
+                "organizationName", "杭州市数字事业中心", "eligibilityStatus", "NEEDS_CONFIRMATION",
+                "tier", "T3", "applicationEndsOn", "2026-12-01"))))));
+        var profiles = org.mockito.Mockito.mock(CandidateProfileService.class);
+        var profile = org.mockito.Mockito.mock(com.careeros.domain.CandidateProfile.class);
+        org.mockito.Mockito.lenient().when(profile.profileVersion()).thenReturn("profile-7");
+        org.mockito.Mockito.lenient().when(profiles.facts(any())).thenReturn(
+            new CandidateProfileService.CandidateProfileFacts(profile, Map.of(), 0, 0, 0, false));
+        return MockMvcBuilders.standaloneSetup(new AgentRunController(executor, provider(planner), s, profiles))
             .setControllerAdvice(new ApiExceptionHandler()).build();
     }
+
+    private static final UUID JOB = UUID.randomUUID();
 
     private static String body(String question, UUID sessionId) {
         return "{\"question\":\"" + question + "\""
@@ -91,7 +106,7 @@ class AgentRunApiTest {
     @Test void theResponseExposesTheToolCatalogueDownToItsParameters() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。"))
+            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
             .andExpect(status().isOk())
@@ -105,7 +120,7 @@ class AgentRunApiTest {
     @Test void theTraceShowsRefusedToolRequests() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("update_profile", "value", "X"), "想改资料")
-            : new PlannerStep.Finish("我不能替你修改资料。"))
+            : new PlannerStep.Finish("我不能替你修改资料。", AgentTooling.Basis.clarifying()))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("改一下我的资料", null)))
             .andExpect(status().isOk())
@@ -118,7 +133,7 @@ class AgentRunApiTest {
     @Test void aRejectedNarrativeIsNotReturned() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("这个岗位你是可报的，适配 72 分。"))
+            : new PlannerStep.Finish("这个岗位你是可报的，适配 72 分。", AgentTooling.Basis.on(1)))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("怎么样", null)))
             .andExpect(status().isOk())
@@ -130,20 +145,20 @@ class AgentRunApiTest {
     @Test void theResponseReportsTheBudgetAgainstItsLimit() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。"))
+            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.budgetSpent").value(1))
             .andExpect(jsonPath("$.budgetLimit").value(50))
-            .andExpect(jsonPath("$.groundedIn").value(1));
+            .andExpect(jsonPath("$.groundedOn[0]").value(1));
     }
 
     /** 续跑要带上会话记着的资料版本，页面回答待确认问题时用得上。 */
     @Test void continuingASessionReturnsItsProfileVersion() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。"))
+            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("还有别的吗", SESSION)))
             .andExpect(status().isOk())
@@ -158,10 +173,60 @@ class AgentRunApiTest {
      * 而且"不存在"和"不是你的"要返回同一个 404，否则枚举一遍就知道哪些会话存在。
      */
     @Test void aSessionBelongingToSomeoneElseIsNotFound() throws Exception {
-        mvc(state -> new PlannerStep.Finish("好的。"), sessions(null))
+        mvc(state -> new PlannerStep.Finish("好的。", AgentTooling.Basis.clarifying()), sessions(null))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("还有别的吗", SESSION)))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.code").value("SESSION_NOT_FOUND"));
+    }
+    /**
+     * 岗位结果由程序渲染，不是从模型那段话里抠出来的。
+     *
+     * <p>让模型复述岗位标题和结论，就等于把事实交给它——它可以写错、写漏、张冠李戴，
+     * 而读的人看不出来。这里的字段全部来自工具返回的结构化数据。
+     */
+    @Test void theJobsAreRenderedFromToolDataRatherThanTheModelText() throws Exception {
+        mvc(state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)))
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.jobs[0].jobPostingId").value(JOB.toString()))
+            .andExpect(jsonPath("$.jobs[0].jobTitle").value("信息中心技术岗"))
+            .andExpect(jsonPath("$.jobs[0].eligibilityStatus").value("NEEDS_CONFIRMATION"))
+            .andExpect(jsonPath("$.jobs[0].applicationEndsOn").value("2026-12-01"));
+    }
+
+    /**
+     * 续跑要把上一轮真的交给执行器，不是把 sessionId 原样回传。
+     *
+     * <p>这条断言的是规划器看得见上一轮的范围。只检查 sessionId 回来了，
+     * 用户在追问之后只答一句"余杭"照样会被当成一个孤立的新问题。
+     */
+    @Test void continuingASessionHandsThePreviousScopeToThePlanner() throws Exception {
+        var seenLocation = new java.util.ArrayList<String>();
+        mvc(state -> {
+            seenLocation.add(state.session().location());
+            return new PlannerStep.Finish("好的。", AgentTooling.Basis.clarifying());
+        }).perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("余杭", SESSION)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.sessionId").value(SESSION.toString()));
+
+        assertThat(seenLocation).containsExactly("杭州");
+    }
+
+    /** 上一轮的列表顺序也要交过去，"第二个"才有东西可指。 */
+    @Test void continuingASessionHandsThePreviousListingToThePlanner() throws Exception {
+        var seenJobs = new java.util.ArrayList<java.util.UUID>();
+        mvc(state -> {
+            state.session().jobsInOrder().forEach(job -> seenJobs.add(job.jobPostingId()));
+            return new PlannerStep.Finish("好的。", AgentTooling.Basis.clarifying());
+        }).perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("第二个怎么样", SESSION)))
+            .andExpect(status().isOk());
+
+        assertThat(seenJobs).containsExactly(FIRST_JOB, SECOND_JOB);
     }
 }

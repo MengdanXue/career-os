@@ -120,19 +120,20 @@ describe('AgentComposer', () => {
       sessionId: '01992f09-0000-7000-8000-0000000000aa',
       profileVersion: 'profile-7',
       stale: false,
-      lastJobIdsInOrder: ['01992f09-0000-7000-8000-0000000000bb'],
+      jobIdsInOrder: ['01992f09-0000-7000-8000-0000000000bb'],
       pendingConfirmations: [{
         factKey: 'POLITICAL_AFFILIATION',
         question: '候选人政治面貌尚未确认',
         jobPostingId: '01992f09-0000-7000-8000-0000000000bb',
+        answered: false,
       }],
-      updatedAt: '2026-09-01T00:00:00Z',
     }))
     vi.stubGlobal('fetch', fetch)
     render(<AppProviders><AgentComposer expanded /></AppProviders>)
 
     expect(await screen.findByText('候选人政治面貌尚未确认')).toBeInTheDocument()
-    expect(String(fetch.mock.calls[0][0])).toContain('/agent-sessions/01992f09-0000-7000-8000-0000000000aa')
+    expect(String(fetch.mock.calls[0][0]))
+      .toContain('/agent-queries/01992f09-0000-7000-8000-0000000000aa')
   })
 
   /**
@@ -146,7 +147,7 @@ describe('AgentComposer', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       sessionId: '01992f09-0000-7000-8000-0000000000aa',
       profileVersion: 'profile-7', stale: true,
-      lastJobIdsInOrder: [], pendingConfirmations: [], updatedAt: '2026-09-01T00:00:00Z',
+      jobIdsInOrder: [], pendingConfirmations: [],
     })))
     render(<AppProviders><AgentComposer expanded /></AppProviders>)
 
@@ -163,5 +164,32 @@ describe('AgentComposer', () => {
 
     expect(await screen.findByLabelText('问题示例')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  /**
+   * 刷新之后，已经答过的问题不能被再问一遍。
+   *
+   * <p>原样回放会让用户分不出"还没答"和"答过了"——他会以为系统没收到他的回答，
+   * 再答一次；也不能把它删掉，那样他会以为这一条凭空消失了。
+   */
+  it('marks already-answered questions instead of asking them again', async () => {
+    localStorage.setItem('career-os.agent-session', '01992f09-0000-7000-8000-0000000000aa')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      sessionId: '01992f09-0000-7000-8000-0000000000aa',
+      profileVersion: 'profile-7', stale: false,
+      jobIdsInOrder: [],
+      pendingConfirmations: [
+        { factKey: 'POLITICAL_AFFILIATION', question: '候选人政治面貌尚未确认',
+          jobPostingId: '01992f09-0000-7000-8000-0000000000bb', answered: true },
+        { factKey: 'GENDER', question: '候选人性别尚未确认',
+          jobPostingId: '01992f09-0000-7000-8000-0000000000cc', answered: false },
+      ],
+    })))
+    render(<AppProviders><AgentComposer expanded /></AppProviders>)
+
+    expect(await screen.findByText(/已答过：政治面貌/)).toBeInTheDocument()
+    expect(screen.getByText('候选人性别尚未确认')).toBeInTheDocument()
+    // 答过的那一条不再给出可点的选项。
+    expect(screen.queryByRole('button', { name: '中共党员' })).not.toBeInTheDocument()
   })
 })

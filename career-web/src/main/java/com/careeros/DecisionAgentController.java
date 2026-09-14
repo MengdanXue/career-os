@@ -71,8 +71,13 @@ class DecisionAgentController {
         // 会话记的是"这一轮问过什么"。刷新之后若原样回放，已经答过的问题会被再问一遍，
         // 用户没法区分"还没答"和"答过了"。所以按当前确认状态标出来，而不是把它们删掉——
         // 删掉就看不出系统问过这一条了。
-        var statuses = profiles.facts(candidateId).statuses();
+        var facts = profiles.facts(candidateId);
+        var statuses = facts.statuses();
+        // 资料在这期间变了，上一份列表的序号就不再对应当前结论。要说出来，
+        // 否则页面会拿着旧序号继续问"第二个怎么样"，而重新排出来的第二个可能是另一个岗位。
+        String current = facts.profile().profileVersion();
         return new AgentSessionResponse(session.sessionId(), session.profileVersion(),
+            !session.matchesProfileVersion(current),
             session.lastJobIdsInOrder(),
             session.pendingConfirmations().stream()
                 .map(item -> new SessionPendingConfirmation(item.factKey(), item.question(), item.jobPostingId(),
@@ -84,7 +89,8 @@ class DecisionAgentController {
     record SessionPendingConfirmation(CandidateFactKey factKey, String question, UUID jobPostingId,
                                       boolean answered) {}
 
-    record AgentSessionResponse(UUID sessionId, String profileVersion, List<UUID> jobIdsInOrder,
+    /** @param stale 资料已变，这份列表与这些问题不再对应当前结论 */
+    record AgentSessionResponse(UUID sessionId, String profileVersion, boolean stale, List<UUID> jobIdsInOrder,
                                 List<SessionPendingConfirmation> pendingConfirmations) {}
 
     /**

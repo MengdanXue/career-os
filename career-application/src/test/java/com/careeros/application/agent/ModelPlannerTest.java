@@ -78,6 +78,70 @@ class ModelPlannerTest {
         assertThat(run.budgetSpent()).isZero();
     }
 
+    // --- 整段解析，不是看到第一行认识的就返回 ---
+
+    /**
+     * 多行的收尾叙述要完整保留。
+     *
+     * <p>只取第一行的话，"限中共党员"这种常常单独成行的限制会被无声删掉，
+     * 剩下的读起来比原文更肯定——这正是不做逐句删减的理由。
+     */
+    @Test void aMultiLineNarrativeIsKeptWhole() {
+        var step = (PlannerStep.Finish) ModelPlanner.parse("""
+            FINISH 下面按稳定性排序。
+            其中一处仍需你补充材料后才能定。
+            BASIS 1""");
+
+        assertThat(step.narrative()).contains("下面按稳定性排序").contains("仍需你补充材料");
+        assertThat(step.basis().observationIndexes()).containsExactly(1);
+    }
+
+    /**
+     * 同一段里给了两个动作就整段作废。
+     *
+     * <p>按出现顺序挑一个，等于替模型做了决定：它到底是要查，还是要收尾？
+     * 挑错了照样执行，而且看起来完全正常。
+     */
+    @Test void twoActionsInOneTurnAreRefusedRatherThanResolvedByPosition() {
+        assertThat(ModelPlanner.parse("TOOL search_jobs location=杭州\nFINISH 下面按稳定性排序。")).isNull();
+        assertThat(ModelPlanner.parse("FINISH 下面按稳定性排序。\nTOOL search_jobs location=杭州")).isNull();
+        assertThat(ModelPlanner.parse("TOOL search_jobs location=杭州\nTOOL watchlist")).isNull();
+        assertThat(ModelPlanner.parse("ASK 要放宽吗？\nFINISH 好的。")).isNull();
+    }
+
+    /** 动作前面的闲话不影响解析——模型常常先说一句"好的，我来查一下"。 */
+    @Test void proseBeforeTheActionIsIgnored() {
+        var step = (PlannerStep.CallTool) ModelPlanner.parse("""
+            好的，我先看看这个范围里有没有岗位。
+            TOOL search_jobs location=杭州
+            WHY 用户问的是杭州""");
+
+        assertThat(step.call().tool()).isEqualTo("search_jobs");
+        assertThat(step.why()).isEqualTo("用户问的是杭州");
+    }
+
+    // --- BASIS：收尾要点名依据 ---
+
+    @Test void basisIsParsedFromTheTurn() {
+        var finish = (PlannerStep.Finish) ModelPlanner.parse("FINISH 下面按稳定性排序。\nBASIS 1, 3");
+        assertThat(finish.basis().observationIndexes()).containsExactly(1, 3);
+
+        var ask = (PlannerStep.AskUser) ModelPlanner.parse("ASK 你说的杭州是指市区吗？\nBASIS none");
+        assertThat(ask.basis().clarifyingOnly()).isTrue();
+    }
+
+    /** 没写 BASIS 就是没点名依据。解析层照常解析，由执行器拒绝。 */
+    @Test void aTurnWithoutBasisIsParsedAndLeftForTheExecutorToRefuse() {
+        var finish = (PlannerStep.Finish) ModelPlanner.parse("FINISH 下面按稳定性排序。");
+        assertThat(finish.basis().declared()).isFalse();
+    }
+
+    /** BASIS 不属于叙述，不能被当成模型说的话跟在后面。 */
+    @Test void theBasisLineIsNotPartOfTheNarrative() {
+        var finish = (PlannerStep.Finish) ModelPlanner.parse("FINISH 下面按稳定性排序。\nBASIS 1");
+        assertThat(finish.narrative()).isEqualTo("下面按稳定性排序。");
+    }
+
     // --- 越权请求由执行器拒绝，不是这里悄悄过滤 ---
 
     /**
@@ -190,8 +254,19 @@ class ModelPlannerTest {
         assertThat(first).contains("location").contains("jobFamily").contains("tier").contains("limit");
         // 取值范围也要在里面，否则模型只能猜是 T1 还是 TIER_1。
         assertThat(first).contains("DATA").contains("T1");
-        // 必填与可选要分得出来：jobId 是必填的，筛选参数都是可选的。
-        assertThat(first).contains("jobId（必填）").contains("location（可选）");
+        assertThat(first).contains("location（可选）");
+        // "第几个"也要在目录里，否则模型没法把用户说的序号交给工具去解析。
+        assertThat(first).contains("ordinal");
+    }
+
+    /** 必填与可选要在提示里分得出来，否则模型不知道哪个参数不能省。 */
+    @Test void theCatalogueDistinguishesRequiredFromOptionalParameters() {
+        var protocol = ModelPlanner.protocol(new PlanningState("查岗位", List.of(), 5, List.of(
+            new AgentTooling.ToolSpec("demo", "示例工具", List.of(
+                AgentTooling.ToolParameter.required("must", "必须给"),
+                AgentTooling.ToolParameter.optional("may", "可以不给"))))));
+
+        assertThat(protocol).contains("must（必填）").contains("may（可选）");
     }
 
     /** 一个工具都没注册时要明说，而不是省略目录——省略会让模型继续猜工具名。 */

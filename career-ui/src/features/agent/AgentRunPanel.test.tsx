@@ -15,11 +15,21 @@ const run = {
   narrative: '下面按稳定性排序，先看前面几个。',
   question: null,
   violations: [],
+  groundedOn: [2],
   budgetSpent: 13,
   budgetLimit: 50,
-  groundedIn: 2,
   sessionId: null,
   profileVersion: null,
+  jobs: [{
+    jobPostingId: '01992f09-0000-7000-8000-0000000000bb',
+    jobTitle: '信息中心技术岗',
+    organizationName: '杭州市数字事业中心',
+    eligibilityStatus: 'NEEDS_CONFIRMATION',
+    tier: 'T3',
+    applicationEndsOn: '2026-12-01',
+    restrictions: ['公告限定中共党员，候选人不是党员'],
+  }],
+  pendingConfirmations: [],
   tools: [{
     name: 'search_jobs',
     description: '按城市、职位类别、机会分层查岗位，返回排好序的一页结果。',
@@ -75,14 +85,14 @@ describe('AgentRunPanel', () => {
   })
 
   /** 预算要连上限一起给，否则"花了 13"没有参照，看不出还剩多少。 */
-  it('reports the budget against its limit and how much evidence backed the answer', async () => {
+  it('reports the budget against its limit and which results the text rests on', async () => {
     await open(vi.fn().mockResolvedValue(json(run)))
 
     await userEvent.type(screen.getByLabelText('交给它去查'), '杭州有哪些岗位')
     await userEvent.click(screen.getByRole('button', { name: '运行' }))
 
     expect(await screen.findByText(/本次消耗预算 13 \/ 50 个单位/)).toBeInTheDocument()
-    expect(screen.getByText(/背后有 2 条成功的工具结果/)).toBeInTheDocument()
+    expect(screen.getByText(/这段话依据第 2 条结果/)).toBeInTheDocument()
   })
 
   /** 工具目录要到参数一级：调用方能核对边界，而不是只能相信它是只读的。 */
@@ -108,5 +118,34 @@ describe('AgentRunPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: '运行' }))
 
     expect(await screen.findByText('没有任何成功的工具结果，这段收尾叙述没有依据')).toBeInTheDocument()
+  })
+
+  /**
+   * 岗位由程序渲染，不是从模型那段话里抠出来的。
+   *
+   * <p>让模型复述标题和结论就等于把事实交给它——它可以写错、写漏、张冠李戴，
+   * 而读的人看不出来。
+   */
+  it('renders the job facts from structured data, not from the model text', async () => {
+    await open(vi.fn().mockResolvedValue(json(run)))
+
+    await userEvent.type(screen.getByLabelText('交给它去查'), '杭州有哪些岗位')
+    await userEvent.click(screen.getByRole('button', { name: '运行' }))
+
+    expect(await screen.findByText('信息中心技术岗')).toBeInTheDocument()
+    expect(screen.getByText(/报名截止 2026-12-01/)).toBeInTheDocument()
+    expect(screen.getByText('公告限定中共党员，候选人不是党员')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查看档案 →' }))
+      .toHaveAttribute('href', '/opportunities/01992f09-0000-7000-8000-0000000000bb')
+  })
+
+  /** 没点名依据时要说出来，不能让"没有依据"看起来和"有依据"一样。 */
+  it('says plainly when the closing text named no basis', async () => {
+    await open(vi.fn().mockResolvedValue(json({ ...run, groundedOn: [] })))
+
+    await userEvent.type(screen.getByLabelText('交给它去查'), '杭州有哪些岗位')
+    await userEvent.click(screen.getByRole('button', { name: '运行' }))
+
+    expect(await screen.findByText(/这段话没有点名依据/)).toBeInTheDocument()
   })
 })
