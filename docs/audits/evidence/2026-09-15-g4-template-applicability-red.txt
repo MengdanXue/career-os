@@ -1,0 +1,120 @@
+-------------------------------------------------------------------------------
+Test set: com.careeros.application.agent.AgentExecutorTest
+-------------------------------------------------------------------------------
+Tests run: 53, Failures: 11, Errors: 1, Skipped: 0, Time elapsed: 0.341 s <<< FAILURE! -- in com.careeros.application.agent.AgentExecutorTest
+com.careeros.application.agent.AgentExecutorTest.aConfirmFactQuestionCarriesTheFactTheAskingJobAndTheProfileVersion -- Time elapsed: 0.007 s <<< FAILURE!
+java.lang.AssertionError: 
+
+Expecting actual not to be null
+	at com.careeros.application.agent.AgentExecutorTest.aConfirmFactQuestionCarriesTheFactTheAskingJobAndTheProfileVersion(AgentExecutorTest.java:917)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aBroadenScopeQuestionIsRefusedWhenNoSearchWasEverRun -- Time elapsed: 0.006 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "这个范围内没有找到岗位，要不要放宽城市或职位类别？"
+	at com.careeros.application.agent.AgentExecutorTest.aBroadenScopeQuestionIsRefusedWhenNoSearchWasEverRun(AgentExecutorTest.java:788)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aBroadenScopeQuestionIsRefusedWhenTheSearchFoundJobs -- Time elapsed: 0.003 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "这个范围内没有找到岗位，要不要放宽城市或职位类别？"
+	at com.careeros.application.agent.AgentExecutorTest.aBroadenScopeQuestionIsRefusedWhenTheSearchFoundJobs(AgentExecutorTest.java:800)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aNothingInScopeClosingIsRefusedWhenTheSearchActuallyFoundJobs -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "这个范围内没有找到岗位。"
+	at com.careeros.application.agent.AgentExecutorTest.aNothingInScopeClosingIsRefusedWhenTheSearchActuallyFoundJobs(AgentExecutorTest.java:748)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aWatchlistClosingIsRefusedWhenTheWatchlistWasNeverRead -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "下面是你关注的岗位，以及自上次查看以来的变化。"
+	at com.careeros.application.agent.AgentExecutorTest.aWatchlistClosingIsRefusedWhenTheWatchlistWasNeverRead(AgentExecutorTest.java:870)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aConfirmFactQuestionIsRefusedWithoutAProfileVersionToBindTo -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "要不要现在确认「性别」？"
+	at com.careeros.application.agent.AgentExecutorTest.aConfirmFactQuestionIsRefusedWithoutAProfileVersionToBindTo(AgentExecutorTest.java:948)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aPendingFirstClosingIsRefusedWhenOnlyAnEmptyWatchlistWasRead -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "还有资料项没有确认，确认之后这些岗位的结论才会更新。"
+	at com.careeros.application.agent.AgentExecutorTest.aPendingFirstClosingIsRefusedWhenOnlyAnEmptyWatchlistWasRead(AgentExecutorTest.java:831)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aConfirmFactQuestionCanBindToThePendingListReadThisRound -- Time elapsed: 0.002 s <<< ERROR!
+java.lang.NullPointerException: Cannot invoke "com.careeros.application.agent.AgentTooling$FactBinding.jobPostingId()" because the return value of "com.careeros.application.agent.AgentExecutor$AgentRun.confirming()" is null
+	at com.careeros.application.agent.AgentExecutorTest.aConfirmFactQuestionCanBindToThePendingListReadThisRound(AgentExecutorTest.java:935)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aPendingFirstClosingIsRefusedWhenThePendingListCameBackEmpty -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "还有资料项没有确认，确认之后这些岗位的结论才会更新。"
+	at com.careeros.application.agent.AgentExecutorTest.aPendingFirstClosingIsRefusedWhenThePendingListCameBackEmpty(AgentExecutorTest.java:844)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aSingleJobClosingIsRefusedWhenNoSingleJobWasRead -- Time elapsed: 0.003 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "下面是这个岗位的情况；资格、限制条件和截止日见下方事实块。"
+	at com.careeros.application.agent.AgentExecutorTest.aSingleJobClosingIsRefusedWhenNoSingleJobWasRead(AgentExecutorTest.java:882)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aRankedListingClosingIsRefusedWhenTheSearchCameBackEmpty -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "下面是这个范围内的岗位，按稳定性排序；资格、限制条件和截止日见下方事实块。"
+	at com.careeros.application.agent.AgentExecutorTest.aRankedListingClosingIsRefusedWhenTheSearchCameBackEmpty(AgentExecutorTest.java:772)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aConfirmFactQuestionIsRefusedWhenThatFactIsNotPending -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "要不要现在确认「性别」？"
+	at com.careeros.application.agent.AgentExecutorTest.aConfirmFactQuestionIsRefusedWhenThatFactIsNotPending(AgentExecutorTest.java:898)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+

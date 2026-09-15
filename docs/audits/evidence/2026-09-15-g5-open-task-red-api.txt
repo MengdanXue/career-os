@@ -1,0 +1,68 @@
+-------------------------------------------------------------------------------
+Test set: com.careeros.AgentRunApiTest
+-------------------------------------------------------------------------------
+Tests run: 20, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 2.935 s <<< FAILURE! -- in com.careeros.AgentRunApiTest
+com.careeros.AgentRunApiTest.aRoundThatSearchedAndStillAskedSavesBothTheScopeAndTheOpenTask -- Time elapsed: 2.486 s <<< FAILURE!
+Wanted but not invoked:
+agentSessionService.rememberAsk(
+    06cc43a1-1e89-486a-a04d-b0b2b94caa7b,
+    cdd15290-2d3c-4c48-9096-ace317916351,
+    "宁波有什么合适的",
+    contains("放宽")
+);
+-> at com.careeros.application.AgentSessionService.rememberAsk(AgentSessionService.java:98)
+
+However, there were exactly 2 interactions with this mock:
+agentSessionService.find(
+    cdd15290-2d3c-4c48-9096-ace317916351,
+    06cc43a1-1e89-486a-a04d-b0b2b94caa7b
+);
+-> at com.careeros.AgentRunController.run(AgentRunController.java:62)
+
+agentSessionService.rememberRun(
+    06cc43a1-1e89-486a-a04d-b0b2b94caa7b,
+    cdd15290-2d3c-4c48-9096-ace317916351,
+    SessionFilters[tier=null, location=宁波, jobFamily=null, limit=5],
+    [],
+    []
+);
+-> at com.careeros.AgentRunController.save(AgentRunController.java:130)
+
+
+	at com.careeros.application.AgentSessionService.rememberAsk(AgentSessionService.java:98)
+	at com.careeros.AgentRunApiTest.aRoundThatSearchedAndStillAskedSavesBothTheScopeAndTheOpenTask(AgentRunApiTest.java:414)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.AgentRunApiTest.aRoundThatCompletesTheTaskClearsThePendingState -- Time elapsed: 0.019 s <<< FAILURE!
+Wanted but not invoked:
+agentSessionService.completeOpenTask(
+    cdd15290-2d3c-4c48-9096-ace317916351,
+    06cc43a1-1e89-486a-a04d-b0b2b94caa7b
+);
+-> at com.careeros.application.AgentSessionService.completeOpenTask(AgentSessionService.java:127)
+
+However, there were exactly 2 interactions with this mock:
+agentSessionService.find(
+    cdd15290-2d3c-4c48-9096-ace317916351,
+    06cc43a1-1e89-486a-a04d-b0b2b94caa7b
+);
+-> at com.careeros.AgentRunController.run(AgentRunController.java:62)
+
+agentSessionService.rememberRun(
+    06cc43a1-1e89-486a-a04d-b0b2b94caa7b,
+    cdd15290-2d3c-4c48-9096-ace317916351,
+    SessionFilters[tier=null, location=杭州, jobFamily=null, limit=5],
+    [2262cbbb-7f88-462e-a907-05832975d36d],
+    []
+);
+-> at com.careeros.AgentRunController.save(AgentRunController.java:130)
+
+
+	at com.careeros.application.AgentSessionService.completeOpenTask(AgentSessionService.java:127)
+	at com.careeros.AgentRunApiTest.aRoundThatCompletesTheTaskClearsThePendingState(AgentRunApiTest.java:450)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+

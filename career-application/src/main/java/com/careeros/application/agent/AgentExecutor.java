@@ -34,6 +34,9 @@ import java.util.UUID;
  *       步数上限保证运行一定结束，即使一次工具都没调（比如它反复要求同一个被拒的工具）。</li>
  *   <li><b>收尾的话也要有依据。</b> FINISH 与 ASK 都要过叙述校验，且一次成功的工具结果都没有时，
  *       FINISH 不许留下任何叙述。</li>
+ *   <li><b>选的那条模板要站得住。</b> 句子由程序渲染之后，能出错的只剩"选错了哪一条"——
+ *       查到了三个岗位照样能选"这个范围内没有找到岗位"，读起来毫无破绽。
+ *       所以每条模板声明它断言了什么，执行器拿点名的那几条结果去核。</li>
  * </ul>
  *
  * <p>每一步都留在轨迹里：调了什么、为什么、被拒的原因。事后要能看出它是依据结果选的路，
@@ -54,6 +57,12 @@ public final class AgentExecutor {
 
     /** 模板名不在封闭清单里，或槽位对不上时的拒绝理由。 */
     static final String UNKNOWN_TEMPLATE = "这不是一条可用的模板；用户可见的话只能从固定模板里选";
+
+    /** 模板本身的断言与点名的结果对不上时的拒绝理由。 */
+    static final String TEMPLATE_NOT_APPLICABLE = "这条模板的适用条件不成立：";
+
+    /** 要确认的那一项没有绑定到真实的待确认项、提出它的岗位与资料版本。 */
+    static final String UNBOUND_CONFIRMATION = "这条确认没有绑定到实际的待确认项：";
 
     private static final AnswerNarrativeValidator NARRATIVE = new AnswerNarrativeValidator();
 
@@ -124,10 +133,11 @@ public final class AgentExecutor {
             }
             if (next instanceof PlannerStep.AskUser ask) {
                 String rendered = renderQuestion(ask);
-                var violations = checkAsk(ask, rendered, observations);
-                return new AgentRun(Outcome.ASKED_USER, null, violations.isEmpty() ? rendered : null,
-                    observations, trace, budget.spent(), callBudget, violations,
-                    violations.isEmpty() ? ask.basis().observationIndexes() : List.of());
+                var checked = checkAsk(ask, rendered, observations, session);
+                return new AgentRun(Outcome.ASKED_USER, null, checked.ok() ? rendered : null,
+                    observations, trace, budget.spent(), callBudget, checked.violations(),
+                    checked.ok() ? ask.basis().observationIndexes() : List.of(),
+                    checked.ok() ? checked.binding() : null);
             }
             var call = ((PlannerStep.CallTool) next).call();
             String why = ((PlannerStep.CallTool) next).why();
@@ -202,7 +212,14 @@ public final class AgentExecutor {
             violations.add(UNGROUNDED_FINISH);
             return List.copyOf(violations);
         }
-        violations.addAll(checkBasis(finish.basis(), observations));
+        var basisViolations = checkBasis(finish.basis(), observations);
+        violations.addAll(basisViolations);
+        if (basisViolations.isEmpty()) {
+            // 依据存在且成立之后，还要问一句：这条模板断言的东西，这几条结果支不支持。
+            violations.addAll(checkApplicability(
+                AnswerTemplates.Closing.valueOf(finish.template()).requires(),
+                cited(finish.basis(), observations)));
+        }
         return List.copyOf(violations);
     }
 
@@ -212,21 +229,126 @@ public final class AgentExecutor {
      * <p>追问允许不依据任何结果——"你说的杭州是指市区还是整个市？"本来就不需要依据，
      * 但要明说它是纯澄清（{@code BASIS none}），而不是含糊过去。
      * 一旦点了依据，就和收尾一样要核对。
+     *
+     * <p><b>但有的追问里带着断言。</b>"这个范围内没有找到岗位，要不要放宽城市或职位类别？"
+     * ——一次查询都没做过的时候，这个断言凭空成立，而用户会以为系统查过了。
+     * 所以模板的适用条件对追问同样生效，只有真正的澄清那一档（{@code Evidence.NONE}）才不用。
+     *
+     * <p>确认类追问再多一道：问的那一项必须真的在等着被确认，并且说得出是哪个岗位提的、
+     * 在哪一版资料下问的。三样齐了才返回 {@link AgentTooling.FactBinding}。
      */
-    private static List<String> checkAsk(PlannerStep.AskUser ask, String rendered,
-                                         List<Observation> observations) {
+    private static CheckedQuestion checkAsk(PlannerStep.AskUser ask, String rendered,
+                                            List<Observation> observations,
+                                            AgentTooling.SessionContext session) {
         var violations = new ArrayList<String>();
         if (rendered == null) {
             violations.add(UNKNOWN_TEMPLATE);
-            return List.copyOf(violations);
+            return new CheckedQuestion(List.copyOf(violations), null);
         }
         violations.addAll(NARRATIVE.validateNarrative(rendered).violations());
         if (!ask.basis().declared()) {
             violations.add(UNGROUNDED_FINISH);
-            return List.copyOf(violations);
+            return new CheckedQuestion(List.copyOf(violations), null);
         }
-        violations.addAll(checkBasis(ask.basis(), observations));
-        return List.copyOf(violations);
+        var basisViolations = checkBasis(ask.basis(), observations);
+        violations.addAll(basisViolations);
+        if (!basisViolations.isEmpty()) return new CheckedQuestion(List.copyOf(violations), null);
+
+        var template = AnswerTemplates.Question.valueOf(ask.template());
+        var cited = cited(ask.basis(), observations);
+        violations.addAll(checkApplicability(template.requires(), cited));
+        // 确认类追问的适用条件不是"读到过一份清单"，而是"问的这一项真的在等着被确认"，
+        // 并且要说得出是哪个岗位提的、在哪一版资料下问的。
+        AgentTooling.FactBinding binding = null;
+        if (template == AnswerTemplates.Question.CONFIRM_FACT) {
+            binding = bindConfirmation(ask.slots().get("fact"), cited, session, violations);
+        }
+        return new CheckedQuestion(List.copyOf(violations), binding);
+    }
+
+    /** 追问的校验结果：被拒的理由，以及成立时它绑定到的那一项。 */
+    private record CheckedQuestion(List<String> violations, AgentTooling.FactBinding binding) {
+        boolean ok() { return violations.isEmpty(); }
+    }
+
+    /** 这段话点名的那几条观察。到这里它们都已经确认存在且成功。 */
+    private static List<Observation> cited(AgentTooling.Basis basis, List<Observation> observations) {
+        var cited = new ArrayList<Observation>();
+        for (int index : basis.observationIndexes()) {
+            if (index >= 1 && index <= observations.size()) cited.add(observations.get(index - 1));
+        }
+        return List.copyOf(cited);
+    }
+
+    /**
+     * 模板自己的适用条件。
+     *
+     * <p>这一道拦的不是措辞——措辞早就由程序渲染了，能出错的只剩"选错了哪一条模板"。
+     * 选错的那句话读起来完全正常："这个范围内没有找到岗位。"查到了三个也能这么说，
+     * 叙述校验器挑不出毛病。只有拿它断言的东西去对点名的结果，才看得出它在说一件没发生的事。
+     */
+    private static List<String> checkApplicability(AnswerTemplates.Evidence required,
+                                                   List<Observation> cited) {
+        if (required.holdsFor(cited)) return List.of();
+        return List.of(TEMPLATE_NOT_APPLICABLE + required.unmet());
+    }
+
+    /**
+     * 把"要不要现在确认某一项"绑定到真实的待确认项。
+     *
+     * <p>三样缺一不可：哪一项、哪个岗位提的、在哪一版资料下问的。
+     * 少了第一样，系统会凭空问一句用户答了也没有归属的话——没有哪个岗位在等它，
+     * 也没有哪条结论会因此改变；少了第三样，他的回答会被记到一份说不清是哪一版的资料上，
+     * 确认写入那个乐观版本检查就恒真，等于没检查。
+     *
+     * <p>来源有两处：这一轮刚读到的待确认清单，或上一轮记下来还没答的那些。
+     * 两处都没有就是不成立——不拿"附近读到过一份清单"顶上去。
+     */
+    @SuppressWarnings("unchecked")
+    private static AgentTooling.FactBinding bindConfirmation(String fact, List<Observation> cited,
+                                                             AgentTooling.SessionContext session,
+                                                             List<String> violations) {
+        String factKey = fact == null ? null : fact.strip().toUpperCase();
+        if (factKey == null || factKey.isEmpty()) {
+            violations.add(UNBOUND_CONFIRMATION + "没有说清要确认哪一项");
+            return null;
+        }
+        String askingJob = null;
+        for (Observation observation : cited) {
+            if (!AnswerTemplates.PENDING_CONFIRMATIONS.equals(observation.tool())) continue;
+            if (!(observation.data().get("items") instanceof List<?> rows)) continue;
+            for (Object row : rows) {
+                if (row instanceof Map<?, ?> map
+                    && factKey.equals(String.valueOf(((Map<String, Object>) map).get("factKey")))) {
+                    askingJob = String.valueOf(((Map<String, Object>) map).get("jobPostingId"));
+                }
+            }
+        }
+        if (askingJob == null) {
+            askingJob = session.pending().stream()
+                .filter(item -> factKey.equalsIgnoreCase(item.factKey()))
+                .map(item -> item.jobPostingId() == null ? null : item.jobPostingId().toString())
+                .findFirst().orElse(null);
+        }
+        if (askingJob == null) {
+            violations.add(UNBOUND_CONFIRMATION + "「" + factKey
+                + "」不在这一轮读到的待确认清单里，也不在上一轮记下的待确认项里");
+            return null;
+        }
+        UUID jobPostingId;
+        try {
+            jobPostingId = UUID.fromString(askingJob);
+        } catch (RuntimeException invalid) {
+            violations.add(UNBOUND_CONFIRMATION + "说不出是哪个岗位在等「" + factKey + "」这一项");
+            return null;
+        }
+        String profileVersion = session.profileVersion();
+        if (profileVersion == null || profileVersion.isBlank()) {
+            violations.add(UNBOUND_CONFIRMATION
+                + "没有可绑定的资料版本，答案会被记到一份说不清是哪一版的资料上");
+            return null;
+        }
+        return new AgentTooling.FactBinding(factKey, jobPostingId, profileVersion);
     }
 
     /** 点名的每一条依据都要在范围内，且确实是成功的观察。 */
@@ -293,12 +415,19 @@ public final class AgentExecutor {
      */
     public record AgentRun(Outcome outcome, String narrative, String question,
                            List<Observation> observations, List<TraceEntry> trace, int budgetSpent,
-                           int budgetLimit, List<String> violations, List<Integer> basis) {
+                           int budgetLimit, List<String> violations, List<Integer> basis,
+                           AgentTooling.FactBinding confirming) {
         public AgentRun {
             observations = List.copyOf(observations == null ? List.of() : observations);
             trace = List.copyOf(trace == null ? List.of() : trace);
             violations = List.copyOf(violations == null ? List.of() : violations);
             basis = List.copyOf(basis == null ? List.of() : basis);
+        }
+        AgentRun(Outcome outcome, String narrative, String question, List<Observation> observations,
+                 List<TraceEntry> trace, int budgetSpent, int budgetLimit, List<String> violations,
+                 List<Integer> basis) {
+            this(outcome, narrative, question, observations, trace, budgetSpent, budgetLimit, violations,
+                basis, null);
         }
         AgentRun(Outcome outcome, String narrative, String question, List<Observation> observations,
                  List<TraceEntry> trace, int budgetSpent, int budgetLimit, List<String> violations) {

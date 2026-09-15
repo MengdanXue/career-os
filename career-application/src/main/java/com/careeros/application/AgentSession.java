@@ -104,21 +104,35 @@ public record AgentSession(
     /**
      * 记下这一轮查出来的新列表。
      *
-     * <p>同时把"还没做完的事"清掉：这一轮已经给出了结果，那件事就算办完了。
-     * 不清的话，下一轮会把一件已经办完的事当成还欠着的，反复接着做。
+     * <p><b>不碰"还没做完的事"。</b> 早先这里顺手把它清掉，理由是"这一轮给出了结果，
+     * 那件事就算办完了"——可是查出新列表和办完那件事根本不是一回事。
+     * 用户问"宁波有什么合适的"，系统查了、一个都没查到，于是反问"要不要放宽范围"：
+     * 这一轮既有新范围，也仍然欠着那件事。顺手清掉，他刷新之后那句追问就没了，
+     * 答一句"杭州"也没人知道是在回答什么。办完与否由调用方判断，用 {@link #withTaskDone}。
      */
     public AgentSession withListing(
         SessionFilters filters, List<UUID> jobIds, List<PendingConfirmation> pending,
         String profileVersion, Instant at
     ) {
         return new AgentSession(sessionId, candidateId, filters, jobIds, pending, profileVersion,
-            null, null, at);
+            openTask, pendingQuestion, at);
     }
 
     /** 只记下"还没做完的事"和"问过什么"，列表、范围与待确认项原样保留。 */
     public AgentSession withOpenTask(String openTask, String pendingQuestion, Instant at) {
         return new AgentSession(sessionId, candidateId, filters, lastJobIdsInOrder,
             pendingConfirmations, profileVersion, blankToNull(openTask), blankToNull(pendingQuestion), at);
+    }
+
+    /**
+     * 那件事办完了。
+     *
+     * <p>只有真的办完才调它：清早了，用户下一句会被当成一个孤立的新问题；
+     * 该清不清，一件已经办完的事会被下一轮当成还欠着的，反复接着做。
+     */
+    public AgentSession withTaskDone(Instant at) {
+        return new AgentSession(sessionId, candidateId, filters, lastJobIdsInOrder,
+            pendingConfirmations, profileVersion, null, null, at);
     }
 
     private static String blankToNull(String value) {

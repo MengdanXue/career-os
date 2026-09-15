@@ -128,9 +128,13 @@ public final class ModelPlanner implements AgentPlanner {
                 }
             }
         }
+        // 每条模板的适用条件也要写出来。只写在校验里、不告诉模型，它会反复选一条永远被拒的模板——
+        // 看起来像"模型不会收尾"，其实是从没告诉过它什么时候能用哪一条。
         text.append("\nFINISH 只能用下面这些模板名：\n");
         for (AnswerTemplates.Closing template : AnswerTemplates.Closing.values()) {
-            text.append("  - ").append(template.name()).append('\n');
+            text.append("  - ").append(template.name());
+            appendRequirement(text, template.requires());
+            text.append('\n');
         }
         text.append("ASK 只能用下面这些模板名：\n");
         for (AnswerTemplates.Question template : AnswerTemplates.Question.values()) {
@@ -138,9 +142,19 @@ public final class ModelPlanner implements AgentPlanner {
             if (!template.slots().isEmpty()) {
                 text.append("（需要 ").append(String.join("、", template.slots())).append("=…）");
             }
+            appendRequirement(text, template.requires());
+            if (template == AnswerTemplates.Question.CONFIRM_FACT) {
+                text.append("；fact 只能取这一轮 pending_confirmations 列出的、"
+                    + "或上一轮还没答的那几项之一");
+            }
             text.append('\n');
         }
         return text.toString();
+    }
+
+    private static void appendRequirement(StringBuilder text, AnswerTemplates.Evidence evidence) {
+        if (evidence == null || evidence.requirement().isEmpty()) return;
+        text.append("；").append(evidence.requirement());
     }
 
     /**

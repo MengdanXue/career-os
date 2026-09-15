@@ -64,6 +64,27 @@ class AgentRunApiTest {
             List.of(FIRST_JOB, SECOND_JOB), List.of(), "profile-7", Instant.parse("2026-09-01T00:00:00Z"));
     }
 
+    /** 上一轮问出去之后还欠着一件事没做完。 */
+    private static AgentSession sessionWithOpenTask() {
+        return session().withOpenTask("宁波有什么合适的", "这个范围内没有找到岗位，要不要放宽城市或职位类别？",
+            Instant.parse("2026-09-01T00:00:00Z"));
+    }
+
+    /** 查得到范围、但一个岗位都没有的那种运行。零结果那一轮正是两项更新同时要发生的时候。 */
+    private static org.springframework.test.web.servlet.MockMvc emptySearchMvc(
+        AgentPlanner planner, AgentSessionService s
+    ) {
+        var executor = new AgentExecutor(List.of(tool("search_jobs",
+            Map.of("count", 0, "jobs", List.<Map<String, Object>>of()))));
+        var profiles = org.mockito.Mockito.mock(CandidateProfileService.class);
+        var profile = org.mockito.Mockito.mock(com.careeros.domain.CandidateProfile.class);
+        org.mockito.Mockito.lenient().when(profile.profileVersion()).thenReturn("profile-7");
+        org.mockito.Mockito.lenient().when(profiles.facts(any())).thenReturn(
+            new CandidateProfileService.CandidateProfileFacts(profile, Map.of(), 0, 0, 0, false));
+        return MockMvcBuilders.standaloneSetup(new AgentRunController(executor, provider(planner), s, profiles))
+            .setControllerAdvice(new ApiExceptionHandler()).build();
+    }
+
     private static org.springframework.test.web.servlet.MockMvc mvc(AgentPlanner planner) {
         return mvc(planner, sessions(session()));
     }
@@ -362,5 +383,122 @@ class AgentRunApiTest {
             org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(CANDIDATE),
             org.mockito.ArgumentMatchers.eq("有什么合适的"),
             org.mockito.ArgumentMatchers.contains("哪个城市"));
+    }
+
+    /**
+     * 一轮既查出了新范围、又以追问收场：两样都要存。
+     *
+     * <p>这是"列表更新"和"待答任务更新"被写成二选一时必然漏掉的一种，而且它一点也不罕见：
+     * 用户问"宁波有什么合适的"，系统真的查了、一个都没查到，于是反问"要不要放宽范围"。
+     * 这一轮<b>既有新范围</b>（宁波，空的），<b>也仍然欠着那件事</b>。
+     * 只存前者，用户刷新之后屏幕上那句追问就没了；他答一句"杭州"，系统不知道这是在回答什么，
+     * 只能当成一个孤立的新问题——那一问等于白问。
+     */
+    @Test void aRoundThatSearchedAndStillAskedSavesBothTheScopeAndTheOpenTask() throws Exception {
+        var sessions = sessions(session());
+        emptySearchMvc(state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查宁波")
+            : new PlannerStep.AskUser("BROADEN_SCOPE", AgentTooling.Basis.on(1)), sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("宁波有什么合适的", SESSION)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.outcome").value("ASKED_USER"))
+            .andExpect(jsonPath("$.question").value(org.hamcrest.Matchers.containsString("放宽")));
+
+        var savedFilters = org.mockito.ArgumentCaptor.forClass(AgentSession.SessionFilters.class);
+        org.mockito.Mockito.verify(sessions).rememberRun(
+            org.mockito.ArgumentMatchers.eq(SESSION), org.mockito.ArgumentMatchers.eq(CANDIDATE),
+            savedFilters.capture(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertThat(savedFilters.getValue().location()).isEqualTo("宁波");
+
+        org.mockito.Mockito.verify(sessions).rememberAsk(
+            org.mockito.ArgumentMatchers.eq(SESSION), org.mockito.ArgumentMatchers.eq(CANDIDATE),
+            org.mockito.ArgumentMatchers.eq("宁波有什么合适的"),
+            org.mockito.ArgumentMatchers.contains("放宽"));
+    }
+
+    /** 还在追问的一轮不能清掉待答状态：那件事还没办完。 */
+    @Test void aRoundThatStillAsksDoesNotClearThePendingState() throws Exception {
+        var sessions = sessions(sessionWithOpenTask());
+        emptySearchMvc(state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查宁波")
+            : new PlannerStep.AskUser("BROADEN_SCOPE", AgentTooling.Basis.on(1)), sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("宁波有什么合适的", SESSION)))
+            .andExpect(status().isOk());
+
+        org.mockito.Mockito.verify(sessions, org.mockito.Mockito.never())
+            .completeOpenTask(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    /**
+     * 那件事确实办完了才清掉待答状态。
+     *
+     * <p>用户在追问之后答了一句"杭州"，这一轮给出了结果——原来那件事到此为止。
+     * 不清的话，下一轮还会把它当成欠着的，反复接着做。
+     */
+    @Test void aRoundThatCompletesTheTaskClearsThePendingState() throws Exception {
+        var sessions = sessions(sessionWithOpenTask());
+        mvc(state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "杭州"), "按他说的范围查")
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)), sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("杭州", SESSION)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.outcome").value("FINISHED"));
+
+        org.mockito.Mockito.verify(sessions).completeOpenTask(
+            org.mockito.ArgumentMatchers.eq(CANDIDATE), org.mockito.ArgumentMatchers.eq(SESSION));
+    }
+
+    /** 收尾被拒时那件事不算办完：用户看到的是事实块，他原来问的还没被回答。 */
+    @Test void aRoundWhoseClosingWasRefusedDoesNotCountAsFinishingTheTask() throws Exception {
+        var sessions = sessions(sessionWithOpenTask());
+        mvc(state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "杭州"), "按他说的范围查")
+            // 查到了岗位却收尾说"这个范围内没有找到岗位"：这条模板在这里不成立。
+            : new PlannerStep.Finish("NOTHING_IN_SCOPE", AgentTooling.Basis.on(1)), sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("杭州", SESSION)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.narrative").doesNotExist());
+
+        org.mockito.Mockito.verify(sessions, org.mockito.Mockito.never())
+            .completeOpenTask(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    /**
+     * 第一轮就该问得出"要不要现在确认某一项"。
+     *
+     * <p>确认类追问要绑定到用户此刻看到的那一版资料。第一轮还没有会话，
+     * 版本只能从他的资料上取——取不到就等于第一轮永远问不出确认，
+     * 而绝大多数确认正是在第一轮被问出来的。
+     */
+    @Test void aFirstRoundCanStillAskForAConfirmationBecauseItKnowsTheProfileVersion() throws Exception {
+        var sessions = sessions(null);
+        var executor = new AgentExecutor(List.of(tool("pending_confirmations", Map.of("count", 1,
+            "items", List.of(Map.of("factKey", "GENDER", "question", "性别尚未确认",
+                "jobPostingId", FIRST_JOB.toString()))))));
+        var profiles = org.mockito.Mockito.mock(CandidateProfileService.class);
+        var profile = org.mockito.Mockito.mock(com.careeros.domain.CandidateProfile.class);
+        org.mockito.Mockito.lenient().when(profile.profileVersion()).thenReturn("profile-7");
+        org.mockito.Mockito.lenient().when(profiles.facts(any())).thenReturn(
+            new CandidateProfileService.CandidateProfileFacts(profile, Map.of(), 0, 0, 0, false));
+        var planner = (AgentPlanner) state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("pending_confirmations"), "看还差什么")
+            : new PlannerStep.AskUser("CONFIRM_FACT", Map.of("fact", "GENDER"), AgentTooling.Basis.on(1));
+
+        MockMvcBuilders.standaloneSetup(
+                new AgentRunController(executor, provider(planner), sessions, profiles))
+            .setControllerAdvice(new ApiExceptionHandler()).build()
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("还差什么", null)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.question").value("要不要现在确认「性别」？"))
+            .andExpect(jsonPath("$.violations").isEmpty())
+            // 绑定要外露：用户的回答会落到哪一项、哪个岗位提的、在哪一版资料下问的。
+            .andExpect(jsonPath("$.confirming.factKey").value("GENDER"))
+            .andExpect(jsonPath("$.confirming.jobPostingId").value(FIRST_JOB.toString()))
+            .andExpect(jsonPath("$.confirming.profileVersion").value("profile-7"));
     }
 }

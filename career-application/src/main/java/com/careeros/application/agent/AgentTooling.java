@@ -169,6 +169,21 @@ public final class AgentTooling {
     /** 上一轮还没答的一个待确认项，以及是哪个岗位提出的。 */
     public record PendingRef(String factKey, String question, UUID jobPostingId) {}
 
+    /**
+     * 一次"要不要现在确认某一项"的追问绑定到了什么。
+     *
+     * <p>三样缺一不可。缺了{@code factKey}，问的是哪一项说不清；缺了{@code jobPostingId}，
+     * 用户不知道自己在为什么而答；缺了{@code profileVersion}，他的回答会被记到一份
+     * 说不清是哪一版的资料上——确认写入那个乐观版本检查就恒真，等于没检查。
+     */
+    public record FactBinding(String factKey, UUID jobPostingId, String profileVersion) {
+        public FactBinding {
+            Objects.requireNonNull(factKey, "factKey");
+            Objects.requireNonNull(jobPostingId, "jobPostingId");
+            Objects.requireNonNull(profileVersion, "profileVersion");
+        }
+    }
+
     /** 一个只读工具。实现应当直接转调主干既有服务，不在这一层重新实现判定。 */
     public interface ReadOnlyTool {
         String name();

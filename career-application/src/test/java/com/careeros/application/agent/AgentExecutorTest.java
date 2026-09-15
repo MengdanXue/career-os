@@ -541,25 +541,51 @@ class AgentExecutorTest {
      * 改出判定词会当场红，而不是等用户看到。
      */
     @Test void everyTemplateRendersTextThatPassesTheNarrativeRules() {
-        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
         var validator = new com.careeros.domain.AnswerNarrativeValidator();
 
-        for (String template : executor.closingTemplates()) {
-            var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
-                ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-                : new PlannerStep.Finish(template, AgentTooling.Basis.on(1)));
-            assertThat(run.narrative()).as("模板 %s 渲染不出句子", template).isNotNull();
+        for (String template : new AgentExecutor(List.of()).closingTemplates()) {
+            var run = renderedWith(template, false);
+            assertThat(run.narrative()).as("模板 %s 渲染不出句子：%s", template, run.violations()).isNotNull();
             assertThat(validator.validateNarrative(run.narrative()).accepted())
                 .as("模板 %s 渲染出来的句子过不了叙述校验：%s", template, run.narrative()).isTrue();
         }
-        for (String template : executor.questionTemplates()) {
-            var slots = "CONFIRM_FACT".equals(template) ? Map.of("fact", "GENDER") : Map.<String, String>of();
-            var run = executor.run(CANDIDATE, "查岗位",
-                state -> new PlannerStep.AskUser(template, slots, AgentTooling.Basis.clarifying()));
-            assertThat(run.question()).as("模板 %s 渲染不出句子", template).isNotNull();
+        for (String template : new AgentExecutor(List.of()).questionTemplates()) {
+            var run = renderedWith(template, true);
+            assertThat(run.question()).as("模板 %s 渲染不出句子：%s", template, run.violations()).isNotNull();
             assertThat(validator.validateNarrative(run.question()).accepted())
                 .as("模板 %s 渲染出来的句子过不了叙述校验：%s", template, run.question()).isTrue();
         }
+    }
+
+    /**
+     * 按模板的适用条件给它一条撑得住的结果，再让它渲染。
+     *
+     * <p>不能像以前那样拿同一条 {@code count=1} 的查询喂给所有模板：那条结果撑不起
+     * "这个范围内没有找到岗位"，现在会被适用条件挡下来。新加一条模板却不在这里给出依据时，
+     * 上面的断言会报出被拒的理由，而不是悄悄跳过。
+     */
+    private static AgentExecutor.AgentRun renderedWith(String template, boolean question) {
+        var support = Map.of(
+            "RANKED_LISTING", new RecordingTool("search_jobs", Map.of("count", 2)),
+            "NOTHING_IN_SCOPE", new RecordingTool("search_jobs", Map.of("count", 0)),
+            "BROADEN_SCOPE", new RecordingTool("search_jobs", Map.of("count", 0)),
+            "SINGLE_JOB", new RecordingTool("job_facts", Map.of("jobPostingId", FIRST_JOB.toString())),
+            "PENDING_FIRST", new RecordingTool("pending_confirmations", Map.of("count", 1, "items",
+                List.of(Map.of("factKey", "GENDER", "question", "性别尚未确认",
+                    "jobPostingId", FIRST_JOB.toString())))),
+            "WATCHLIST_STATE", new RecordingTool("watchlist", Map.of("count", 1, "changedCount", 0L)));
+        var tool = support.get(template);
+        var slots = "CONFIRM_FACT".equals(template)
+            ? Map.of("fact", "POLITICAL_AFFILIATION") : Map.<String, String>of();
+        var executor = new AgentExecutor(tool == null ? List.of() : List.of(tool));
+        var basis = tool == null ? AgentTooling.Basis.clarifying() : AgentTooling.Basis.on(1);
+        return executor.run(CANDIDATE, "查岗位", state -> {
+            if (tool != null && state.observations().isEmpty()) {
+                return new PlannerStep.CallTool(ToolCall.of(tool.name()), "先取这条模板要的依据");
+            }
+            return question ? new PlannerStep.AskUser(template, slots, basis)
+                : new PlannerStep.Finish(template, slots, basis);
+        }, hangzhouSession());
     }
 
     /** 模板名不在清单里就没有这句话——模型报一个看起来合理的名字也不行。 */
@@ -589,10 +615,12 @@ class AgentExecutorTest {
     @Test void aConfirmFactQuestionRendersTheHumanLabel() {
         var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
 
+        // 上一轮问过、还没答的就是这一项；确认类追问必须绑到一个真的在等的项上。
         var run = executor.run(CANDIDATE, "查岗位", state -> new PlannerStep.AskUser(
-            "CONFIRM_FACT", Map.of("fact", "GENDER"), AgentTooling.Basis.clarifying()));
+            "CONFIRM_FACT", Map.of("fact", "POLITICAL_AFFILIATION"), AgentTooling.Basis.clarifying()),
+            hangzhouSession());
 
-        assertThat(run.question()).isEqualTo("要不要现在确认「性别」？");
+        assertThat(run.question()).isEqualTo("要不要现在确认「政治面貌」？");
     }
 
     // --- G2：复核包里仍被放行的五条原句 ---
@@ -722,6 +750,248 @@ class AgentExecutorTest {
             assertThat(observation.ok()).isFalse();
             assertThat(observation.summary()).contains("没有上一轮的列表");
         });
+    }
+
+    // --- G4：模板的适用条件 ---
+
+    /**
+     * 模板本身就是断言，选错一条就是说了一句不成立的话。
+     *
+     * <p>上一轮把用户可见的话收束成模板，挡住了自由发挥；但模板名还是模型自己选的。
+     * "这个范围内没有找到岗位。"——查到了三个也能这么收尾，句子是程序渲染的，
+     * 叙述校验器也挑不出毛病：它没有判定词、没有分数、没有数字。
+     * 能拆穿它的只有一件事：这条模板断言的东西，它点名的那几条结果支不支持。
+     *
+     * <p>所以这一组把每条模板的适用条件写进模板本身，由执行器拿点名的观察去核。
+     */
+
+    /** 查到了岗位，就不能用"这个范围内没有找到岗位"收尾。 */
+    @Test void aNothingInScopeClosingIsRefusedWhenTheSearchActuallyFoundJobs() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 3))));
+
+        var run = executor.run(CANDIDATE, "杭州有什么岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "杭州"), "先查")
+            : new PlannerStep.Finish("NOTHING_IN_SCOPE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /** 真的一个都没查到时照常收尾——这一条是守护用例，收紧不能把它一起拦掉。 */
+    @Test void aNothingInScopeClosingIsAcceptedWhenTheSearchCameBackEmpty() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 0))));
+
+        var run = executor.run(CANDIDATE, "宁波有什么岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查")
+            : new PlannerStep.Finish("NOTHING_IN_SCOPE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.narrative()).isEqualTo("这个范围内没有找到岗位。");
+    }
+
+    /** 反过来也一样：一个都没查到，就不能摆出"下面是这个范围内的岗位"。 */
+    @Test void aRankedListingClosingIsRefusedWhenTheSearchCameBackEmpty() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 0))));
+
+        var run = executor.run(CANDIDATE, "宁波有什么岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查")
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /**
+     * 没查过就不能问"要不要放宽范围"。
+     *
+     * <p>这句追问里带着一个断言："这个范围内没有找到岗位"。一次查询都没做过的时候，
+     * 这个断言凭空成立——用户会以为系统查过了。追问不需要依据，但带断言的追问需要。
+     */
+    @Test void aBroadenScopeQuestionIsRefusedWhenNoSearchWasEverRun() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 0))));
+
+        var run = executor.run(CANDIDATE, "有什么合适的",
+            state -> new PlannerStep.AskUser("BROADEN_SCOPE", AgentTooling.Basis.clarifying()));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /** 查到了岗位却问"要不要放宽范围"，同样是那句断言不成立。 */
+    @Test void aBroadenScopeQuestionIsRefusedWhenTheSearchFoundJobs() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 4))));
+
+        var run = executor.run(CANDIDATE, "杭州有什么岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "杭州"), "先查")
+            : new PlannerStep.AskUser("BROADEN_SCOPE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /** 查过、确实是空的，这句追问才成立——守护用例。 */
+    @Test void aBroadenScopeQuestionIsAcceptedAfterASearchThatFoundNothing() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 0))));
+
+        var run = executor.run(CANDIDATE, "宁波有什么岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查")
+            : new PlannerStep.AskUser("BROADEN_SCOPE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.question()).isEqualTo("这个范围内没有找到岗位，要不要放宽城市或职位类别？");
+    }
+
+    /**
+     * 空的关注清单证明不了"还有资料项没确认"。
+     *
+     * <p>它们是两件事：关注清单是用户自己收藏的岗位，待确认项是规则算出来缺的字段。
+     * 拿前者当后者的依据，那句"确认之后这些岗位的结论才会更新"就没有任何东西撑着，
+     * 而用户会照着它去找一份根本不存在的清单。
+     */
+    @Test void aPendingFirstClosingIsRefusedWhenOnlyAnEmptyWatchlistWasRead() {
+        var executor = new AgentExecutor(List.of(
+            new RecordingTool("watchlist", Map.of("count", 0, "changedCount", 0L))));
+
+        var run = executor.run(CANDIDATE, "我关注的有动静吗", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("watchlist"), "先看关注清单")
+            : new PlannerStep.Finish("PENDING_FIRST", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /** 读过待确认清单、但它是空的，同样不能说"还有资料项没有确认"。 */
+    @Test void aPendingFirstClosingIsRefusedWhenThePendingListCameBackEmpty() {
+        var executor = new AgentExecutor(List.of(
+            new RecordingTool("pending_confirmations", Map.of("count", 0, "items", List.of()))));
+
+        var run = executor.run(CANDIDATE, "还差什么", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("pending_confirmations"), "看还差什么")
+            : new PlannerStep.Finish("PENDING_FIRST", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /** 真的读到了待确认项时照常收尾——守护用例。 */
+    @Test void aPendingFirstClosingIsAcceptedWhenPendingItemsWereActuallyRead() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("pending_confirmations",
+            Map.of("count", 1, "items", List.of(Map.of("factKey", "GENDER",
+                "question", "性别尚未确认", "jobPostingId", FIRST_JOB.toString()))))));
+
+        var run = executor.run(CANDIDATE, "还差什么", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("pending_confirmations"), "看还差什么")
+            : new PlannerStep.Finish("PENDING_FIRST", AgentTooling.Basis.on(1)));
+
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.narrative()).isEqualTo("还有资料项没有确认，确认之后这些岗位的结论才会更新。");
+    }
+
+    /** 没读过关注清单就不能摆出"下面是你关注的岗位"。 */
+    @Test void aWatchlistClosingIsRefusedWhenTheWatchlistWasNeverRead() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 2))));
+
+        var run = executor.run(CANDIDATE, "我关注的有动静吗", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("WATCHLIST_STATE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /** 一份列表撑不起"下面是这个岗位的情况"——那句话指的是某一个岗位。 */
+    @Test void aSingleJobClosingIsRefusedWhenNoSingleJobWasRead() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 2))));
+
+        var run = executor.run(CANDIDATE, "第二个怎么样", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("SINGLE_JOB", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /**
+     * 要确认的那一项必须真的在等着被确认。
+     *
+     * <p>否则系统会凭空问一句"要不要现在确认「性别」？"——用户答了，这个回答没有归属：
+     * 没有哪个岗位在等它，也没有哪条结论会因此改变。
+     */
+    @Test void aConfirmFactQuestionIsRefusedWhenThatFactIsNotPending() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "还差什么", state -> new PlannerStep.AskUser(
+            "CONFIRM_FACT", Map.of("fact", "GENDER"), AgentTooling.Basis.clarifying()), hangzhouSession());
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.UNBOUND_CONFIRMATION));
+    }
+
+    /**
+     * 问得成立时，这条确认要带着它绑定的三样东西：哪一项、哪个岗位提的、在哪一版资料下问的。
+     *
+     * <p>少了岗位，用户不知道自己在为什么而答；少了版本，他的回答会被记到一份
+     * 说不清是哪一版的资料上——那个乐观版本检查就恒真，等于没检查。
+     */
+    @Test void aConfirmFactQuestionCarriesTheFactTheAskingJobAndTheProfileVersion() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "还差什么", state -> new PlannerStep.AskUser(
+            "CONFIRM_FACT", Map.of("fact", "POLITICAL_AFFILIATION"), AgentTooling.Basis.clarifying()),
+            hangzhouSession());
+
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.question()).isEqualTo("要不要现在确认「政治面貌」？");
+        assertThat(run.confirming()).isNotNull();
+        assertThat(run.confirming().factKey()).isEqualTo("POLITICAL_AFFILIATION");
+        assertThat(run.confirming().jobPostingId()).isEqualTo(FIRST_JOB);
+        assertThat(run.confirming().profileVersion()).isEqualTo("profile-1");
+    }
+
+    /** 这一轮刚读到的待确认清单同样能当依据，不必非要上一轮问过。 */
+    @Test void aConfirmFactQuestionCanBindToThePendingListReadThisRound() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("pending_confirmations",
+            Map.of("count", 1, "items", List.of(Map.of("factKey", "GENDER",
+                "question", "性别尚未确认", "jobPostingId", SECOND_JOB.toString()))))));
+
+        var run = executor.run(CANDIDATE, "还差什么", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("pending_confirmations"), "看还差什么")
+            : new PlannerStep.AskUser("CONFIRM_FACT", Map.of("fact", "GENDER"), AgentTooling.Basis.on(1)),
+            hangzhouSession());
+
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.confirming().jobPostingId()).isEqualTo(SECOND_JOB);
+    }
+
+    /** 没有可绑定的资料版本时宁可不问：答案落在哪一版资料上说不清楚。 */
+    @Test void aConfirmFactQuestionIsRefusedWithoutAProfileVersionToBindTo() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("pending_confirmations",
+            Map.of("count", 1, "items", List.of(Map.of("factKey", "GENDER",
+                "question", "性别尚未确认", "jobPostingId", SECOND_JOB.toString()))))));
+
+        var run = executor.run(CANDIDATE, "还差什么", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("pending_confirmations"), "看还差什么")
+            : new PlannerStep.AskUser("CONFIRM_FACT", Map.of("fact", "GENDER"), AgentTooling.Basis.on(1)));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.UNBOUND_CONFIRMATION));
+    }
+
+    /**
+     * 不带任何断言的澄清照旧可以凭空问——守护用例。
+     *
+     * <p>"你想看哪个城市或区县的岗位？"没有说任何关于世界的话，它不需要依据；
+     * 把它一起拦掉，系统就只能在查过之后才敢开口，用户第一句话永远得自己说全。
+     */
+    @Test void aPlainClarifyingQuestionStillNeedsNoEvidence() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "有什么合适的",
+            state -> new PlannerStep.AskUser("WHICH_LOCATION", AgentTooling.Basis.clarifying()));
+
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.question()).isEqualTo("你想看哪个城市或区县的岗位？");
+        assertThat(run.outcome()).isEqualTo(Outcome.ASKED_USER);
     }
 
     private static final UUID FIRST_JOB = UUID.randomUUID();
