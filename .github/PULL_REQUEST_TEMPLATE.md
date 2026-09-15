@@ -11,7 +11,7 @@
 
 ## 自检
 
-- [ ] 每个提交都有 `Signed-off-by`（`git commit -s`，见 [CONTRIBUTING](../CONTRIBUTING.md#一开发者证书dco)）
+- [ ] 每个提交都有 `Signed-off-by`（`git commit -s`，见 [CONTRIBUTING.md](../CONTRIBUTING.md)）
 - [ ] `mvn clean verify` 通过；跳过的用例没有变多
 - [ ] 修缺陷的 PR 带了一条能复现它的用例，并且确认过它在修复前是红的
 - [ ] 没有引入个人信息：真实姓名、生日、证件号、联系方式、本机绝对路径、凭据
