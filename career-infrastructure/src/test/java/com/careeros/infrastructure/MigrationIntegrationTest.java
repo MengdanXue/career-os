@@ -481,7 +481,7 @@ class MigrationIntegrationTest {
             .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
             .load()
             .migrate();
-        assertThat(result.migrationsExecuted).isEqualTo(88);
+        assertThat(result.migrationsExecuted).isEqualTo(89);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var tables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('recruitment_event','organization','job_posting','candidate_profile','policy_rule','evidence','eligibility_assessment','opportunity','source_artifact','evidence_fragment','extraction_run','review_item','review_issue','review_action')");
              var candidates = connection.prepareStatement("select count(*) from candidate_profile where profile_version='profile-v18-real-education'");
@@ -544,6 +544,9 @@ class MigrationIntegrationTest {
               var watchlistKey = connection.prepareStatement("select string_agg(column_name, ',' order by ordinal_position) from information_schema.key_column_usage key_usage join information_schema.table_constraints table_constraint on table_constraint.constraint_name=key_usage.constraint_name and table_constraint.constraint_schema=key_usage.constraint_schema and table_constraint.table_name=key_usage.table_name where table_constraint.table_schema='public' and table_constraint.table_name='candidate_job_watch' and table_constraint.constraint_type='PRIMARY KEY'");
               var watchlistSeenPairing = connection.prepareStatement("select pg_get_constraintdef(constraint_row.oid) from pg_constraint constraint_row join pg_namespace namespace_row on namespace_row.oid=constraint_row.connamespace where namespace_row.nspname='public' and constraint_row.conname='ck_candidate_job_watch_seen'");
               var watchlistApplicationColumns = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='candidate_job_watch' and column_name in ('applied','application_status','submitted_at')");
+             // V89：一轮以追问收场时，还欠着的那件事和问出去的那句话。没有它们，用户刷新之后
+             // 只答一句"余杭"，系统既不知道他要办什么，也不知道自己问过什么。
+             var agentSessionOpenTask = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='agent_session' and column_name in ('open_task','pending_question')");
               var transportRisk = connection.prepareStatement("select is_nullable, column_default from information_schema.columns where table_schema='public' and table_name='acquired_document' and column_name='transport_risk'");
               var acquisitionAuditTables = connection.prepareStatement("select count(*) from information_schema.tables where table_schema='public' and table_name in ('source_onboarding_checkpoint','artifact_import_failure')");
               var coverageAuditColumns = connection.prepareStatement("select count(*) from information_schema.columns where table_schema='public' and table_name='source_year_coverage' and column_name in ('listing_page_count','filtered_count','failed_count','earliest_published_on','latest_published_on','stop_reason')");
@@ -678,6 +681,7 @@ class MigrationIntegrationTest {
             }
             // 关注不是报名：这张表里不该出现任何表示"已提交报名"的列。
             try (var rows = watchlistApplicationColumns.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isZero(); }
+            try (var rows = agentSessionOpenTask.executeQuery()) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(2); }
             try (var rows = transportRisk.executeQuery()) {
                 rows.next();
                 assertThat(rows.getString("is_nullable")).isEqualTo("NO");
