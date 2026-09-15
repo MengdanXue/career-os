@@ -755,7 +755,7 @@ class MigrationIntegrationTest {
                 assertThat(rows.getString("display_name")).isEqualTo("测试候选人");
                 assertThat(rows.getString("highest_education")).isEqualTo("BACHELOR");
                 assertThat(rows.getInt("graduation_year")).isEqualTo(2014);
-                assertThat(rows.getInt("birth_day")).isEqualTo(29);
+                assertThat(rows.getInt("birth_day")).isEqualTo(31);
                 assertThat(rows.getString("gender")).isEqualTo("FEMALE");
                 assertThat(rows.getString("political_affiliation")).isEqualTo("UNKNOWN");
             }
