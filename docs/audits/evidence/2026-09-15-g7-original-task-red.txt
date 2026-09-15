@@ -1,0 +1,24 @@
+-------------------------------------------------------------------------------
+Test set: com.careeros.application.AgentSessionServiceTest
+-------------------------------------------------------------------------------
+Tests run: 28, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.239 s <<< FAILURE! -- in com.careeros.application.AgentSessionServiceTest
+com.careeros.application.AgentSessionServiceTest.aNewListingBetweenTwoQuestionsDoesNotChangeTheOriginalTask -- Time elapsed: 0.009 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: "有什么合适的"
+ but was: "余杭"
+	at com.careeros.application.AgentSessionServiceTest.aNewListingBetweenTwoQuestionsDoesNotChangeTheOriginalTask(AgentSessionServiceTest.java:362)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.AgentSessionServiceTest.aSecondQuestionKeepsTheOriginalTaskAndOnlyUpdatesTheQuestion -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: "有什么合适的"
+ but was: "余杭"
+	at com.careeros.application.AgentSessionServiceTest.aSecondQuestionKeepsTheOriginalTaskAndOnlyUpdatesTheQuestion(AgentSessionServiceTest.java:340)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+

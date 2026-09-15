@@ -8,10 +8,12 @@
  *   系统不知道这是在回答什么。所以这一段验的是：零结果那一轮追问过之后，刷新仍然摆得回来，
  *   短回答仍然接得上原来那件事。
  *
- * 第二段——追问 → 刷新 → 只答一句"余杭" → 接着办原来那件事 → 再问"第二个"：
+ * 第二段——追问 → 刷新 → 只答一句"余杭" → **再追问一次** → 刷新 → 再问"第二个"：
  *   1. 系统问出一句话，用户还没来得及答就刷新了。刷新之后页面要摆回"上次问你什么"和"为了办什么"。
- *   2. 只答一句"余杭"，系统要接着办原来那件事，给出一份真的收窄过的新列表。
- *   3. 再问"第二个"，指的是**刚展示的那份新列表**的第二个。会话只读入不写回时必然指错。
+ *   2. 只答一句"余杭"，系统接着办原来那件事，给出一份真的收窄过的新列表，但还要再问一句。
+ *   3. 这时再刷新：范围、列表和那句追问都更新了，**"为了办什么"仍然是"有什么合适的"**。
+ *      把"余杭"当成他要办的那件事存下去，页面会摆出"为了：余杭"——那是他给的一个回答，不是一件事。
+ *   4. 再问"第二个"，指的是**刚展示的那份新列表**的第二个。会话只读入不写回时必然指错。
  *
  * 全程从页面上的动态面板实际调 /agent-runs，断言的是用户屏幕上的东西。
  * 岗位身份取自页面上"查看档案"链接里的 id，不看接口内部字段，也不用列表长度代替身份——
@@ -21,7 +23,7 @@
  *   TOOL search_jobs location=宁波 ; ASK    BROADEN_SCOPE  / BASIS 1
  *   TOOL search_jobs location=杭州 ; FINISH RANKED_LISTING / BASIS 1
  *   ASK WHICH_LOCATION / BASIS none
- *   TOOL search_jobs location=余杭 ; FINISH RANKED_LISTING / BASIS 1
+ *   TOOL search_jobs location=余杭 ; ASK    WHICH_ORDINAL  / BASIS 1
  *   TOOL job_facts ordinal=2      ; FINISH SINGLE_JOB     / BASIS 1
  *
  * 用法：
@@ -140,11 +142,27 @@ record('刷新后摆回了那句追问', await restoredQuestion.count() > 0,
 record('刷新后也说明了这是在办哪件事',
   await page.getByText(/为了：有什么合适的/).count() > 0)
 
-// --- 只答一句"余杭"：接着办原来那件事，给出真的收窄过的新列表 ---
+// --- 只答一句"余杭"：接着办原来那件事，给出新列表，但还要再问一句 ---
 await openRunPanel()
 const yuhang = await runRound('余杭')
 record('只答"余杭"之后拿到了新列表', yuhang.jobs.length >= 2, `${yuhang.jobs.length} 个`)
+record('这一轮又追问了一次', yuhang.text.includes('第几个'),
+  (yuhang.text.match(/你指的是[^\n]*/) || [''])[0])
 if (yuhang.jobs.length < 2) { console.error('前置条件不满足：余杭这一轮至少要有两个岗位。'); await browser.close(); process.exit(2) }
+
+// --- 第二次追问之后再刷新：问题换了，原来那件事没换 ---
+await reloadAndReopen()
+const secondAsk = page.getByText(/上次问你：/)
+await secondAsk.waitFor({ timeout: 20000 }).catch(() => {})
+record('刷新后摆回的是这一轮那句新追问',
+  await secondAsk.count() > 0 && (await secondAsk.first().innerText()).includes('第几个'),
+  await secondAsk.count() ? (await secondAsk.first().innerText()).replace('\n', ' ') : '没有这条')
+record('刷新后"为了办什么"仍然是原来那件事',
+  await page.getByText(/为了：有什么合适的/).count() > 0)
+// "余杭"是他给的一个回答，不是一件事。存成任务，那件真正要办的事就再也接不回来了。
+record('没有把"余杭"当成他要办的那件事',
+  await page.getByText(/为了：余杭/).count() === 0)
+await openRunPanel()
 
 // --- 再问"第二个"：指的是刚展示的那份新列表 ---
 const second = await runRound('第二个怎么样')

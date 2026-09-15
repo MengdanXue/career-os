@@ -70,12 +70,24 @@ class AgentRunApiTest {
             Instant.parse("2026-09-01T00:00:00Z"));
     }
 
-    /** 查得到范围、但一个岗位都没有的那种运行。零结果那一轮正是两项更新同时要发生的时候。 */
+    /**
+     * 查完了、一个岗位都没有的那种运行。零结果那一轮正是两项更新同时要发生的时候。
+     *
+     * <p>{@code complete=true} 不是凑数：没查完时 {@code count == 0} 不代表这个范围没有岗位，
+     * 那种结果撑不起"没有找到岗位"这句话。见 {@link #anUnfinishedSearchCannotReachTheUserAsNoJobs}。
+     */
     private static org.springframework.test.web.servlet.MockMvc emptySearchMvc(
         AgentPlanner planner, AgentSessionService s
     ) {
+        return emptySearchMvc(planner, s, true, 0);
+    }
+
+    private static org.springframework.test.web.servlet.MockMvc emptySearchMvc(
+        AgentPlanner planner, AgentSessionService s, boolean complete, int notAssessed
+    ) {
         var executor = new AgentExecutor(List.of(tool("search_jobs",
-            Map.of("count", 0, "jobs", List.<Map<String, Object>>of()))));
+            Map.of("count", 0, "complete", complete, "notAssessed", notAssessed,
+                "jobs", List.<Map<String, Object>>of()))));
         var profiles = org.mockito.Mockito.mock(CandidateProfileService.class);
         var profile = org.mockito.Mockito.mock(com.careeros.domain.CandidateProfile.class);
         org.mockito.Mockito.lenient().when(profile.profileVersion()).thenReturn("profile-7");
@@ -500,5 +512,26 @@ class AgentRunApiTest {
             .andExpect(jsonPath("$.confirming.factKey").value("GENDER"))
             .andExpect(jsonPath("$.confirming.jobPostingId").value(FIRST_JOB.toString()))
             .andExpect(jsonPath("$.confirming.profileVersion").value("profile-7"));
+    }
+
+    /**
+     * 没查完不能变成"没有找到岗位"摆到用户面前。
+     *
+     * <p>预算用完时这一页可能一个都没评估出来，而范围里还剩七个没看。
+     * 这一轮照旧要以追问收场（有东西没办完），但那句"这个范围内没有找到岗位"不能发出去——
+     * 用户照着它会以为宁波没有岗位，其实系统只是没把它看完。
+     */
+    @Test void anUnfinishedSearchCannotReachTheUserAsNoJobs() throws Exception {
+        emptySearchMvc(state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查宁波")
+            : new PlannerStep.AskUser("BROADEN_SCOPE", AgentTooling.Basis.on(1)),
+            sessions(session()), false, 7)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("宁波有什么合适的", SESSION)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.question").doesNotExist())
+            .andExpect(jsonPath("$.violations").isNotEmpty());
+        // 工具那句摘要本身不能把话说死，那一条在 ReadOnlyToolsTest 里验——
+        // 这里的工具是替身，摘要是写死的，在这儿断言它等于什么都没验。
     }
 }

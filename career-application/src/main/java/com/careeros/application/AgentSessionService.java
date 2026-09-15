@@ -91,15 +91,27 @@ public final class AgentSessionService {
      * <p>不记的话，用户刷新之后只答一句"余杭"，系统既不知道他原本要办什么，
      * 也不知道自己问过他什么——那一问等于白问，他得从头再说一遍。
      *
-     * <p>刻意只动这两个字段：这一轮没有查出新列表，上一轮的范围、顺序和待确认项
-     * 还是用户屏幕上那一份，清掉它们下一句"第二个"就没有东西可指了。
+     * <p>刻意只动这两个字段：列表、范围与待确认项由 {@link #rememberRun} 管，
+     * 这两件事不互相排斥——一轮可以既查出新列表、又仍然以追问收场。
+     *
+     * <p><b>连着追问时，原来那件事不换。</b> 用户要办的是"有什么合适的"；
+     * 系统问他哪个城市，他答一句"余杭"，系统又问"你指的是第几个"——
+     * 把"余杭"当成他要办的那件事存下去，刷新之后页面会摆出"为了：余杭"，
+     * 而他从头到尾要办的是"有什么合适的"。"余杭"是一个回答，不是一件事。
+     * 所以还欠着事的时候只更新那句追问；等 {@link #completeOpenTask} 把它清掉，
+     * 下一次追问才轮到新的任务接上。
+     *
+     * <p>代价明说：用户在一件事没办完时<b>另起</b>一个话题，页面上"为了：…"会仍然写着上一件，
+     * 直到那一件被真的答完。这比反过来好——反过来是把他的一句回答当成他要办的事，
+     * 而那件真正要办的事再也接不回来了。
      */
     public AgentSession rememberAsk(UUID sessionId, UUID candidateId, String openTask, String question) {
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(candidateId, "candidateId");
         var existing = find(candidateId, sessionId).orElse(null);
         if (existing != null) {
-            return sessions.save(existing.withOpenTask(openTask, question, clock.instant()));
+            String task = existing.hasOpenTask() ? existing.openTask() : openTask;
+            return sessions.save(existing.withOpenTask(task, question, clock.instant()));
         }
         // 第一轮就以追问收场时也要开一轮会话，否则最先问出去的那一句永远接不回来：
         // 用户刷新之后页面什么都没有，他刚被问的那句话和他原本要办的事一起消失了。

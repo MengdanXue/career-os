@@ -1,0 +1,63 @@
+-------------------------------------------------------------------------------
+Test set: com.careeros.application.agent.AgentExecutorTest
+-------------------------------------------------------------------------------
+Tests run: 62, Failures: 6, Errors: 0, Skipped: 0, Time elapsed: 0.316 s <<< FAILURE! -- in com.careeros.application.agent.AgentExecutorTest
+com.careeros.application.agent.AgentExecutorTest.aNothingInScopeClosingIsRefusedWhenTheSearchDidNotFinish -- Time elapsed: 0.012 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "这个范围内没有找到岗位。"
+	at com.careeros.application.agent.AgentExecutorTest.aNothingInScopeClosingIsRefusedWhenTheSearchDidNotFinish(AgentExecutorTest.java:1024)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aRetryLaterQuestionIsRefusedWhenNothingActuallyFailed -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "这次读不到，要不要稍后再试？"
+	at com.careeros.application.agent.AgentExecutorTest.aRetryLaterQuestionIsRefusedWhenNothingActuallyFailed(AgentExecutorTest.java:1083)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aRetryLaterQuestionIsRefusedWhenTheCitedReadingSucceeded -- Time elapsed: 0.001 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "这次读不到，要不要稍后再试？"
+	at com.careeros.application.agent.AgentExecutorTest.aRetryLaterQuestionIsRefusedWhenTheCitedReadingSucceeded(AgentExecutorTest.java:1121)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aBroadenScopeQuestionIsRefusedWhenTheSearchDidNotFinish -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "这个范围内没有找到岗位，要不要放宽城市或职位类别？"
+	at com.careeros.application.agent.AgentExecutorTest.aBroadenScopeQuestionIsRefusedWhenTheSearchDidNotFinish(AgentExecutorTest.java:1037)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aRetryLaterQuestionIsAcceptedWhenTheCitedReadActuallyFailed -- Time elapsed: 0.004 s <<< FAILURE!
+java.lang.AssertionError: 
+
+Expecting empty but was: ["这段话点名的依据不成立：第 1 条是失败的结果（watchlist）"]
+	at com.careeros.application.agent.AgentExecutorTest.aRetryLaterQuestionIsAcceptedWhenTheCitedReadActuallyFailed(AgentExecutorTest.java:1095)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.agent.AgentExecutorTest.aNothingInScopeClosingIsRefusedWhenCompletenessIsUnknown -- Time elapsed: 0.001 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: null
+ but was: "这个范围内没有找到岗位。"
+	at com.careeros.application.agent.AgentExecutorTest.aNothingInScopeClosingIsRefusedWhenCompletenessIsUnknown(AgentExecutorTest.java:1054)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+

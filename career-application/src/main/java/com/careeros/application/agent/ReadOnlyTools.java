@@ -81,10 +81,19 @@ public final class ReadOnlyTools {
                 data.put("complete", page.complete());
                 data.put("jobs", jobs);
                 // 预算不够时不能把"只评估了一部分"读成"就这么多"。
-                String incomplete = page.complete() ? ""
-                    : "（共享预算已用完，还有 " + page.notAssessed() + " 个岗位没有评估，这批结果不完整）";
-                return Observation.ok(name(),
-                    (jobs.isEmpty() ? "这个范围内没有岗位。" : "找到 " + jobs.size() + " 个岗位。") + incomplete, data);
+                //
+                // 一个都没评估出来时尤其不能说"这个范围内没有岗位"：那句话把范围里还剩多少
+                // 一并否掉了。后面再补一句"结果不完整"也救不回来——前半句已经把话说死，
+                // 规划器和用户都按前半句理解。没查完就只说没查完。
+                String summary;
+                if (!page.complete()) {
+                    summary = (jobs.isEmpty() ? "这个范围这次没有查完，已经评估的部分里一个岗位都没有。"
+                        : "这个范围这次没有查完，已经评估的部分里找到 " + jobs.size() + " 个岗位。")
+                        + "（共享预算已用完，还有 " + page.notAssessed() + " 个岗位没有评估，这批结果不完整）";
+                } else {
+                    summary = jobs.isEmpty() ? "这个范围内没有岗位。" : "找到 " + jobs.size() + " 个岗位。";
+                }
+                return Observation.ok(name(), summary, data);
             }
         };
     }
