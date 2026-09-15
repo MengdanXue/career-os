@@ -56,7 +56,7 @@ class AgentExecutorTest {
                 attempted.add("update_profile");
                 return new PlannerStep.CallTool(ToolCall.of("update_profile", "value", "CPC_MEMBER"), "想直接改资料");
             }
-            return new PlannerStep.Finish("已经按公开信息整理如下。");
+            return new PlannerStep.Finish("RANKED_LISTING");
         });
 
         assertThat(executor.registeredTools()).containsExactly("search_jobs");
@@ -77,7 +77,7 @@ class AgentExecutorTest {
 
         var run = executor.run(CANDIDATE, "随便问问", state -> state.observations().size() < 2
             ? new PlannerStep.CallTool(ToolCall.of("nope_" + state.observations().size()), "乱报")
-            : new PlannerStep.Finish("好的。"));
+            : new PlannerStep.Finish("RANKED_LISTING"));
 
         assertThat(run.budgetSpent()).isZero();
         assertThat(run.outcome()).isEqualTo(Outcome.FINISHED);
@@ -96,7 +96,7 @@ class AgentExecutorTest {
         executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(
                 ToolCall.of("search_jobs", "candidateId", OTHER_CANDIDATE.toString()), "试图换个候选人")
-            : new PlannerStep.Finish("好的。"));
+            : new PlannerStep.Finish("RANKED_LISTING"));
 
         assertThat(search.invokedFor).containsExactly(CANDIDATE);
         assertThat(search.invokedFor).doesNotContain(OTHER_CANDIDATE);
@@ -177,9 +177,8 @@ class AgentExecutorTest {
         var run = executor.run(CANDIDATE, "查岗位", state -> {
             var last = state.last();
             if (last == null) return new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查");
-            return last.ok() ? new PlannerStep.Finish("查到了。", AgentTooling.Basis.on(1))
-                : new PlannerStep.AskUser("岗位库这次读不到，要不要换个条件再试？",
-                    AgentTooling.Basis.clarifying());
+            return last.ok() ? new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1))
+                : new PlannerStep.AskUser("RETRY_LATER", AgentTooling.Basis.clarifying());
         });
 
         assertThat(run.outcome()).isEqualTo(Outcome.ASKED_USER);
@@ -202,11 +201,10 @@ class AgentExecutorTest {
                 int count = last.value("count", 0);
                 // 有岗位就去看待确认事项；一个都没有就去问用户放宽条件，而不是继续往下查。
                 return count == 0
-                    ? new PlannerStep.AskUser("这个范围内没有岗位，要不要放宽城市或职位类别？",
-                        AgentTooling.Basis.on(1))
+                    ? new PlannerStep.AskUser("BROADEN_SCOPE", AgentTooling.Basis.on(1))
                     : new PlannerStep.CallTool(ToolCall.of("pending_confirmations"), "有岗位，看看还缺什么确认");
             }
-            return new PlannerStep.Finish("下面按稳定性排序，其中一处仍需你补充材料后才能定。",
+            return new PlannerStep.Finish("RANKED_LISTING",
                 AgentTooling.Basis.on(1, 2));
         };
 
@@ -240,7 +238,7 @@ class AgentExecutorTest {
         var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
 
         var run = executor.run(CANDIDATE, "查岗位",
-            state -> new PlannerStep.Finish("这个岗位你是可报的，适配 72 分，放心投。",
+            state -> new PlannerStep.Finish("RANKED_LISTING",
                 AgentTooling.Basis.clarifying()));
 
         assertThat(run.outcome()).isEqualTo(Outcome.FINISHED);
@@ -255,10 +253,10 @@ class AgentExecutorTest {
 
         var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序，其中一处仍需你补充材料后才能定。",
+            : new PlannerStep.Finish("RANKED_LISTING",
                 AgentTooling.Basis.on(1)));
 
-        assertThat(run.narrative()).isEqualTo("下面按稳定性排序，其中一处仍需你补充材料后才能定。");
+        assertThat(run.narrative()).isEqualTo("下面是这个范围内的岗位，按稳定性排序；资格、限制条件和截止日见下方事实块。");
         assertThat(run.textRejected()).isFalse();
     }
 
@@ -268,7 +266,7 @@ class AgentExecutorTest {
 
         var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "用户问的是岗位，先查岗位库")
-            : new PlannerStep.Finish("好的。"));
+            : new PlannerStep.Finish("RANKED_LISTING"));
 
         assertThat(run.trace()).singleElement().satisfies(entry -> {
             assertThat(entry.accepted()).isTrue();
@@ -285,7 +283,7 @@ class AgentExecutorTest {
             seen.add(state.remainingBudget());
             return state.observations().size() < 2
                 ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "查")
-                : new PlannerStep.Finish("好的。");
+                : new PlannerStep.Finish("RANKED_LISTING");
         });
 
         assertThat(seen).containsExactly(3, 2, 1);
@@ -302,7 +300,7 @@ class AgentExecutorTest {
         var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
 
         var run = executor.run(CANDIDATE, "有什么合适的",
-            state -> new PlannerStep.Finish("这些岗位都挺适合你的，可以先从前面几个看起。"));
+            state -> new PlannerStep.Finish("RANKED_LISTING"));
 
         assertThat(run.outcome()).isEqualTo(Outcome.FINISHED);
         assertThat(run.narrative()).isNull();
@@ -322,7 +320,7 @@ class AgentExecutorTest {
         var run = executor.run(CANDIDATE, "有什么合适的", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("watchlist"), "先看关注")
             // 有一条成功的观察，但这段话没说自己依据它。
-            : new PlannerStep.Finish("这些岗位都挺适合你的，可以先从前面几个看起。"));
+            : new PlannerStep.Finish("RANKED_LISTING"));
 
         assertThat(run.narrative()).isNull();
         assertThat(run.violations()).contains(AgentExecutor.UNGROUNDED_FINISH);
@@ -334,7 +332,7 @@ class AgentExecutorTest {
 
         var run = executor.run(CANDIDATE, "有什么合适的", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(7)));
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(7)));
 
         assertThat(run.narrative()).isNull();
         assertThat(run.violations()).anySatisfy(reason ->
@@ -352,7 +350,7 @@ class AgentExecutorTest {
 
         var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("这个范围里目前没有值得看的机会。", AgentTooling.Basis.on(1)));
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)));
 
         assertThat(run.narrative()).isNull();
         assertThat(run.violations()).anySatisfy(reason ->
@@ -365,9 +363,9 @@ class AgentExecutorTest {
 
         var run = executor.run(CANDIDATE, "有什么合适的", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序，先看前面几个。", AgentTooling.Basis.on(1)));
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)));
 
-        assertThat(run.narrative()).isEqualTo("下面按稳定性排序，先看前面几个。");
+        assertThat(run.narrative()).isEqualTo("下面是这个范围内的岗位，按稳定性排序；资格、限制条件和截止日见下方事实块。");
         assertThat(run.violations()).isEmpty();
         assertThat(run.groundedOn()).containsExactly(1);
     }
@@ -378,7 +376,7 @@ class AgentExecutorTest {
 
         var run = executor.run(CANDIDATE, "有什么合适的", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.clarifying()));
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.clarifying()));
 
         assertThat(run.narrative()).isNull();
         assertThat(run.violations()).contains(AgentExecutor.UNGROUNDED_FINISH);
@@ -410,7 +408,7 @@ class AgentExecutorTest {
             state -> new PlannerStep.AskUser("这些岗位都挺适合你的。", AgentTooling.Basis.clarifying()));
 
         assertThat(run.question()).isNull();
-        assertThat(run.violations()).contains(AgentExecutor.ASK_IS_NOT_A_QUESTION);
+        assertThat(run.violations()).contains(AgentExecutor.UNKNOWN_TEMPLATE);
     }
 
     /** 澄清式追问本来就不需要依据：还没查之前就该能问"你说的是哪个范围"。 */
@@ -418,11 +416,11 @@ class AgentExecutorTest {
         var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
 
         var run = executor.run(CANDIDATE, "杭州有什么",
-            state -> new PlannerStep.AskUser("你说的杭州是指市区，还是整个杭州市？",
+            state -> new PlannerStep.AskUser("WHICH_LOCATION",
                 AgentTooling.Basis.clarifying()));
 
         assertThat(run.outcome()).isEqualTo(Outcome.ASKED_USER);
-        assertThat(run.question()).contains("市区");
+        assertThat(run.question()).isEqualTo("你想看哪个城市或区县的岗位？");
         assertThat(run.violations()).isEmpty();
     }
 
@@ -439,7 +437,7 @@ class AgentExecutorTest {
 
         var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。"));
+            : new PlannerStep.Finish("RANKED_LISTING"));
 
         // 一次调用本身算一个单位，内部四次评估再算四个。
         assertThat(run.budgetSpent()).isEqualTo(5);
@@ -521,19 +519,118 @@ class AgentExecutorTest {
             : new PlannerStep.Finish("这些岗位都很适合你，建议优先准备。", AgentTooling.Basis.on(1)));
 
         assertThat(run.narrative()).isNull();
-        assertThat(run.violations()).isNotEmpty();
+        assertThat(run.violations()).contains(AgentExecutor.UNKNOWN_TEMPLATE);
     }
 
-    /** 正常的连接性叙述不能被上面几条误伤。 */
+    /** 正常的连接性收尾不能被上面几条误伤。 */
     @Test void aPlainConnectiveNarrativeIsStillAccepted() {
         var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
 
         var run = executor.run(CANDIDATE, "有什么合适的", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序，先看前面几个。", AgentTooling.Basis.on(1)));
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)));
 
-        assertThat(run.narrative()).isEqualTo("下面按稳定性排序，先看前面几个。");
+        assertThat(run.narrative()).isEqualTo("下面是这个范围内的岗位，按稳定性排序；资格、限制条件和截止日见下方事实块。");
         assertThat(run.violations()).isEmpty();
+    }
+
+    /**
+     * 每一条模板渲染出来的句子都要过叙述校验器。
+     *
+     * <p>模板是我们自己写的，本来就该通过。留这一道是为了将来有人改模板时，
+     * 改出判定词会当场红，而不是等用户看到。
+     */
+    @Test void everyTemplateRendersTextThatPassesTheNarrativeRules() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+        var validator = new com.careeros.domain.AnswerNarrativeValidator();
+
+        for (String template : executor.closingTemplates()) {
+            var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
+                ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+                : new PlannerStep.Finish(template, AgentTooling.Basis.on(1)));
+            assertThat(run.narrative()).as("模板 %s 渲染不出句子", template).isNotNull();
+            assertThat(validator.validateNarrative(run.narrative()).accepted())
+                .as("模板 %s 渲染出来的句子过不了叙述校验：%s", template, run.narrative()).isTrue();
+        }
+        for (String template : executor.questionTemplates()) {
+            var slots = "CONFIRM_FACT".equals(template) ? Map.of("fact", "GENDER") : Map.<String, String>of();
+            var run = executor.run(CANDIDATE, "查岗位",
+                state -> new PlannerStep.AskUser(template, slots, AgentTooling.Basis.clarifying()));
+            assertThat(run.question()).as("模板 %s 渲染不出句子", template).isNotNull();
+            assertThat(validator.validateNarrative(run.question()).accepted())
+                .as("模板 %s 渲染出来的句子过不了叙述校验：%s", template, run.question()).isTrue();
+        }
+    }
+
+    /** 模板名不在清单里就没有这句话——模型报一个看起来合理的名字也不行。 */
+    @Test void anUnknownTemplateProducesNoUserVisibleText() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "查岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("LOOKS_REASONABLE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).contains(AgentExecutor.UNKNOWN_TEMPLATE);
+    }
+
+    /** 槽位取值只能来自封闭枚举：渲染出一个看不懂的字段名，比不渲染更糟。 */
+    @Test void aSlotValueOutsideTheClosedSetProducesNoQuestion() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "查岗位", state -> new PlannerStep.AskUser(
+            "CONFIRM_FACT", Map.of("fact", "FAVOURITE_COLOUR"), AgentTooling.Basis.clarifying()));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).contains(AgentExecutor.UNKNOWN_TEMPLATE);
+    }
+
+    /** 槽位对得上时照常渲染，标签用中文，不把枚举名摆给用户。 */
+    @Test void aConfirmFactQuestionRendersTheHumanLabel() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+
+        var run = executor.run(CANDIDATE, "查岗位", state -> new PlannerStep.AskUser(
+            "CONFIRM_FACT", Map.of("fact", "GENDER"), AgentTooling.Basis.clarifying()));
+
+        assertThat(run.question()).isEqualTo("要不要现在确认「性别」？");
+    }
+
+    // --- G2：复核包里仍被放行的五条原句 ---
+
+    /**
+     * 这五条是复核包点名的四类：资格、材料、概率、伪澄清。
+     *
+     * <p>它们一个数字、一个分层标签都没有，词表也拦不住——上一轮新加的推荐词表拦的是
+     * "适合""建议报考"那几种写法，换个说法就绕过去了。靠往词表里加词去追，
+     * 永远慢模型一步：能说的句子是无穷的，词表是有限的。
+     *
+     * <p>所以这一轮不再加词：用户可见的 FINISH／ASK 收束成有限模板，
+     * 模型只能选模板和给结构化引用，句子由程序渲染。这五条于是写不出来，
+     * 不是被检测出来。
+     */
+    @Test void theReviewPackSentencesCannotReachTheUser() {
+        List<String> refused = List.of(
+            // 资格：替系统下了"没有硬门槛"的判断
+            "FINISH 你这条线基本没什么硬门槛挡着。\nBASIS 1",
+            // 资格：替系统下了"条件都对得上"的判断
+            "FINISH 这几个的报考条件你都对得上。\nBASIS 1",
+            // 材料：替系统承诺"补齐就能报名"
+            "FINISH 你把学历证明补齐就能报名了。\nBASIS 1",
+            // 概率：把决策指数说成进面的把握
+            "FINISH 以你的条件，进面基本没问题。\nBASIS 1",
+            // 伪澄清：判断裹在问句里，声明成纯澄清就不受依据检查
+            "ASK 这批里有几个明显更稳妥，要我先讲哪个？\nBASIS none");
+
+        for (String turn : refused) {
+            var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 1))));
+            var queue = new java.util.ArrayDeque<>(List.of(
+                "TOOL search_jobs\nWHY 先查", turn));
+            var run = executor.run(CANDIDATE, "有什么合适的",
+                new ModelPlanner((protocol, rendered) -> queue.isEmpty() ? "" : queue.poll()));
+
+            assertThat(run.narrative()).as("这句话到了用户面前：%s", turn).isNull();
+            assertThat(run.question()).as("这句话到了用户面前：%s", turn).isNull();
+        }
     }
 
     // --- 多轮：上一轮的上下文必须真的被用上 ---
@@ -553,12 +650,12 @@ class AgentExecutorTest {
         var executor = new AgentExecutor(List.of(search));
         AgentTooling.AgentPlanner narrowing = state -> {
             if (!state.observations().isEmpty()) {
-                return new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1));
+                return new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1));
             }
             String previous = state.session().location();
             // 看不见上一轮的范围，就只能再问一次"你说的是哪里"——用户会看到自己刚答过的问题又来一遍。
             if (previous == null || previous.isBlank()) {
-                return new PlannerStep.AskUser("你想看哪个城市的岗位？", AgentTooling.Basis.clarifying());
+                return new PlannerStep.AskUser("WHICH_LOCATION", AgentTooling.Basis.clarifying());
             }
             return new PlannerStep.CallTool(
                 ToolCall.of("search_jobs", "location", state.question().strip()),
@@ -606,7 +703,7 @@ class AgentExecutorTest {
 
         executor.run(CANDIDATE, "第二个怎么样", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("job_facts", "ordinal", "2"), "用户指的是上一轮的第二个")
-            : new PlannerStep.Finish("好的。", AgentTooling.Basis.on(1)), hangzhouSession());
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)), hangzhouSession());
 
         assertThat(assessed).containsExactly(SECOND_JOB);
     }
@@ -619,7 +716,7 @@ class AgentExecutorTest {
 
         var run = executor.run(CANDIDATE, "第二个怎么样", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("job_facts", "ordinal", "2"), "用户指的是第二个")
-            : new PlannerStep.Finish("好的。", AgentTooling.Basis.on(1)));
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)));
 
         assertThat(run.observations()).first().satisfies(observation -> {
             assertThat(observation.ok()).isFalse();

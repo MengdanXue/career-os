@@ -134,16 +134,26 @@ public final class AgentTooling {
      *
      * @param jobsInOrder 上一轮列表的顺序。序号只在这里解析，永不重新排名
      * @param pending     上一轮问过、还没答的资料项
+     * @param openTask    上一轮追问时，用户原本要办的那件事。没有它，用户答完一句"余杭"
+     *                    就没人知道这句话是在回答什么，他得从头再说一遍
+     * @param pendingQuestion 系统问出去的那句话
      */
     public record SessionContext(UUID sessionId, String location, String tier, String jobFamily,
-                                 List<JobRef> jobsInOrder, List<PendingRef> pending, String profileVersion) {
+                                 List<JobRef> jobsInOrder, List<PendingRef> pending, String profileVersion,
+                                 String openTask, String pendingQuestion) {
         public SessionContext {
             jobsInOrder = List.copyOf(jobsInOrder == null ? List.of() : jobsInOrder);
             pending = List.copyOf(pending == null ? List.of() : pending);
         }
-        public static SessionContext none() {
-            return new SessionContext(null, null, null, null, List.of(), List.of(), null);
+        public SessionContext(UUID sessionId, String location, String tier, String jobFamily,
+                              List<JobRef> jobsInOrder, List<PendingRef> pending, String profileVersion) {
+            this(sessionId, location, tier, jobFamily, jobsInOrder, pending, profileVersion, null, null);
         }
+        public static SessionContext none() {
+            return new SessionContext(null, null, null, null, List.of(), List.of(), null, null, null);
+        }
+        /** 上一轮问出去之后还欠着一件事没做完。 */
+        public boolean hasOpenTask() { return openTask != null && !openTask.isBlank(); }
         public boolean present() { return sessionId != null; }
         /** 把"第 N 个"解析回岗位。越界返回空——不猜，也不重新排名。 */
         public java.util.Optional<JobRef> atOrdinal(int ordinal) {
@@ -196,13 +206,28 @@ public final class AgentTooling {
     public sealed interface PlannerStep {
         /** 调一个工具。{@code why} 会记进轨迹，便于事后看它为什么这么选。 */
         record CallTool(ToolCall call, String why) implements PlannerStep {}
-        /** 结束并给出连接性叙述；叙述要过 AnswerNarrativeValidator，依据要点到具体观察。 */
-        record Finish(String narrative, Basis basis) implements PlannerStep {
-            public Finish(String narrative) { this(narrative, Basis.none()); }
+        /**
+         * 结束。
+         *
+         * <p>模型选一个模板并给结构化引用，句子由程序渲染——它写不出自由句子，
+         * 所以也写不出"你这条线基本没什么硬门槛挡着"这类没人算过的判断。
+         */
+        record Finish(String template, Map<String, String> slots, Basis basis) implements PlannerStep {
+            public Finish {
+                slots = slots == null ? Map.of() : Map.copyOf(slots);
+            }
+            public Finish(String template, Basis basis) { this(template, Map.of(), basis); }
+            /** 没点名依据的一步。执行器会拒绝它——留这个构造器是为了能把那种情形写成用例。 */
+            public Finish(String template) { this(template, Map.of(), Basis.none()); }
         }
-        /** 向用户追问。追问不是写入，不需要授权，但同样不许夹带无依据的结论。 */
-        record AskUser(String question, Basis basis) implements PlannerStep {
-            public AskUser(String question) { this(question, Basis.none()); }
+        /** 向用户追问。同样只能选模板；追问不是写入，不需要授权。 */
+        record AskUser(String template, Map<String, String> slots, Basis basis) implements PlannerStep {
+            public AskUser {
+                slots = slots == null ? Map.of() : Map.copyOf(slots);
+            }
+            public AskUser(String template, Basis basis) { this(template, Map.of(), basis); }
+            /** 既没点名依据也没声明是纯澄清的一步。执行器同样会拒绝。 */
+            public AskUser(String template) { this(template, Map.of(), Basis.none()); }
         }
     }
 

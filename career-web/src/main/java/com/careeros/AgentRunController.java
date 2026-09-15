@@ -69,7 +69,7 @@ class AgentRunController {
         var pending = pending(run.observations(), context);
         // 这一轮的范围、列表和还没答的问题要存回去，否则会话永远停在第一轮：
         // 用户看到的是新列表，下一句"第二个"却解析回上一轮那一份。
-        var saved = save(candidateId, request.sessionId(), session, run, jobs, pending);
+        var saved = save(candidateId, request.sessionId(), session, run, jobs, pending, request.question());
 
         return new AgentRunResponse(
             run.outcome().name(),
@@ -105,9 +105,20 @@ class AgentRunController {
      * @return 存下来的会话；这一轮没有新列表时为 {@code null}
      */
     private AgentSession save(UUID candidateId, UUID requestedSessionId, AgentSession existing,
-                              AgentExecutor.AgentRun run, List<JobView> jobs, List<PendingView> pending) {
+                              AgentExecutor.AgentRun run, List<JobView> jobs, List<PendingView> pending,
+                              String question) {
         var listing = searchArguments(run);
-        if (listing == null) return null;
+        if (listing == null) {
+            // 这一轮以追问收场：列表没变，但"还欠着什么"和"问过什么"要存下来，
+            // 否则用户刷新之后只答一句"余杭"，系统既不知道他要办什么，也不知道自己问过什么。
+            // 第一轮就追问时也要开一轮会话，否则最先问出去的那一句永远接不回来。
+            if (run.outcome() == AgentExecutor.Outcome.ASKED_USER && run.question() != null) {
+                UUID askSessionId = existing != null ? existing.sessionId()
+                    : requestedSessionId != null ? requestedSessionId : UUID.randomUUID();
+                return sessions.rememberAsk(askSessionId, candidateId, question, run.question());
+            }
+            return null;
+        }
         UUID sessionId = existing != null ? existing.sessionId()
             : requestedSessionId != null ? requestedSessionId : UUID.randomUUID();
         var order = jobs.stream().map(job -> UUID.fromString(job.jobPostingId())).toList();
@@ -119,16 +130,22 @@ class AgentRunController {
         return sessions.rememberRun(sessionId, candidateId, filtersOf(listing), order, items);
     }
 
-    /** 这一轮成功执行的最后一次 search_jobs 用了什么参数；没有就返回 null。 */
+    /**
+     * 这一轮成功执行的最后一次 search_jobs 用了什么参数；没有就返回 null。
+     *
+     * <p>对位用执行器记下来的观察序号，不靠"数到第几个被接受的"——被拒的调用同样会留下
+     * 一条失败观察，那样数会错位：第一步请求了不存在的工具、第二步查询成功，
+     * 对位之后读到的是第一步那条失败观察，这一轮就被判成"没查出新列表"，
+     * 用户明明看到了新列表，下一句"第二个"却指回上一轮。
+     */
     private static Map<String, String> searchArguments(AgentExecutor.AgentRun run) {
         Map<String, String> arguments = null;
         var observations = run.observations();
-        int index = 0;
         for (AgentExecutor.TraceEntry entry : run.trace()) {
-            if (!entry.accepted()) continue;
-            boolean succeeded = index < observations.size() && observations.get(index).ok();
-            if (succeeded && "search_jobs".equals(entry.tool())) arguments = entry.arguments();
-            index++;
+            if (!entry.accepted() || !entry.hasObservation()) continue;
+            if (!"search_jobs".equals(entry.tool())) continue;
+            int at = entry.observationIndex() - 1;
+            if (at < observations.size() && observations.get(at).ok()) arguments = entry.arguments();
         }
         return arguments;
     }
@@ -177,7 +194,7 @@ class AgentRunController {
             filters == null ? null : filters.location(),
             filters == null || filters.tier() == null ? null : filters.tier().name(),
             filters == null || filters.jobFamily() == null ? null : filters.jobFamily().name(),
-            jobs, pending, session.profileVersion());
+            jobs, pending, session.profileVersion(), session.openTask(), session.pendingQuestion());
     }
 
     /**

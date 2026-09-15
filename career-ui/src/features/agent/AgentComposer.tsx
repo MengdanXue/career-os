@@ -79,6 +79,12 @@ export function AgentComposer({ expanded = false }: { expanded?: boolean }) {
         <p>接着上一轮。</p>
         {/* 资料在这期间变了就说出来，不让页面拿着旧序号继续问"第二个怎么样"：
             重新排出来的第二个可能是另一个岗位，而用户看不出它换了对象。 */}
+        {/* 刷新之后要说明他在回答什么。只把问题原样摆回去还不够：
+            他记得的是自己原本要办的那件事，不是系统问过的那句话。 */}
+        {recovered.pendingQuestion && <p className="agent-restored-question">
+          上次问你：{recovered.pendingQuestion}
+          {recovered.openTask && <small>为了：{recovered.openTask}</small>}
+        </p>}
         {recovered.stale && <p className="agent-restored-stale" role="status">
           你的资料已经更新，上一份列表的排序不再对应当前结论，请重新查询后再按序号提问。
         </p>}

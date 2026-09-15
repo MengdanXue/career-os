@@ -35,6 +35,15 @@ public record AgentSession(
     List<UUID> lastJobIdsInOrder,
     List<PendingConfirmation> pendingConfirmations,
     String profileVersion,
+    /**
+     * 还没做完的那件事：系统追问时，用户原本要办的是什么。
+     *
+     * <p>不记的话，他刷新之后只答一句"余杭"，系统既不知道他要办什么，
+     * 也不知道自己问过什么——那一问等于白问，他得从头再说一遍。
+     */
+    String openTask,
+    /** 系统问过他的那句话。刷新之后要能原样摆回去，而不是让他猜自己在回答什么。 */
+    String pendingQuestion,
     Instant updatedAt
 ) {
     public AgentSession {
@@ -51,6 +60,13 @@ public record AgentSession(
             // 同一个岗位出现两次，序号就不再唯一指向一个岗位。
             throw new IllegalArgumentException("lastJobIdsInOrder must not repeat a job");
         }
+    }
+
+    /** 没有未完成任务的一轮。绝大多数调用点是这种。 */
+    public AgentSession(UUID sessionId, UUID candidateId, SessionFilters filters, List<UUID> lastJobIdsInOrder,
+                        List<PendingConfirmation> pendingConfirmations, String profileVersion, Instant updatedAt) {
+        this(sessionId, candidateId, filters, lastJobIdsInOrder, pendingConfirmations, profileVersion,
+            null, null, updatedAt);
     }
 
     /**
@@ -82,15 +98,35 @@ public record AgentSession(
      */
     public AgentSession withProfileVersion(String profileVersion, Instant at) {
         return new AgentSession(sessionId, candidateId, filters, lastJobIdsInOrder,
-            pendingConfirmations, profileVersion, at);
+            pendingConfirmations, profileVersion, openTask, pendingQuestion, at);
     }
 
+    /**
+     * 记下这一轮查出来的新列表。
+     *
+     * <p>同时把"还没做完的事"清掉：这一轮已经给出了结果，那件事就算办完了。
+     * 不清的话，下一轮会把一件已经办完的事当成还欠着的，反复接着做。
+     */
     public AgentSession withListing(
         SessionFilters filters, List<UUID> jobIds, List<PendingConfirmation> pending,
         String profileVersion, Instant at
     ) {
-        return new AgentSession(sessionId, candidateId, filters, jobIds, pending, profileVersion, at);
+        return new AgentSession(sessionId, candidateId, filters, jobIds, pending, profileVersion,
+            null, null, at);
     }
+
+    /** 只记下"还没做完的事"和"问过什么"，列表、范围与待确认项原样保留。 */
+    public AgentSession withOpenTask(String openTask, String pendingQuestion, Instant at) {
+        return new AgentSession(sessionId, candidateId, filters, lastJobIdsInOrder,
+            pendingConfirmations, profileVersion, blankToNull(openTask), blankToNull(pendingQuestion), at);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
+    }
+
+    /** 还欠着一件事没做完。刷新之后据此把原来的任务和那句追问接回去。 */
+    public boolean hasOpenTask() { return openTask != null && !openTask.isBlank(); }
 
     /**
      * @param limit 这一轮取了几个。记下来是因为"还有别的吗"要接着往下取，而不是从头再来。

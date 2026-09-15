@@ -108,3 +108,7 @@
 .agent-run-jobs small { display: block; color: var(--muted); }
 .agent-run-restrictions { margin: 4px 0 0; padding-left: 14px; list-style: disc; color: #78532e; }
 .agent-restored-answered { margin: 0 0 6px; color: var(--muted); font-size: 11px; }
+
+/* 刷新之后把那句追问和原来的任务摆回去，免得用户不知道自己在回答什么。 */
+.agent-restored-question { margin: 0 0 6px; padding: 7px 9px; border-left: 3px solid var(--line); background: #fbfaf6; font-size: 11px; }
+.agent-restored-question small { display: block; margin-top: 2px; color: var(--muted); }

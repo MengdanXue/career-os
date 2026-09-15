@@ -120,6 +120,8 @@ describe('AgentComposer', () => {
       sessionId: '01992f09-0000-7000-8000-0000000000aa',
       profileVersion: 'profile-7',
       stale: false,
+      openTask: null,
+      pendingQuestion: null,
       jobIdsInOrder: ['01992f09-0000-7000-8000-0000000000bb'],
       pendingConfirmations: [{
         factKey: 'POLITICAL_AFFILIATION',
@@ -146,7 +148,7 @@ describe('AgentComposer', () => {
     localStorage.setItem('career-os.agent-session', '01992f09-0000-7000-8000-0000000000aa')
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       sessionId: '01992f09-0000-7000-8000-0000000000aa',
-      profileVersion: 'profile-7', stale: true,
+      profileVersion: 'profile-7', stale: true, openTask: null, pendingQuestion: null,
       jobIdsInOrder: [], pendingConfirmations: [],
     })))
     render(<AppProviders><AgentComposer expanded /></AppProviders>)
@@ -176,7 +178,7 @@ describe('AgentComposer', () => {
     localStorage.setItem('career-os.agent-session', '01992f09-0000-7000-8000-0000000000aa')
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
       sessionId: '01992f09-0000-7000-8000-0000000000aa',
-      profileVersion: 'profile-7', stale: false,
+      profileVersion: 'profile-7', stale: false, openTask: null, pendingQuestion: null,
       jobIdsInOrder: [],
       pendingConfirmations: [
         { factKey: 'POLITICAL_AFFILIATION', question: '候选人政治面貌尚未确认',
@@ -191,5 +193,26 @@ describe('AgentComposer', () => {
     expect(screen.getByText('候选人性别尚未确认')).toBeInTheDocument()
     // 答过的那一条不再给出可点的选项。
     expect(screen.queryByRole('button', { name: '中共党员' })).not.toBeInTheDocument()
+  })
+
+  /**
+   * 刷新之后要说明用户在回答什么。
+   *
+   * <p>只把问题原样摆回去还不够：他记得的是自己原本要办的那件事，不是系统问过的那句话。
+   * 两个都不摆，他答完一句"余杭"会不知道这句话去了哪里。
+   */
+  it('shows the outstanding question and the task it was asked for', async () => {
+    localStorage.setItem('career-os.agent-session', '01992f09-0000-7000-8000-0000000000aa')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
+      sessionId: '01992f09-0000-7000-8000-0000000000aa',
+      profileVersion: 'profile-7', stale: false,
+      openTask: '有什么合适的',
+      pendingQuestion: '你想看哪个城市或区县的岗位？',
+      jobIdsInOrder: [], pendingConfirmations: [],
+    })))
+    render(<AppProviders><AgentComposer expanded /></AppProviders>)
+
+    expect(await screen.findByText(/上次问你：你想看哪个城市或区县的岗位？/)).toBeInTheDocument()
+    expect(screen.getByText(/为了：有什么合适的/)).toBeInTheDocument()
   })
 })

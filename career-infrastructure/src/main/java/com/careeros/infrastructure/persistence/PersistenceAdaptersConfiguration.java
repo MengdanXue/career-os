@@ -139,7 +139,7 @@ public class PersistenceAdaptersConfiguration {
             .toList();
         return new com.careeros.application.AgentSession(entity.id(), entity.candidateProfileId, filters,
             entity.lastJobIds.stream().map(UUID::fromString).toList(), pending,
-            entity.profileVersion, entity.updatedAt);
+            entity.profileVersion, entity.openTask, entity.pendingQuestion, entity.updatedAt);
     }
 
     private JpaModels.AgentSessionEntity toAgentSessionEntity(com.careeros.application.AgentSession session) {
@@ -163,6 +163,8 @@ public class PersistenceAdaptersConfiguration {
             })
             .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         entity.profileVersion = session.profileVersion();
+        entity.openTask = session.openTask();
+        entity.pendingQuestion = session.pendingQuestion();
         entity.updatedAt = session.updatedAt();
         return entity;
     }

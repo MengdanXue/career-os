@@ -290,6 +290,9 @@ public final class JpaModels {
         @Column(name = "pending_confirmations", columnDefinition = "jsonb", nullable = false)
         List<Map<String, String>> pendingConfirmations = new ArrayList<>();
         @Column(name = "profile_version", nullable = false, length = 80) String profileVersion;
+        /** 还欠着的那件事，以及问出去的那句话。存原话，不存推断出来的意图。 */
+        @Column(name = "open_task", length = 500) String openTask;
+        @Column(name = "pending_question", length = 500) String pendingQuestion;
         @Column(name = "updated_at", nullable = false) Instant updatedAt;
         protected AgentSessionEntity() {}
     }
