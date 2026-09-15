@@ -1,0 +1,22 @@
+Career OS
+Copyright 2026 Career OS contributors
+
+This product includes software developed by third parties under permissive
+open source licenses. Their notices and licenses are retained in the
+distributed artifacts produced by the build (see META-INF/ inside each
+dependency jar) and are not reproduced here.
+
+Notable third-party components and their licenses:
+
+  Spring Boot, Spring AI, Spring Security     Apache License 2.0
+  Jackson                                      Apache License 2.0
+  Flyway (Community Edition)                   Apache License 2.0
+  Apache PDFBox, Apache POI, Log4j             Apache License 2.0
+  springdoc-openapi, ArchUnit, AssertJ         Apache License 2.0
+  WireMock, json-schema-validator              Apache License 2.0
+  jsoup, SLF4J, Testcontainers                 MIT License
+  PostgreSQL JDBC Driver                       BSD 2-Clause License
+  JUnit 5                                      Eclipse Public License 2.0 (test scope only)
+  React, React Router, TanStack Query,
+  Radix UI, lucide-react, Vite, Vitest         MIT License
+  TypeScript                                   Apache License 2.0

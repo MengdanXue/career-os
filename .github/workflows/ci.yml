@@ -14,6 +14,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dco:
+    name: DCO sign-off
+    # 只在 PR 上跑：仓库既有历史没有签署行，对 push 校验会把每一次推送都判红。
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 取到能覆盖 base..head 的历史，否则下面的 rev-list 拿不到 PR 的提交。
+          fetch-depth: 0
+      - name: Every commit in this pull request carries Signed-off-by
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          while read -r sha; do
+            [ -z "$sha" ] && continue
+            author="$(git show -s --format='%an <%ae>' "$sha")"
+            if ! git show -s --format='%B' "$sha" | grep -qiE "^Signed-off-by: .+ <.+@.+>"; then
+              echo "::error::缺少 Signed-off-by: $(git show -s --format='%h %s' "$sha")"
+              echo "           作者 $author；用 git commit -s 或 git rebase --signoff 补上"
+              missing=1
+            fi
+          done < <(git rev-list --no-merges "$BASE..$HEAD")
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::见 CONTRIBUTING.md 的「开发者证书（DCO）」一节"
+            exit 1
+          fi
+          echo "本 PR 的每个提交都有签署行。"
+
   build:
     name: Java 21, database integration and frontend tests
     runs-on: ubuntu-latest
