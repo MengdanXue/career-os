@@ -61,7 +61,7 @@ class AgentRunController {
         var session = request.sessionId() == null ? null
             : sessions.find(candidateId, request.sessionId()).orElseThrow(() ->
                 new AgentSessionService.SessionNotFoundException("没有这轮会话，或它不属于当前候选人。"));
-        var context = session == null ? SessionContext.none() : contextOf(candidateId, session);
+        var context = session == null ? freshContext(candidateId) : contextOf(candidateId, session);
 
         var run = executor.run(candidateId, request.question(), active, context);
 
@@ -77,6 +77,8 @@ class AgentRunController {
             run.question(),
             run.violations(),
             run.groundedOn(),
+            run.confirming() == null ? null : new ConfirmationBinding(run.confirming().factKey(),
+                run.confirming().jobPostingId().toString(), run.confirming().profileVersion()),
             run.budgetSpent(),
             run.budgetLimit(),
             saved == null ? (session == null ? null : session.sessionId()) : saved.sessionId(),
@@ -96,38 +98,54 @@ class AgentRunController {
     /**
      * 把这一轮存回会话。
      *
-     * <p>只在这一轮真的查出了新列表时才写：用户问"第一个的截止日是哪天"，系统只调了 job_facts，
-     * 这时候把顺序清空，下一句"第二个"就没有东西可指了——上一轮明明还在他屏幕上。
+     * <p><b>列表更新与待答任务更新不是二选一。</b> 早先这里写成 if／else：查出了新列表就只存列表，
+     * 没查出来才存"还欠着什么"。漏掉的正中间那一种一点也不罕见——用户问"宁波有什么合适的"，
+     * 系统真的查了、一个都没查到，于是反问"要不要放宽范围"：这一轮既有新范围，也仍然欠着那件事。
+     * 只存前者，他刷新之后屏幕上那句追问就没了；答一句"杭州"也没人知道是在回答什么。
      *
-     * <p>范围取这一轮<b>实际执行成功</b>的那次 search_jobs 的参数，不取模型说过的话：
-     * 被拒的调用没有产生任何结果，把它的参数当成"本轮范围"，下一轮就会在一个从未生效的范围上接着走。
+     * <p>所以两件事各按各的条件写：
+     * <ul>
+     *   <li>这一轮<b>实际执行成功</b>过 search_jobs，就存新范围和新顺序。取的是执行成功那次的参数，
+     *       不是模型说过的话——被拒的调用没有产生任何结果，把它的参数当成本轮范围，
+     *       下一轮就会在一个从未生效的范围上接着走。</li>
+     *   <li>这一轮以追问收场，就存"还欠着什么"和"问过什么"。第一轮就追问时也要开一轮会话，
+     *       否则最先问出去的那一句永远接不回来。</li>
+     *   <li>这一轮<b>确实把那件事办完了</b>——给出了通过校验的收尾——才清掉待答状态。
+     *       收尾被拒不算办完：用户看到的是事实块，他原来问的还没被回答。</li>
+     * </ul>
      *
-     * @return 存下来的会话；这一轮没有新列表时为 {@code null}
+     * <p>只查了一个岗位的细节（没有新列表）也照样能办完那件事，所以清理不挂在列表上。
+     *
+     * @return 存下来的会话；这一轮什么都没动时为 {@code null}
      */
     private AgentSession save(UUID candidateId, UUID requestedSessionId, AgentSession existing,
                               AgentExecutor.AgentRun run, List<JobView> jobs, List<PendingView> pending,
                               String question) {
         var listing = searchArguments(run);
-        if (listing == null) {
-            // 这一轮以追问收场：列表没变，但"还欠着什么"和"问过什么"要存下来，
-            // 否则用户刷新之后只答一句"余杭"，系统既不知道他要办什么，也不知道自己问过什么。
-            // 第一轮就追问时也要开一轮会话，否则最先问出去的那一句永远接不回来。
-            if (run.outcome() == AgentExecutor.Outcome.ASKED_USER && run.question() != null) {
-                UUID askSessionId = existing != null ? existing.sessionId()
-                    : requestedSessionId != null ? requestedSessionId : UUID.randomUUID();
-                return sessions.rememberAsk(askSessionId, candidateId, question, run.question());
-            }
-            return null;
-        }
+        boolean asked = run.outcome() == AgentExecutor.Outcome.ASKED_USER && run.question() != null;
+        // 收尾被程序拒掉时 narrative 为空，那一轮用户并没有得到回答。
+        boolean completed = run.outcome() == AgentExecutor.Outcome.FINISHED && run.narrative() != null;
+        if (listing == null && !asked && !completed) return null;
+
         UUID sessionId = existing != null ? existing.sessionId()
             : requestedSessionId != null ? requestedSessionId : UUID.randomUUID();
-        var order = jobs.stream().map(job -> UUID.fromString(job.jobPostingId())).toList();
-        var items = pending.stream()
-            .map(item -> new AgentSession.PendingConfirmation(
-                com.careeros.domain.CandidateFacts.CandidateFactKey.valueOf(item.factKey()),
-                item.question(), UUID.fromString(item.jobPostingId())))
-            .toList();
-        return sessions.rememberRun(sessionId, candidateId, filtersOf(listing), order, items);
+        AgentSession saved = existing;
+        if (listing != null) {
+            var order = jobs.stream().map(job -> UUID.fromString(job.jobPostingId())).toList();
+            var items = pending.stream()
+                .map(item -> new AgentSession.PendingConfirmation(
+                    com.careeros.domain.CandidateFacts.CandidateFactKey.valueOf(item.factKey()),
+                    item.question(), UUID.fromString(item.jobPostingId())))
+                .toList();
+            saved = sessions.rememberRun(sessionId, candidateId, filtersOf(listing), order, items);
+        }
+        if (asked) {
+            saved = sessions.rememberAsk(sessionId, candidateId, question, run.question());
+        } else if (completed && existing != null && existing.hasOpenTask()) {
+            var cleared = sessions.completeOpenTask(candidateId, sessionId);
+            if (cleared != null) saved = cleared;
+        }
+        return saved;
     }
 
     /**
@@ -170,6 +188,19 @@ class AgentRunController {
         } catch (IllegalArgumentException unknown) {
             return null;
         }
+    }
+
+    /**
+     * 还没有会话的第一轮。
+     *
+     * <p>范围、顺序、待确认项都还没有，但<b>资料版本要带上</b>：这一轮如果读到了待确认项
+     * 并决定问用户"要不要现在确认"，那句追问必须绑定到他此刻看到的这一版资料。
+     * 不带的话，第一轮永远问不出确认——而绝大多数确认正是在第一轮被问出来的。
+     */
+    private SessionContext freshContext(UUID candidateId) {
+        var profile = profiles.facts(candidateId).profile();
+        return new SessionContext(null, null, null, null, List.of(), List.of(),
+            profile == null ? null : profile.profileVersion(), null, null);
     }
 
     /** 把会话翻译成执行器认得的上下文：上一轮的范围、列表顺序、还没答的资料项。 */
@@ -282,6 +313,14 @@ class AgentRunController {
     /** @param jobPostingId 是哪个岗位提出的这个问题。页面要显示它，否则用户不知道在为什么而答 */
     record PendingView(String factKey, String question, String jobPostingId) {}
 
+    /**
+     * 这一轮问出去的那句"要不要现在确认"绑定到了什么。
+     *
+     * <p>外露它是为了让调用方能核对，而不是只能相信：用户的回答会落到哪一项、哪个岗位提的、
+     * 在哪一版资料下问的。少了版本，确认写入那个乐观版本检查就恒真，等于没检查。
+     */
+    record ConfirmationBinding(String factKey, String jobPostingId, String profileVersion) {}
+
     /** 工具目录。与发给模型的那一份同源，调用方能据此核对边界，而不是只能相信。 */
     record ToolView(String name, String description, List<ParameterView> parameters) {}
 
@@ -292,11 +331,13 @@ class AgentRunController {
      * @param question    追问通过校验时才有值
      * @param violations  叙述或追问被拒的原因
      * @param groundedOn  这段话点名依据的观察序号。空表示它没有点名，或点名的依据不成立
+     * @param confirming  这一轮的确认追问绑定到的那一项、提出它的岗位与资料版本；不是确认追问时为空
      * @param budgetSpent 消耗的预算单位：工具调用次数 + 内部逐岗评估次数
      * @param jobs        程序渲染的岗位结果，取自工具的结构化数据，不是模型那段话
      */
     record AgentRunResponse(String outcome, String narrative, String question, List<String> violations,
-                            List<Integer> groundedOn, int budgetSpent, int budgetLimit,
+                            List<Integer> groundedOn, ConfirmationBinding confirming,
+                            int budgetSpent, int budgetLimit,
                             UUID sessionId, String profileVersion, List<JobView> jobs,
                             List<PendingView> pendingConfirmations,
                             List<ToolView> tools, List<TraceStep> trace, List<ObservationView> observations) {}

@@ -62,6 +62,9 @@ public final class AgentSessionService {
      *
      * <p><b>只读入不写回，会话就永远停在第一轮。</b> 用户在"余杭"那一轮看到的是新列表，
      * 下一句"第二个"却解析回上一轮的杭州列表，系统一本正经地讲另一个岗位，而他看不出来。
+     *
+     * <p>它<b>不动待答任务</b>：这一轮查出了新列表，不等于用户原本要办的那件事办完了。
+     * 办完的判断在调用方，清理走 {@link #completeOpenTask}。
      */
     public AgentSession rememberRun(UUID sessionId, UUID candidateId, SessionFilters filters,
                                     List<UUID> jobIdsInOrder, List<PendingConfirmation> pending) {
@@ -106,6 +109,24 @@ public final class AgentSessionService {
             new SessionFilters(null, null, null, SessionFilters.DEFAULT_LIMIT),
             List.of(), List.of(), profile.profileVersion(), clock.instant());
         return sessions.save(opened.withOpenTask(openTask, question, clock.instant()));
+    }
+
+    /**
+     * 那件事办完了，清掉待答状态。
+     *
+     * <p>清理是一个单独的动作，不再挂在"这一轮查出了新列表"上。两者不是一回事：
+     * 查出新列表之后系统仍然可能在追问，那件事还欠着；只查了一个岗位的细节就把事办完了，
+     * 也没有新列表。把清理绑在列表上，两种情形都会错。
+     *
+     * <p>没有待答任务时什么都不写：写一次空的只会把 {@code updatedAt} 推着走，
+     * 事后看不出这一轮到底发生过什么。
+     *
+     * @return 清理后的会话；没有这轮会话或不是本人的返回 {@code null}
+     */
+    public AgentSession completeOpenTask(UUID candidateId, UUID sessionId) {
+        var session = find(candidateId, sessionId).orElse(null);
+        if (session == null || !session.hasOpenTask()) return session;
+        return sessions.save(session.withTaskDone(clock.instant()));
     }
 
     /**

@@ -1,17 +1,25 @@
 /**
- * 多轮验收：追问 → 刷新 → 只答一句"余杭" → 接着办原来那件事 → 再问"第二个"。
+ * 多轮验收，两段。
  *
- * 全程从页面上的动态面板实际调 /agent-runs，断言的是用户屏幕上的东西：
+ * 第一段——搜索零结果 → 追问 → 刷新 → 短回答继续：
+ *   用户问"宁波有什么合适的"，系统真的查了、一个岗位都没查到，于是反问"要不要放宽范围"。
+ *   这一轮**既有新范围**（宁波，空的），**也仍然欠着那件事**。把"存新列表"和"存待答任务"
+ *   写成二选一，这一轮就只存前者——刷新之后屏幕上那句追问没了，他答一句"杭州"，
+ *   系统不知道这是在回答什么。所以这一段验的是：零结果那一轮追问过之后，刷新仍然摆得回来，
+ *   短回答仍然接得上原来那件事。
  *
- *   1. 第一轮系统问出一句话，用户还没来得及答就刷新了。刷新之后页面要摆回
- *      "上次问你什么"和"为了办什么"——不摆的话他答完一句"余杭"会不知道这句话去了哪里。
+ * 第二段——追问 → 刷新 → 只答一句"余杭" → 接着办原来那件事 → 再问"第二个"：
+ *   1. 系统问出一句话，用户还没来得及答就刷新了。刷新之后页面要摆回"上次问你什么"和"为了办什么"。
  *   2. 只答一句"余杭"，系统要接着办原来那件事，给出一份真的收窄过的新列表。
  *   3. 再问"第二个"，指的是**刚展示的那份新列表**的第二个。会话只读入不写回时必然指错。
  *
+ * 全程从页面上的动态面板实际调 /agent-runs，断言的是用户屏幕上的东西。
  * 岗位身份取自页面上"查看档案"链接里的 id，不看接口内部字段，也不用列表长度代替身份——
  * 长度相同而内容不同的两份列表，长度比不出来。
  *
- * 前置：后端跑在 BASE，规划器按下面的顺序回放五轮输出：
+ * 前置：后端跑在 BASE，规划器按下面的顺序回放九轮输出（见 /var/tmp/mrcfg/application.yml）：
+ *   TOOL search_jobs location=宁波 ; ASK    BROADEN_SCOPE  / BASIS 1
+ *   TOOL search_jobs location=杭州 ; FINISH RANKED_LISTING / BASIS 1
  *   ASK WHICH_LOCATION / BASIS none
  *   TOOL search_jobs location=余杭 ; FINISH RANKED_LISTING / BASIS 1
  *   TOOL job_facts ordinal=2      ; FINISH SINGLE_JOB     / BASIS 1
@@ -65,11 +73,56 @@ async function runRound(question) {
   return {
     jobs: hrefs.map(href => href.replace('/opportunities/', '')),
     text: await result.innerText(),
+    // 轨迹在折叠的 <details> 里，innerText 读不到；要看"这一轮到底查了什么"只能取 textContent。
+    trace: await page.locator('.agent-run-trace').first()
+      .evaluate(node => node.textContent || '').catch(() => ''),
   }
+}
+
+/** 刷新，并把助手面板重新打开。 */
+async function reloadAndReopen() {
+  await page.reload({ waitUntil: 'networkidle' })
+  const launcher = page.getByRole('button', { name: '打开 Career OS 决策助手' })
+  if (await launcher.count()) await launcher.click()
 }
 
 await page.goto(BASE + '/', { waitUntil: 'networkidle' })
 await openRunPanel()
+
+// ===== 第一段：搜索零结果 → 追问 → 刷新 → 短回答继续 =====
+
+// 系统真的查了宁波，一个都没查到，于是反问。这一轮既有新范围，也仍然欠着那件事。
+const empty = await runRound('宁波有什么合适的')
+record('零结果那一轮以追问收场', empty.text.includes('转向追问'), empty.text.split('\n')[0])
+record('追问里说明了这个范围内没有找到岗位',
+  empty.text.includes('没有找到岗位') && empty.text.includes('放宽'),
+  (empty.text.match(/这个范围内[^\n]*/) || [''])[0])
+record('零结果那一轮没有列岗位', empty.jobs.length === 0, `${empty.jobs.length} 个`)
+record('这一轮确实查过（轨迹里有宁波那次查询）', empty.trace.includes('location=宁波'),
+  (empty.trace.match(/location=[^\s]*/) || [''])[0])
+
+// 刷新：查过不等于那件事办完了，追问和原来那件事都要还在。
+await reloadAndReopen()
+const emptyRestored = page.getByText(/上次问你：/)
+await emptyRestored.waitFor({ timeout: 20000 }).catch(() => {})
+record('查过之后刷新，那句追问仍然摆得回来', await emptyRestored.count() > 0,
+  await emptyRestored.count() ? (await emptyRestored.first().innerText()).replace('\n', ' ') : '没有这条')
+record('刷新后也说明了这是在办哪件事（宁波那件）',
+  await page.getByText(/为了：宁波有什么合适的/).count() > 0)
+
+// 只答一句"杭州"：接着办原来那件事，给出真的放宽过的新列表。
+await openRunPanel()
+const broadened = await runRound('杭州')
+record('短回答"杭州"之后接上了原来那件事', broadened.jobs.length >= 1, `${broadened.jobs.length} 个`)
+record('放宽之后不再说"没有找到岗位"', !broadened.text.includes('没有找到岗位'))
+if (broadened.jobs.length < 1) { console.error('前置条件不满足：杭州这一轮至少要有一个岗位。'); await browser.close(); process.exit(2) }
+
+// 那件事办完了，待答状态要清掉——不清的话刷新之后还会摆着一句早就答过的追问。
+await reloadAndReopen()
+record('办完之后刷新不再摆着那句追问', await page.getByText(/上次问你：/).count() === 0)
+await openRunPanel()
+
+// ===== 第二段：追问 → 刷新 → 只答余杭 → 再问第二个 =====
 
 // --- 第一轮：系统问出一句话，用户还没答 ---
 const asked = await runRound('有什么合适的')
@@ -79,9 +132,7 @@ record('追问是程序渲染的固定句式', asked.text.includes('哪个城市
 record('追问这一轮没有列岗位', asked.jobs.length === 0)
 
 // --- 刷新：那句追问和原来那件事都要摆回来 ---
-await page.reload({ waitUntil: 'networkidle' })
-const launcher = page.getByRole('button', { name: '打开 Career OS 决策助手' })
-if (await launcher.count()) await launcher.click()
+await reloadAndReopen()
 const restoredQuestion = page.getByText(/上次问你：/)
 await restoredQuestion.waitFor({ timeout: 20000 }).catch(() => {})
 record('刷新后摆回了那句追问', await restoredQuestion.count() > 0,

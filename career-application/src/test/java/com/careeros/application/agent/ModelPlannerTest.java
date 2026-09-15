@@ -365,6 +365,24 @@ class ModelPlannerTest {
         assertThat(protocol).contains("没有注册任何工具");
     }
 
+    /**
+     * 每条模板的适用条件也要写进提示。
+     *
+     * <p>条件只写在校验里、不告诉模型，它会反复选一条永远被拒的模板——
+     * 看起来像"模型不会收尾"，其实是从没告诉过它什么时候能用哪一条。
+     */
+    @Test void theProtocolStatesWhenEachTemplateMayBeUsed() {
+        var protocol = ModelPlanner.protocol(new PlanningState("查岗位", List.of(), 5, List.of()));
+
+        assertThat(protocol).contains("NOTHING_IN_SCOPE；依据里要有一次查过、且一个岗位都没查到的 search_jobs");
+        assertThat(protocol).contains("BROADEN_SCOPE；依据里要有一次查过、且一个岗位都没查到的 search_jobs");
+        assertThat(protocol).contains("RANKED_LISTING；依据里要有一次查到了岗位的 search_jobs");
+        assertThat(protocol).contains("PENDING_FIRST；依据里要有一份列出了待确认项的 pending_confirmations");
+        assertThat(protocol).contains("fact 只能取这一轮 pending_confirmations 列出的");
+        // 真正的澄清没有条件，也就不该被写上一句多余的限制。
+        assertThat(protocol).contains("- WHICH_LOCATION\n");
+    }
+
     private static final Clock CLOCK = Clock.fixed(java.time.Instant.parse("2026-08-24T15:00:00Z"),
         java.time.ZoneOffset.UTC);
 }

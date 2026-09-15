@@ -258,6 +258,72 @@ class AgentSessionServiceTest {
             .hasMessageContaining("another candidate");
     }
 
+    // --- G5：列表更新与待答任务更新不能互斥 ---
+
+    /**
+     * 一轮既查出了新列表、又以追问收场时，两样都要存下来。
+     *
+     * <p>这是最容易出事的一种：用户问"宁波有什么合适的"，系统真的查了，一个都没查到，
+     * 于是反问"要不要放宽范围"。这一轮<b>既有新范围</b>（宁波，空的），<b>也欠着一件事</b>。
+     * 把"存新列表"和"存待答任务"写成二选一，这一轮就只会存前者——用户刷新之后
+     * 页面上那句追问没了，他答一句"杭州"，系统不知道这是在回答什么。
+     */
+    @Test void aRoundThatSearchedAndStillAskedKeepsBothTheListingAndTheOpenTask() {
+        service.rememberRun(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(), List.of());
+        var session = service.rememberAsk(SESSION_ID, CANDIDATE_ID, "宁波有什么合适的", "要不要放宽范围？");
+
+        assertThat(session.filters()).isEqualTo(FILTERS);
+        assertThat(session.openTask()).isEqualTo("宁波有什么合适的");
+        assertThat(session.pendingQuestion()).isEqualTo("要不要放宽范围？");
+        assertThat(session.hasOpenTask()).isTrue();
+    }
+
+    /**
+     * 存新列表不能顺手把还欠着的那件事清掉。
+     *
+     * <p>顺序反过来也一样：先记下追问，这一轮又查出了新列表，那件事还没办完。
+     * 清掉的话，用户答完"杭州"之后系统仍然不知道他原本要办什么。
+     */
+    @Test void recordingANewListingDoesNotDiscardAnUnfinishedTask() {
+        service.rememberAsk(SESSION_ID, CANDIDATE_ID, "宁波有什么合适的", "要不要放宽范围？");
+
+        var session = service.rememberRun(SESSION_ID, CANDIDATE_ID, FILTERS,
+            List.of(UUID.randomUUID()), List.of());
+
+        assertThat(session.openTask()).isEqualTo("宁波有什么合适的");
+        assertThat(session.pendingQuestion()).isEqualTo("要不要放宽范围？");
+    }
+
+    /** 那件事确实办完了才清掉待答状态——清早了，用户下一句会被当成新问题。 */
+    @Test void onlyACompletedTaskClearsThePendingState() {
+        service.rememberAsk(SESSION_ID, CANDIDATE_ID, "宁波有什么合适的", "要不要放宽范围？");
+
+        var session = service.completeOpenTask(CANDIDATE_ID, SESSION_ID);
+
+        assertThat(session.hasOpenTask()).isFalse();
+        assertThat(session.pendingQuestion()).isNull();
+    }
+
+    /** 没有待答任务时不写一次空的：那只会把 updatedAt 推着走，看不出发生过什么。 */
+    @Test void completingATaskThatWasNeverOpenedChangesNothing() {
+        var opened = service.rememberRun(SESSION_ID, CANDIDATE_ID, FILTERS,
+            List.of(UUID.randomUUID()), List.of());
+
+        var session = service.completeOpenTask(CANDIDATE_ID, SESSION_ID);
+
+        assertThat(session).isEqualTo(opened);
+    }
+
+    /** 清理别人的待答状态同样要挡住：会话 ID 是可猜的 UUID。 */
+    @Test void anotherCandidateCannotClearSomeoneElsesPendingState() {
+        service.rememberAsk(SESSION_ID, CANDIDATE_ID, "宁波有什么合适的", "要不要放宽范围？");
+        UUID other = UUID.randomUUID();
+        profiles.others.put(other, candidate("profile-other", other));
+
+        assertThat(service.completeOpenTask(other, SESSION_ID)).isNull();
+        assertThat(service.find(CANDIDATE_ID, SESSION_ID).orElseThrow().hasOpenTask()).isTrue();
+    }
+
     // --- 固定装置 ---
 
     private static CandidateProfile candidate(String version) { return candidate(version, CANDIDATE_ID); }

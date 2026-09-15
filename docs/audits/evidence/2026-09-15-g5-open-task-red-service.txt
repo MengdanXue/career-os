@@ -1,0 +1,23 @@
+-------------------------------------------------------------------------------
+Test set: com.careeros.application.AgentSessionServiceTest
+-------------------------------------------------------------------------------
+Tests run: 25, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.186 s <<< FAILURE! -- in com.careeros.application.AgentSessionServiceTest
+com.careeros.application.AgentSessionServiceTest.onlyACompletedTaskClearsThePendingState -- Time elapsed: 0.008 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+Expecting value to be false but was true
+	at com.careeros.application.AgentSessionServiceTest.onlyACompletedTaskClearsThePendingState(AgentSessionServiceTest.java:303)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.application.AgentSessionServiceTest.recordingANewListingDoesNotDiscardAnUnfinishedTask -- Time elapsed: 0.003 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+
+expected: "宁波有什么合适的"
+ but was: null
+	at com.careeros.application.AgentSessionServiceTest.recordingANewListingDoesNotDiscardAnUnfinishedTask(AgentSessionServiceTest.java:293)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
