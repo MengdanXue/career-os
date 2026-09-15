@@ -374,8 +374,9 @@ class ModelPlannerTest {
     @Test void theProtocolStatesWhenEachTemplateMayBeUsed() {
         var protocol = ModelPlanner.protocol(new PlanningState("查岗位", List.of(), 5, List.of()));
 
-        assertThat(protocol).contains("NOTHING_IN_SCOPE；依据里要有一次查过、且一个岗位都没查到的 search_jobs");
-        assertThat(protocol).contains("BROADEN_SCOPE；依据里要有一次查过、且一个岗位都没查到的 search_jobs");
+        assertThat(protocol).contains("NOTHING_IN_SCOPE；依据里要有一次查过、查完、且一个岗位都没查到的 search_jobs");
+        assertThat(protocol).contains("BROADEN_SCOPE；依据里要有一次查过、查完、且一个岗位都没查到的 search_jobs");
+        assertThat(protocol).contains("RETRY_LATER；依据里要有一次失败的、或明说有读不到部分的读取");
         assertThat(protocol).contains("RANKED_LISTING；依据里要有一次查到了岗位的 search_jobs");
         assertThat(protocol).contains("PENDING_FIRST；依据里要有一份列出了待确认项的 pending_confirmations");
         assertThat(protocol).contains("fact 只能取这一轮 pending_confirmations 列出的");

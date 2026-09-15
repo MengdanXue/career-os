@@ -72,7 +72,7 @@ public final class AnswerTemplates {
          * 那三样由执行器解析成 {@link AgentTooling.FactBinding}。
          */
         CONFIRM_FACT("要不要现在确认「{fact}」？", Evidence.NONE, "fact"),
-        RETRY_LATER("这次读不到，要不要稍后再试？", Evidence.NONE);
+        RETRY_LATER("这次读不到，要不要稍后再试？", Evidence.READ_FAILED);
 
         private final String text;
         private final Evidence requires;
@@ -120,13 +120,18 @@ public final class AnswerTemplates {
         /**
          * 断言"这个范围内没有岗位"。
          *
-         * <p>要求的是<b>查过</b>并且<b>一个都没查到</b>，两个条件缺一不可：
-         * 没查过时这句话凭空成立，查到了三个时它直接是假的。
+         * <p>要求三样，缺一不可：<b>查过</b>、<b>查完了</b>、<b>一个都没查到</b>。
+         * 没查过时这句话凭空成立；查到了三个时它直接是假的；
+         * <b>没查完时它比前两种更难看出来</b>——预算用完，这一页一个都没评估出来，
+         * {@code count} 照样是 0，而范围里还剩七个没看。用户照着这句话会以为宁波没有岗位，
+         * 其实系统只是没钱把它看完。完整性不明（结果里根本没有 complete 这个字段）也算没查完：
+         * 把"没说"当成"查完了"，是拿一个没人给过的保证去下结论。
          */
-        SEARCH_FOUND_NOTHING("点名的结果里没有一次确实查过、且一个岗位都没查到的查询",
-            "依据里要有一次查过、且一个岗位都没查到的 search_jobs") {
+        SEARCH_FOUND_NOTHING("点名的结果里没有一次查过、查完、且一个岗位都没查到的查询",
+            "依据里要有一次查过、查完、且一个岗位都没查到的 search_jobs") {
             boolean satisfiedBy(List<Observation> cited) {
-                return cited.stream().anyMatch(o -> SEARCH_JOBS.equals(o.tool()) && count(o) == 0);
+                return cited.stream().anyMatch(o -> SEARCH_JOBS.equals(o.tool())
+                    && count(o) == 0 && finished(o));
             }
         },
         /** 断言"下面是这个岗位的情况"——指的是某一个岗位，一份列表撑不起它。 */
@@ -153,6 +158,23 @@ public final class AnswerTemplates {
             boolean satisfiedBy(List<Observation> cited) {
                 return cited.stream().anyMatch(o -> WATCHLIST.equals(o.tool()));
             }
+        },
+        /**
+         * 断言"这次读不到"。
+         *
+         * <p>什么都没坏的时候问一句"要不要稍后再试"，用户会以为出了故障而白等一轮。
+         * 所以它不在"纯澄清"那一档——那一档是"你想看哪个城市"，不声称世界上发生过任何事。
+         *
+         * <p>这是唯一一档<b>拿失败当依据</b>的：点名的那条要么本身就是失败的观察，
+         * 要么虽然成功、但里面明说有读不到的部分（关注清单里算不出当前结论的那几条，
+         * 或者没查完的那一页）。只在这一档放开——放开一个口子不等于放开所有，
+         * 一次失败的查询照样撑不起"下面是这个范围内的岗位"。
+         */
+        READ_FAILED("点名的结果里没有一条说明这次读不到", "依据里要有一次失败的、或明说有读不到部分的读取") {
+            boolean satisfiedBy(List<Observation> cited) {
+                return cited.stream().anyMatch(o -> !o.ok() || unreadable(o) > 0 || incomplete(o));
+            }
+            public boolean acceptsFailures() { return true; }
         };
 
         private final String unmet;
@@ -181,10 +203,46 @@ public final class AnswerTemplates {
             return satisfiedBy(cited == null ? List.of() : cited);
         }
 
+        /**
+         * 点名的依据里允不允许出现失败的观察。
+         *
+         * <p>默认不允许：失败的观察里没有任何结论可用。只有"这次读不到"那一档反过来，
+         * 它要的就是失败本身。
+         */
+        public boolean acceptsFailures() { return false; }
+
         /** 结果里的数量。取不到就当 -1——"没有这个字段"不等于"数量是 0"。 */
         static int count(Observation observation) {
             Object value = observation.data().get("count");
             return value instanceof Number number ? number.intValue() : -1;
+        }
+
+        /**
+         * 这次读取有没有把范围走完。
+         *
+         * <p>没有 complete 这个字段时返回 false：这条观察根本没交代自己查完没有，
+         * 当成查完了就是拿一个没人给过的保证去下结论。
+         */
+        static boolean finished(Observation observation) {
+            return Boolean.TRUE.equals(observation.data().get("complete"));
+        }
+
+        /**
+         * 这次读取<b>明说</b>自己没走完。
+         *
+         * <p>和 {@link #finished} 不是互为反面：没有 complete 这个字段时，
+         * {@code finished} 是 false（没人保证过查完了，所以不许断言"没有岗位"），
+         * 而这里是 false（也没人说过出了问题，所以不许断言"读不到"）。
+         * 两边都朝着"不替系统说话"的方向取值。
+         */
+        static boolean incomplete(Observation observation) {
+            return Boolean.FALSE.equals(observation.data().get("complete"));
+        }
+
+        /** 读到了、但有几条算不出当前结论。算不出来和读不到，对用户是一回事。 */
+        static long unreadable(Observation observation) {
+            Object value = observation.data().get("unreadableCount");
+            return value instanceof Number number ? number.longValue() : 0L;
         }
     }
 

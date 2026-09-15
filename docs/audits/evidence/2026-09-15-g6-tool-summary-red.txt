@@ -1,0 +1,17 @@
+-------------------------------------------------------------------------------
+Test set: com.careeros.application.agent.ReadOnlyToolsTest
+-------------------------------------------------------------------------------
+Tests run: 24, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.234 s <<< FAILURE! -- in com.careeros.application.agent.ReadOnlyToolsTest
+com.careeros.application.agent.ReadOnlyToolsTest.anUnfinishedSearchDoesNotSayThereAreNoJobs -- Time elapsed: 0.008 s <<< FAILURE!
+java.lang.AssertionError: 
+
+Expecting actual:
+  "这个范围内没有岗位。（共享预算已用完，还有 7 个岗位没有评估，这批结果不完整）"
+not to contain:
+  "没有岗位"
+
+	at com.careeros.application.agent.ReadOnlyToolsTest.anUnfinishedSearchDoesNotSayThereAreNoJobs(ReadOnlyToolsTest.java:266)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+

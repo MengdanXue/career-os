@@ -40,6 +40,16 @@ class AgentExecutorTest {
         }
     }
 
+    /** 这次读不到。失败的观察在"要不要稍后再试"那一档是依据，别处是瑕疵。 */
+    private static final class FailingTool implements ReadOnlyTool {
+        private final String name;
+        private final String reason;
+        FailingTool(String name, String reason) { this.name = name; this.reason = reason; }
+        public String name() { return name; }
+        public String description() { return name; }
+        public Observation invoke(AgentTooling.ToolContext context) { return Observation.failed(name, reason); }
+    }
+
     // --- 只读：写入工具进不来 ---
 
     /**
@@ -178,7 +188,8 @@ class AgentExecutorTest {
             var last = state.last();
             if (last == null) return new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查");
             return last.ok() ? new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1))
-                : new PlannerStep.AskUser("RETRY_LATER", AgentTooling.Basis.clarifying());
+                // "这次读不到"要点名是哪一次读不到；失败的那条观察在这一档正是依据。
+                : new PlannerStep.AskUser("RETRY_LATER", AgentTooling.Basis.on(1));
         });
 
         assertThat(run.outcome()).isEqualTo(Outcome.ASKED_USER);
@@ -212,7 +223,8 @@ class AgentExecutorTest {
             new RecordingTool("search_jobs", Map.of("count", 3)),
             new RecordingTool("pending_confirmations", Map.of("count", 1))));
         var empty = new AgentExecutor(List.of(
-            new RecordingTool("search_jobs", Map.of("count", 0)),
+            // 查完了、确实一个都没有——"没查完"是另一回事，那种情形不许断言这里没有岗位。
+            new RecordingTool("search_jobs", Map.of("count", 0, "complete", true, "notAssessed", 0)),
             new RecordingTool("pending_confirmations", Map.of("count", 1))));
 
         var runWithJobs = withJobs.run(CANDIDATE, "杭州有哪些岗位", planner);
@@ -565,10 +577,13 @@ class AgentExecutorTest {
      * 上面的断言会报出被拒的理由，而不是悄悄跳过。
      */
     private static AgentExecutor.AgentRun renderedWith(String template, boolean question) {
-        var support = Map.of(
-            "RANKED_LISTING", new RecordingTool("search_jobs", Map.of("count", 2)),
-            "NOTHING_IN_SCOPE", new RecordingTool("search_jobs", Map.of("count", 0)),
-            "BROADEN_SCOPE", new RecordingTool("search_jobs", Map.of("count", 0)),
+        var support = Map.<String, ReadOnlyTool>of(
+            "RANKED_LISTING", new RecordingTool("search_jobs", Map.of("count", 2, "complete", true)),
+            "NOTHING_IN_SCOPE", new RecordingTool("search_jobs",
+                Map.of("count", 0, "complete", true, "notAssessed", 0)),
+            "BROADEN_SCOPE", new RecordingTool("search_jobs",
+                Map.of("count", 0, "complete", true, "notAssessed", 0)),
+            "RETRY_LATER", new FailingTool("watchlist", "这次读不到关注清单。"),
             "SINGLE_JOB", new RecordingTool("job_facts", Map.of("jobPostingId", FIRST_JOB.toString())),
             "PENDING_FIRST", new RecordingTool("pending_confirmations", Map.of("count", 1, "items",
                 List.of(Map.of("factKey", "GENDER", "question", "性别尚未确认",
@@ -777,9 +792,10 @@ class AgentExecutorTest {
         assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
     }
 
-    /** 真的一个都没查到时照常收尾——这一条是守护用例，收紧不能把它一起拦掉。 */
+    /** 真的查完了、一个都没查到时照常收尾——这一条是守护用例，收紧不能把它一起拦掉。 */
     @Test void aNothingInScopeClosingIsAcceptedWhenTheSearchCameBackEmpty() {
-        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 0))));
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs",
+            Map.of("count", 0, "complete", true, "notAssessed", 0))));
 
         var run = executor.run(CANDIDATE, "宁波有什么岗位", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查")
@@ -829,9 +845,10 @@ class AgentExecutorTest {
         assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
     }
 
-    /** 查过、确实是空的，这句追问才成立——守护用例。 */
+    /** 查过、查完了、确实是空的，这句追问才成立——守护用例。 */
     @Test void aBroadenScopeQuestionIsAcceptedAfterASearchThatFoundNothing() {
-        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 0))));
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs",
+            Map.of("count", 0, "complete", true, "notAssessed", 0))));
 
         var run = executor.run(CANDIDATE, "宁波有什么岗位", state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查")
@@ -992,6 +1009,140 @@ class AgentExecutorTest {
         assertThat(run.violations()).isEmpty();
         assertThat(run.question()).isEqualTo("你想看哪个城市或区县的岗位？");
         assertThat(run.outcome()).isEqualTo(Outcome.ASKED_USER);
+    }
+
+    // --- G6：未查完不是"没有岗位"；"读不到"也要有失败依据 ---
+
+    /**
+     * 预算用完时这一页可能一个都没评估出来，而范围里明明还有岗位没看。
+     *
+     * <p>{@code count == 0} 于是有两种完全不同的意思："这个范围内确实没有"，
+     * 和"这次没查完，已看的部分里没有"。前者能收尾，后者不能——
+     * 用户照着后者会以为宁波没有岗位，而系统只是没钱把它看完。
+     */
+    @Test void aNothingInScopeClosingIsRefusedWhenTheSearchDidNotFinish() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs",
+            Map.of("count", 0, "complete", false, "notAssessed", 7))));
+
+        var run = executor.run(CANDIDATE, "宁波有什么岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查")
+            : new PlannerStep.Finish("NOTHING_IN_SCOPE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /** 同一条断言也在追问里：没查完就问"要不要放宽范围"，等于替系统宣布这里没有。 */
+    @Test void aBroadenScopeQuestionIsRefusedWhenTheSearchDidNotFinish() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs",
+            Map.of("count", 0, "complete", false, "notAssessed", 7))));
+
+        var run = executor.run(CANDIDATE, "宁波有什么岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查")
+            : new PlannerStep.AskUser("BROADEN_SCOPE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /**
+     * 完整性不明时同样不能说没有。
+     *
+     * <p>结果里没有 complete 这个字段，说明这条观察根本没交代自己查完没有。
+     * 把"没说"当成"查完了"，就是拿一个没人给过的保证去下结论。
+     */
+    @Test void aNothingInScopeClosingIsRefusedWhenCompletenessIsUnknown() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 0))));
+
+        var run = executor.run(CANDIDATE, "宁波有什么岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查")
+            : new PlannerStep.Finish("NOTHING_IN_SCOPE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /** 说了查完、也确实没有剩下没评估的，这句话才成立——守护用例。 */
+    @Test void aNothingInScopeClosingIsAcceptedWhenTheSearchFinishedAndFoundNothing() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs",
+            Map.of("count", 0, "complete", true, "notAssessed", 0))));
+
+        var run = executor.run(CANDIDATE, "宁波有什么岗位", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "宁波"), "先查")
+            : new PlannerStep.Finish("NOTHING_IN_SCOPE", AgentTooling.Basis.on(1)));
+
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.narrative()).isEqualTo("这个范围内没有找到岗位。");
+    }
+
+    /**
+     * "这次读不到，要不要稍后再试？"也是一句断言。
+     *
+     * <p>它说系统读不到东西。什么都没坏的时候这么问，用户会以为出了故障而白等一轮。
+     * 所以它不属于"纯澄清"那一档——那一档是"你想看哪个城市"，不声称世界上发生过任何事。
+     */
+    @Test void aRetryLaterQuestionIsRefusedWhenNothingActuallyFailed() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("search_jobs", Map.of("count", 2))));
+
+        var run = executor.run(CANDIDATE, "有什么合适的",
+            state -> new PlannerStep.AskUser("RETRY_LATER", AgentTooling.Basis.clarifying()));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /** 点名的那次读取确实失败了，这句话才成立。失败的观察在这里是依据，不是瑕疵。 */
+    @Test void aRetryLaterQuestionIsAcceptedWhenTheCitedReadActuallyFailed() {
+        var executor = new AgentExecutor(List.of(new FailingTool("watchlist", "这次读不到关注清单。")));
+
+        var run = executor.run(CANDIDATE, "我关注的有动静吗", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("watchlist"), "先看关注清单")
+            : new PlannerStep.AskUser("RETRY_LATER", AgentTooling.Basis.on(1)));
+
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.question()).isEqualTo("这次读不到，要不要稍后再试？");
+    }
+
+    /** 读到了、但有几条算不出当前结论，也算"读不到"——不可用状态同样是依据。 */
+    @Test void aRetryLaterQuestionIsAcceptedWhenPartOfTheReadingIsUnavailable() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("watchlist",
+            Map.of("count", 3, "changedCount", 0L, "unreadableCount", 2L))));
+
+        var run = executor.run(CANDIDATE, "我关注的有动静吗", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("watchlist"), "先看关注清单")
+            : new PlannerStep.AskUser("RETRY_LATER", AgentTooling.Basis.on(1)));
+
+        assertThat(run.violations()).isEmpty();
+        assertThat(run.question()).isEqualTo("这次读不到，要不要稍后再试？");
+    }
+
+    /** 成功的观察撑不起"读不到"：读到了就是读到了。 */
+    @Test void aRetryLaterQuestionIsRefusedWhenTheCitedReadingSucceeded() {
+        var executor = new AgentExecutor(List.of(new RecordingTool("watchlist",
+            Map.of("count", 3, "changedCount", 1L, "unreadableCount", 0L))));
+
+        var run = executor.run(CANDIDATE, "我关注的有动静吗", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("watchlist"), "先看关注清单")
+            : new PlannerStep.AskUser("RETRY_LATER", AgentTooling.Basis.on(1)));
+
+        assertThat(run.question()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.TEMPLATE_NOT_APPLICABLE));
+    }
+
+    /**
+     * 失败的观察只在"读不到"这一档能当依据，别处照旧不行。
+     *
+     * <p>否则放开一个口子就等于放开所有：一次失败的查询也能撑起"下面是这个范围内的岗位"。
+     */
+    @Test void aFailedObservationStillCannotSupportAnOrdinaryClosing() {
+        var executor = new AgentExecutor(List.of(new FailingTool("search_jobs", "这次查不了。")));
+
+        var run = executor.run(CANDIDATE, "有什么合适的", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)));
+
+        assertThat(run.narrative()).isNull();
+        assertThat(run.violations()).anyMatch(v -> v.startsWith(AgentExecutor.BASIS_NOT_SUPPORTED));
     }
 
     private static final UUID FIRST_JOB = UUID.randomUUID();

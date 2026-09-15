@@ -324,6 +324,46 @@ class AgentSessionServiceTest {
         assertThat(service.find(CANDIDATE_ID, SESSION_ID).orElseThrow().hasOpenTask()).isTrue();
     }
 
+    /**
+     * 连续追问不能把原来那件事换掉。
+     *
+     * <p>用户原本要办的是"有什么合适的"；系统问他哪个城市，他只答一句"余杭"。
+     * 这一轮查出了新范围和新列表，但还要再问一句（"你指的是第几个"）——
+     * 把"余杭"当成他要办的那件事存下去，刷新之后页面会摆出"为了：余杭"，
+     * 而他从头到尾要办的是"有什么合适的"。"余杭"是他给的一个回答，不是一件事。
+     */
+    @Test void aSecondQuestionKeepsTheOriginalTaskAndOnlyUpdatesTheQuestion() {
+        service.rememberAsk(SESSION_ID, CANDIDATE_ID, "有什么合适的", "你想看哪个城市或区县的岗位？");
+
+        var session = service.rememberAsk(SESSION_ID, CANDIDATE_ID, "余杭", "你指的是上面列表里的第几个？");
+
+        assertThat(session.openTask()).isEqualTo("有什么合适的");
+        assertThat(session.pendingQuestion()).isEqualTo("你指的是上面列表里的第几个？");
+    }
+
+    /** 那件事办完之后再追问，才轮到新的任务接上——否则原任务会一直挂着。 */
+    @Test void aQuestionAfterTheTaskIsDoneStartsANewTask() {
+        service.rememberAsk(SESSION_ID, CANDIDATE_ID, "有什么合适的", "你想看哪个城市或区县的岗位？");
+        service.completeOpenTask(CANDIDATE_ID, SESSION_ID);
+
+        var session = service.rememberAsk(SESSION_ID, CANDIDATE_ID, "我关注的有动静吗", "这次读不到，要不要稍后再试？");
+
+        assertThat(session.openTask()).isEqualTo("我关注的有动静吗");
+    }
+
+    /** 中途查出新列表也不影响：范围和顺序更新，原任务照旧是原任务。 */
+    @Test void aNewListingBetweenTwoQuestionsDoesNotChangeTheOriginalTask() {
+        service.rememberAsk(SESSION_ID, CANDIDATE_ID, "有什么合适的", "你想看哪个城市或区县的岗位？");
+        UUID job = UUID.randomUUID();
+
+        service.rememberRun(SESSION_ID, CANDIDATE_ID, FILTERS, List.of(job), List.of());
+        var session = service.rememberAsk(SESSION_ID, CANDIDATE_ID, "余杭", "你指的是上面列表里的第几个？");
+
+        assertThat(session.openTask()).isEqualTo("有什么合适的");
+        assertThat(session.lastJobIdsInOrder()).containsExactly(job);
+        assertThat(session.filters()).isEqualTo(FILTERS);
+    }
+
     // --- 固定装置 ---
 
     private static CandidateProfile candidate(String version) { return candidate(version, CANDIDATE_ID); }

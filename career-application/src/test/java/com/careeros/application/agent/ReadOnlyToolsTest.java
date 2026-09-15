@@ -248,6 +248,38 @@ class ReadOnlyToolsTest {
         assertThat(noneResult.summary()).contains("没有岗位");
     }
 
+    /**
+     * 没查完不等于没有岗位。
+     *
+     * <p>预算用完时这一页可能一个都没评估出来，而范围里明明还有 7 个没看。
+     * 摘要照样写"这个范围内没有岗位。"，后面再补一句"结果不完整"——
+     * 前半句已经把话说死了，规划器和用户都会照前半句理解。
+     * 断言只能落在真的查完了的那种上。
+     */
+    @Test void anUnfinishedSearchDoesNotSayThereAreNoJobs() {
+        var tool = ReadOnlyTools.searchJobs((candidateId, query, now, budget) ->
+            new DecisionRankingService.RankingPage(List.of(), 0, 5, 7, 7), CLOCK);
+
+        var observation = tool.invoke(context("search_jobs", "location", "宁波"));
+
+        assertThat(observation.ok()).isTrue();
+        assertThat(observation.summary()).doesNotContain("没有岗位");
+        assertThat(observation.summary()).contains("没有查完");
+        assertThat(observation.<Boolean>value("complete", true)).isFalse();
+        assertThat(observation.<Integer>value("notAssessed", 0)).isEqualTo(7);
+    }
+
+    /** 真的查完了、确实一个都没有，才说得出"没有岗位"——守护用例。 */
+    @Test void aFinishedSearchWithNoResultsStillSaysThereAreNoJobs() {
+        var tool = ReadOnlyTools.searchJobs((candidateId, query, now, budget) ->
+            new DecisionRankingService.RankingPage(List.of(), 0, 5, 0, 0), CLOCK);
+
+        var observation = tool.invoke(context("search_jobs", "location", "宁波"));
+
+        assertThat(observation.summary()).contains("没有岗位");
+        assertThat(observation.<Boolean>value("complete", false)).isTrue();
+    }
+
     // --- 单岗位 ---
 
     /** jobId 不合法时返回失败观察，不抛异常——规划器要能看到并改走别的路。 */

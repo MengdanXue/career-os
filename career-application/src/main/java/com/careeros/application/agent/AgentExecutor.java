@@ -212,13 +212,12 @@ public final class AgentExecutor {
             violations.add(UNGROUNDED_FINISH);
             return List.copyOf(violations);
         }
-        var basisViolations = checkBasis(finish.basis(), observations);
+        var required = AnswerTemplates.Closing.valueOf(finish.template()).requires();
+        var basisViolations = checkBasis(finish.basis(), observations, required.acceptsFailures());
         violations.addAll(basisViolations);
         if (basisViolations.isEmpty()) {
             // 依据存在且成立之后，还要问一句：这条模板断言的东西，这几条结果支不支持。
-            violations.addAll(checkApplicability(
-                AnswerTemplates.Closing.valueOf(finish.template()).requires(),
-                cited(finish.basis(), observations)));
+            violations.addAll(checkApplicability(required, cited(finish.basis(), observations)));
         }
         return List.copyOf(violations);
     }
@@ -250,11 +249,11 @@ public final class AgentExecutor {
             violations.add(UNGROUNDED_FINISH);
             return new CheckedQuestion(List.copyOf(violations), null);
         }
-        var basisViolations = checkBasis(ask.basis(), observations);
+        var template = AnswerTemplates.Question.valueOf(ask.template());
+        var basisViolations = checkBasis(ask.basis(), observations, template.requires().acceptsFailures());
         violations.addAll(basisViolations);
         if (!basisViolations.isEmpty()) return new CheckedQuestion(List.copyOf(violations), null);
 
-        var template = AnswerTemplates.Question.valueOf(ask.template());
         var cited = cited(ask.basis(), observations);
         violations.addAll(checkApplicability(template.requires(), cited));
         // 确认类追问的适用条件不是"读到过一份清单"，而是"问的这一项真的在等着被确认"，
@@ -351,8 +350,16 @@ public final class AgentExecutor {
         return new AgentTooling.FactBinding(factKey, jobPostingId, profileVersion);
     }
 
-    /** 点名的每一条依据都要在范围内，且确实是成功的观察。 */
-    private static List<String> checkBasis(AgentTooling.Basis basis, List<Observation> observations) {
+    /**
+     * 点名的每一条依据都要在范围内，且确实是成功的观察。
+     *
+     * <p>唯一的例外是"这次读不到，要不要稍后再试？"：它要的依据<b>就是那次失败</b>，
+     * 拿成功的读取反而撑不起它。所以这一档由模板自己声明（{@code acceptsFailures}），
+     * 不是在这里对工具名或文案做特判——放开一个口子不等于放开所有，
+     * 别的模板照旧不许拿失败的结果当依据。
+     */
+    private static List<String> checkBasis(AgentTooling.Basis basis, List<Observation> observations,
+                                           boolean failuresAreEvidence) {
         var violations = new ArrayList<String>();
         for (int index : basis.observationIndexes()) {
             if (index < 1 || index > observations.size()) {
@@ -360,7 +367,7 @@ public final class AgentExecutor {
                 continue;
             }
             var observation = observations.get(index - 1);
-            if (!observation.ok()) {
+            if (!observation.ok() && !failuresAreEvidence) {
                 violations.add(BASIS_NOT_SUPPORTED + "第 " + index + " 条是失败的结果（"
                     + observation.tool() + "）");
             }
