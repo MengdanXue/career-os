@@ -104,7 +104,7 @@ INSERT INTO candidate_fact_confirmation (
     candidate_profile_id, fact_key, status, value_fingerprint, source, confirmed_at, updated_at
 ) VALUES
 ('01992f09-0000-7000-8000-000000000001', 'BIRTH_DATE', 'CONFIRMED',
- '4f545c6c9542c13471d0eddf2b58d136f506c260fef0bf1975b8f2c49e18c525',
+ '07669bec3754ffe16a8bdc5cf5756c7793e4137904f27a444ea525ab88fb0d0a',
  'USER_CONFIRMED', now(), now()),
 ('01992f09-0000-7000-8000-000000000001', 'GENDER', 'CONFIRMED',
  'cf112cb65cc0fbbbd85eeaa20d3ac834bd954e7539ad8008b6487dbe47edb61f',
