@@ -95,7 +95,13 @@ FAIL | 没有把"余杭"当成他要办的那件事
 | career-domain | 194 通过 |
 | career-application | 360 通过 |
 | career-infrastructure | 405 通过，52 跳过 |
-| career-web | 129 通过，22 跳过 |
+| career-web | 126 通过，22 跳过 |
+
+> **更正**：这份记录原先写的是 129。那个数字是错的——它把 `target/surefire-reports` 里
+> 上一次 `-Dtest=…` 单跑留下的<b>陈旧报告</b>一起数了进去。清掉报告目录重跑，
+> 冻结版本 6dc7f69 的 career-web 在默认剖面下是 126 通过、22 跳过。
+> 其余四个模块（194 / 360 / 405 / 81）复核过，不受影响。
+> 结论没有变（全绿），但统计口径必须是干净的一次完整跑，不能是目录里攒下来的东西。
 | career-ui (vitest) | 81 通过 |
 
 真实浏览器 + 真实后端 + 真实 PostgreSQL：

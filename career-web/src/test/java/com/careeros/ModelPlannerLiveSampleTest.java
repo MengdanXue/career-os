@@ -10,6 +10,8 @@ import com.careeros.application.agent.AgentTooling.Observation;
 import com.careeros.application.agent.AgentTooling.PlannerStep;
 import com.careeros.application.agent.AgentTooling.PlanningState;
 import com.careeros.application.agent.AgentTooling.ReadOnlyTool;
+import com.careeros.application.personal.JobWatchlistPorts;
+import com.careeros.application.personal.JobWatchlistService;
 import com.careeros.application.agent.AgentTooling.SessionContext;
 import com.careeros.application.agent.AgentTooling.ToolContext;
 import com.careeros.application.agent.ModelPlanner;
@@ -79,9 +81,39 @@ class ModelPlannerLiveSampleTest {
         }, CLOCK),
         ReadOnlyTools.pendingConfirmations((candidateId, budget) ->
             new ReadOnlyTools.PendingList(List.of(), true)),
-        ReadOnlyTools.watchlist(null, CLOCK));
+        // 关注清单要给一个真的服务：ReadOnlyTools.watchlist 对 null 是直接抛 NPE 的。
+        // 这里原来传 null，于是整个类的静态初始化就炸了——四条样本一条都到不了 assumeTrue，
+        // 全部报 ExceptionInInitializerError。因为这个类默认被 surefire 排除，从来没人跑过它，
+        // 也就一直没人发现。"默认不跑"等于"从没验过"。
+        ReadOnlyTools.watchlist(emptyWatchlist(), CLOCK));
+
+    /**
+     * 一份空的关注清单服务。
+     *
+     * <p>样本要验的是模型怎么选工具，不是关注清单本身，所以端口给的是空实现。
+     * 但它必须是个真对象——工具目录是从这批工具生成的，少一个工具，
+     * 发给模型的目录就和线上不一样，样本量的就不再是线上那套工具面。
+     */
+    private static JobWatchlistService emptyWatchlist() {
+        return new JobWatchlistService(new JobWatchlistPorts.Watchlist() {
+            public List<JobWatchlistPorts.WatchedJob> findByCandidate(UUID candidateId) { return List.of(); }
+            public java.util.Optional<JobWatchlistPorts.WatchedJob> find(UUID candidateId, UUID jobPostingId) {
+                return java.util.Optional.empty();
+            }
+            public JobWatchlistPorts.WatchedJob save(JobWatchlistPorts.WatchedJob entry) { return entry; }
+            public void remove(UUID candidateId, UUID jobPostingId) {}
+        }, (candidateId, jobId, now) -> {
+            throw new IllegalStateException("样本只检查参数是否有效，不需要真的评估");
+        }, CLOCK);
+    }
 
     private static final AgentExecutor EXECUTOR = new AgentExecutor(TOOLS);
+
+    /**
+     * 给 {@code ModelPlannerLiveSampleFixtureTest} 用：这个类默认被排除，坏了没人知道。
+     * 那一条不需要 key 也不需要出网，只把这个类加载起来、核对目录还是线上那四个。
+     */
+    static List<String> toolNamesForFixtureCheck() { return EXECUTOR.registeredTools(); }
 
     /** 模板清单从执行器取，和发给模型的那份同源——不另抄一份。 */
     private static final List<String> CLOSING_TEMPLATES = EXECUTOR.closingTemplates();
