@@ -170,6 +170,35 @@ public final class AgentExecutor {
         return finished(Outcome.STEP_LIMIT_REACHED, null, null, observations, trace, budget);
     }
 
+    /**
+     * 把一步计划放到给定的观察与会话下核一遍，返回它被拒的理由；空表示这一步站得住。
+     *
+     * <p><b>和 {@link #run} 走的是同一段代码</b>——同一个 renderClosing／renderQuestion、
+     * 同一个 checkFinish／checkAsk，不是另写一份。外部要判"模型给的这一步在线上成不成立"时
+     * 必须走这里，否则就会各判各的，然后慢慢漂开。
+     *
+     * <p>这个入口是给冻结样本用的。那边原先自己判：模板名在不在清单里、BASIS 有没有越界。
+     * 两项都过，却漏掉了最要紧的一项——<b>这条模板在这份结果下适不适用</b>。
+     * 一次查完了、一个岗位都没查到的查询撑不起"还有资料项没有确认"，
+     * 线上会拒掉它，而那套自判的判据会算它通过。
+     *
+     * <p>调工具那一步不在这里判：它能不能执行由工具自己的参数校验决定，
+     * 调用方拿真实工具调一次即可。
+     */
+    public List<String> validate(PlannerStep step, List<Observation> observations,
+                                 AgentTooling.SessionContext session) {
+        Objects.requireNonNull(step, "step");
+        var seen = observations == null ? List.<Observation>of() : List.copyOf(observations);
+        var context = session == null ? AgentTooling.SessionContext.none() : session;
+        if (step instanceof PlannerStep.Finish finish) {
+            return checkFinish(finish, renderClosing(finish), seen);
+        }
+        if (step instanceof PlannerStep.AskUser ask) {
+            return checkAsk(ask, renderQuestion(ask), seen, context).violations();
+        }
+        return List.of();
+    }
+
     /** 把收尾模板渲染成用户看得到的那句话；模板名或槽位对不上时返回 null。 */
     private static String renderClosing(PlannerStep.Finish finish) {
         try {
