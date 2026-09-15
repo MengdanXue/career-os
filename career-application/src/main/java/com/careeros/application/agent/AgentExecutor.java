@@ -52,12 +52,8 @@ public final class AgentExecutor {
     /** ASK 不是问句时的拒绝理由。陈述句走 ASK 通道就绕开了"结论要有依据"。 */
     static final String ASK_IS_NOT_A_QUESTION = "追问不是一个问句；结论不能借追问的通道发出";
 
-    /** 纯澄清的追问里夹了一个完整陈述句时的拒绝理由。 */
-    static final String CLARIFYING_ASK_CARRIES_A_STATEMENT =
-        "这条追问声明自己不依据任何结果，却先下了一个完整的判断；澄清就只问清楚要什么";
-
-    /** 陈述句的收尾标点。澄清式追问里出现它，说明问号之前还有一整句话。 */
-    private static final String SENTENCE_ENDINGS = "。！.!";
+    /** 模板名不在封闭清单里，或槽位对不上时的拒绝理由。 */
+    static final String UNKNOWN_TEMPLATE = "这不是一条可用的模板；用户可见的话只能从固定模板里选";
 
     private static final AnswerNarrativeValidator NARRATIVE = new AnswerNarrativeValidator();
 
@@ -110,26 +106,26 @@ public final class AgentExecutor {
                 next = planner.next(state);
             } catch (RuntimeException failure) {
                 // 规划器坏了不该把整次运行变成 500：已经取到的观察仍然有用。
-                trace.add(TraceEntry.rejected("(planner)", "规划器抛出异常：" + failure.getClass().getSimpleName()));
+                trace.add(TraceEntry.rejected("(planner)", "规划器抛出异常：" + failure.getClass().getSimpleName(), 0));
                 return finished(Outcome.PLANNER_FAILED, null, null, observations, trace, budget);
             }
             if (next == null) {
-                trace.add(TraceEntry.rejected("(planner)", "规划器没有给出下一步"));
+                trace.add(TraceEntry.rejected("(planner)", "规划器没有给出下一步", 0));
                 return finished(Outcome.PLANNER_FAILED, null, null, observations, trace, budget);
             }
             if (next instanceof PlannerStep.Finish finish) {
-                // 叙述在这里就校验，不等渲染阶段。带数值或判定词的叙述不能离开执行器，
-                // 否则调用方可能先把它用掉——比如记进日志或直接回给用户。
-                var violations = checkFinish(finish, observations);
-                return new AgentRun(Outcome.FINISHED, violations.isEmpty() ? finish.narrative() : null,
+                // 句子由这里渲染，模型只给模板名和结构化引用。它写不出自由句子，
+                // 所以也写不出"你这条线基本没什么硬门槛挡着"这类没人算过的判断。
+                String rendered = renderClosing(finish);
+                var violations = checkFinish(finish, rendered, observations);
+                return new AgentRun(Outcome.FINISHED, violations.isEmpty() ? rendered : null,
                     null, observations, trace, budget.spent(), callBudget, violations,
                     violations.isEmpty() ? finish.basis().observationIndexes() : List.of());
             }
             if (next instanceof PlannerStep.AskUser ask) {
-                // 追问和收尾同样是模型直接说给用户听的话，所以走同一套校验。
-                // 只校验 FINISH 的话，"ASK 你这条线适配度不错，要继续看吗"就能整句绕过去。
-                var violations = checkAsk(ask, observations);
-                return new AgentRun(Outcome.ASKED_USER, null, violations.isEmpty() ? ask.question() : null,
+                String rendered = renderQuestion(ask);
+                var violations = checkAsk(ask, rendered, observations);
+                return new AgentRun(Outcome.ASKED_USER, null, violations.isEmpty() ? rendered : null,
                     observations, trace, budget.spent(), callBudget, violations,
                     violations.isEmpty() ? ask.basis().observationIndexes() : List.of());
             }
@@ -139,12 +135,12 @@ public final class AgentExecutor {
             if (tool == null) {
                 // 不在注册表里就是不存在。写入工具正是靠"不注册"被挡住的。
                 observations.add(Observation.failed(call.tool(), "没有这个工具，或者它不在只读工具面里。"));
-                trace.add(TraceEntry.rejected(call.tool(), "未注册的工具"));
+                trace.add(TraceEntry.rejected(call.tool(), "未注册的工具", observations.size()));
                 continue;
             }
             if (!budget.tryConsume()) {
                 observations.add(Observation.failed(call.tool(), "本次调用预算已用完。"));
-                trace.add(TraceEntry.rejected(call.tool(), "超出共享调用预算"));
+                trace.add(TraceEntry.rejected(call.tool(), "超出共享调用预算", observations.size()));
                 return finished(Outcome.BUDGET_EXHAUSTED, null, null, observations, trace, budget);
             }
             int before = budget.spent();
@@ -158,22 +154,48 @@ public final class AgentExecutor {
                     "这个工具这次没能返回结果：" + failure.getClass().getSimpleName());
             }
             observations.add(observation);
-            trace.add(TraceEntry.called(call, why, observation.ok(), budget.spent() - before + 1));
+            trace.add(TraceEntry.called(call, why, observation.ok(), budget.spent() - before + 1,
+                observations.size()));
         }
         return finished(Outcome.STEP_LIMIT_REACHED, null, null, observations, trace, budget);
     }
 
+    /** 把收尾模板渲染成用户看得到的那句话；模板名或槽位对不上时返回 null。 */
+    private static String renderClosing(PlannerStep.Finish finish) {
+        try {
+            return AnswerTemplates.Closing.valueOf(finish.template()).render(finish.slots());
+        } catch (IllegalArgumentException unknown) {
+            return null;
+        }
+    }
+
+    private static String renderQuestion(PlannerStep.AskUser ask) {
+        try {
+            return AnswerTemplates.Question.valueOf(ask.template()).render(ask.slots());
+        } catch (IllegalArgumentException unknown) {
+            return null;
+        }
+    }
+
     /**
-     * 收尾叙述的校验。
+     * 收尾的校验。
      *
-     * <p>除了叙述校验器那套规则，这里多一条：<b>必须点名依据的是哪一条观察，且那几条要成功。</b>
+     * <p>模板渲染不出来就没有这句话——模型报了一个不存在的模板名，或者槽位对不上。
      *
-     * <p>此前的判据是"这次运行里存在成功的观察"。那只说明附近有数据，不说明这段话用了它——
-     * 查了关注清单，然后就"这些岗位都挺适合你的"，照样通过。不含数字、不含判定词也不等于有依据。
-     * 点名之后，依据是否成立就成了可以核对的事：序号必须在范围内，对应的观察必须是成功的。
+     * <p>依据仍要点名，而且点到的必须是成功的观察。此前的判据是"这次运行里存在成功的观察"：
+     * 那只说明附近有数据，不说明这段话用了它——查了关注清单，然后收尾说岗位怎么样，照样通过。
+     *
+     * <p>渲染出来的句子还要过一遍叙述校验器。模板是我们自己写的，本来就该通过；
+     * 留着这一道是为了将来有人改模板时，改出判定词会当场红，而不是等用户看到。
      */
-    private static List<String> checkFinish(PlannerStep.Finish finish, List<Observation> observations) {
-        var violations = new ArrayList<>(NARRATIVE.validateNarrative(finish.narrative()).violations());
+    private static List<String> checkFinish(PlannerStep.Finish finish, String rendered,
+                                            List<Observation> observations) {
+        var violations = new ArrayList<String>();
+        if (rendered == null) {
+            violations.add(UNKNOWN_TEMPLATE);
+            return List.copyOf(violations);
+        }
+        violations.addAll(NARRATIVE.validateNarrative(rendered).violations());
         // 收尾不接受"纯澄清"：那是追问的选项，不是结束的理由。
         if (!finish.basis().declared() || finish.basis().clarifyingOnly()
             || finish.basis().observationIndexes().isEmpty()) {
@@ -189,43 +211,22 @@ public final class AgentExecutor {
      *
      * <p>追问允许不依据任何结果——"你说的杭州是指市区还是整个市？"本来就不需要依据，
      * 但要明说它是纯澄清（{@code BASIS none}），而不是含糊过去。
-     * 一旦点了依据，就和收尾一样要核对。它同样必须是问句，且不许带数值、判定词或概率说法。
+     * 一旦点了依据，就和收尾一样要核对。
      */
-    private static List<String> checkAsk(PlannerStep.AskUser ask, List<Observation> observations) {
-        String question = ask.question();
-        var violations = new ArrayList<>(NARRATIVE.validateNarrative(question).violations());
-        if (question != null && !question.isBlank() && question.indexOf('？') < 0 && question.indexOf('?') < 0) {
-            violations.add(ASK_IS_NOT_A_QUESTION);
+    private static List<String> checkAsk(PlannerStep.AskUser ask, String rendered,
+                                         List<Observation> observations) {
+        var violations = new ArrayList<String>();
+        if (rendered == null) {
+            violations.add(UNKNOWN_TEMPLATE);
+            return List.copyOf(violations);
         }
-        // 声明成纯澄清就不受依据检查，于是它成了夹带结论的通道：
-        // "这批里有几个值得报。要我接着看吗？"——问号有了，前面那句照样是个没算过的判断。
-        if (ask.basis().clarifyingOnly() && carriesAStatement(question)) {
-            violations.add(CLARIFYING_ASK_CARRIES_A_STATEMENT);
-        }
+        violations.addAll(NARRATIVE.validateNarrative(rendered).violations());
         if (!ask.basis().declared()) {
             violations.add(UNGROUNDED_FINISH);
             return List.copyOf(violations);
         }
         violations.addAll(checkBasis(ask.basis(), observations));
         return List.copyOf(violations);
-    }
-
-    /**
-     * 问号之前是不是还有一整句话。
-     *
-     * <p>只看句末标点，不猜语义：澄清问句本来就该是"你说的杭州是指市区，还是整个市？"这种形状，
-     * 逗号分句没问题，一个句号就说明它先讲完了一件事再问。
-     * 逗号连起来的判断由叙述校验器的推荐词清单去拦，两者各拦一半，都不完整。
-     */
-    private static boolean carriesAStatement(String question) {
-        if (question == null) return false;
-        int mark = question.indexOf('？');
-        if (mark < 0) mark = question.indexOf('?');
-        if (mark < 0) mark = question.length();
-        for (int index = 0; index < mark; index++) {
-            if (SENTENCE_ENDINGS.indexOf(question.charAt(index)) >= 0) return true;
-        }
-        return false;
     }
 
     /** 点名的每一条依据都要在范围内，且确实是成功的观察。 */
@@ -260,6 +261,16 @@ public final class AgentExecutor {
     public List<ToolSpec> toolCatalogue() { return catalogue(); }
 
     public int budgetLimit() { return callBudget; }
+
+    /** 用户可见的收尾模板名。与发给模型的提示同源，调用方不必另抄一份。 */
+    public List<String> closingTemplates() {
+        return java.util.Arrays.stream(AnswerTemplates.Closing.values()).map(Enum::name).toList();
+    }
+
+    /** 用户可见的追问模板名。 */
+    public List<String> questionTemplates() {
+        return java.util.Arrays.stream(AnswerTemplates.Question.values()).map(Enum::name).toList();
+    }
 
     public enum Outcome {
         /** 规划器自己收敛了，给出了叙述。 */
@@ -307,14 +318,21 @@ public final class AgentExecutor {
      * 一步轨迹。被拒的步骤也要留下来——看不见的拦截等于没拦截。
      *
      * @param budgetUnits 这一步实际花掉的预算单位；被拒的步骤为 0
+     * @param observationIndex 这一步对应第几条观察，从 1 开始；规划器层面的条目为 0。
+     *        <b>不要靠"数到第几个被接受的"去对位</b>：被拒的调用同样会留下一条失败观察，
+     *        那样数会错位——第一步请求了不存在的工具、第二步查询成功，对位之后读到的
+     *        是第一步那条失败观察，于是这一轮被判成"没查出新列表"，范围和顺序都不会存回去。
      */
     public record TraceEntry(String tool, Map<String, String> arguments, String why, boolean accepted,
-                             String reason, int budgetUnits) {
-        static TraceEntry called(ToolCall call, String why, boolean ok, int budgetUnits) {
-            return new TraceEntry(call.tool(), call.arguments(), why, true, ok ? "ok" : "工具返回失败", budgetUnits);
+                             String reason, int budgetUnits, int observationIndex) {
+        static TraceEntry called(ToolCall call, String why, boolean ok, int budgetUnits, int observationIndex) {
+            return new TraceEntry(call.tool(), call.arguments(), why, true, ok ? "ok" : "工具返回失败",
+                budgetUnits, observationIndex);
         }
-        static TraceEntry rejected(String tool, String reason) {
-            return new TraceEntry(tool, Map.of(), null, false, reason, 0);
+        static TraceEntry rejected(String tool, String reason, int observationIndex) {
+            return new TraceEntry(tool, Map.of(), null, false, reason, 0, observationIndex);
         }
+        /** 这一步对应第几条观察，从 1 开始；规划器层面的条目没有观察，为 0。 */
+        public boolean hasObservation() { return observationIndex > 0; }
     }
 }

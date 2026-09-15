@@ -106,7 +106,7 @@ class AgentRunApiTest {
     @Test void theResponseExposesTheToolCatalogueDownToItsParameters() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)))
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
             .andExpect(status().isOk())
@@ -120,7 +120,7 @@ class AgentRunApiTest {
     @Test void theTraceShowsRefusedToolRequests() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("update_profile", "value", "X"), "想改资料")
-            : new PlannerStep.Finish("我不能替你修改资料。", AgentTooling.Basis.clarifying()))
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.clarifying()))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("改一下我的资料", null)))
             .andExpect(status().isOk())
@@ -129,8 +129,8 @@ class AgentRunApiTest {
             .andExpect(jsonPath("$.budgetSpent").value(0));
     }
 
-    /** 叙述带判定词时不返回叙述，只给拒绝原因，由调用方回落到确定性事实块。 */
-    @Test void aRejectedNarrativeIsNotReturned() throws Exception {
+    /** 自由句子不是模板，到不了用户面前；接口只给拒绝原因，由调用方回落到确定性事实块。 */
+    @Test void aFreeSentenceIsNotReturnedAsANarrative() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
             : new PlannerStep.Finish("这个岗位你是可报的，适配 72 分。", AgentTooling.Basis.on(1)))
@@ -145,7 +145,7 @@ class AgentRunApiTest {
     @Test void theResponseReportsTheBudgetAgainstItsLimit() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)))
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
             .andExpect(status().isOk())
@@ -158,7 +158,7 @@ class AgentRunApiTest {
     @Test void continuingASessionReturnsItsProfileVersion() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)))
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("还有别的吗", SESSION)))
             .andExpect(status().isOk())
@@ -173,7 +173,7 @@ class AgentRunApiTest {
      * 而且"不存在"和"不是你的"要返回同一个 404，否则枚举一遍就知道哪些会话存在。
      */
     @Test void aSessionBelongingToSomeoneElseIsNotFound() throws Exception {
-        mvc(state -> new PlannerStep.Finish("好的。", AgentTooling.Basis.clarifying()), sessions(null))
+        mvc(state -> new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.clarifying()), sessions(null))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("还有别的吗", SESSION)))
             .andExpect(status().isNotFound())
@@ -188,7 +188,7 @@ class AgentRunApiTest {
     @Test void theJobsAreRenderedFromToolDataRatherThanTheModelText() throws Exception {
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)))
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)))
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
             .andExpect(status().isOk())
@@ -208,7 +208,7 @@ class AgentRunApiTest {
         var seenLocation = new java.util.ArrayList<String>();
         mvc(state -> {
             seenLocation.add(state.session().location());
-            return new PlannerStep.Finish("好的。", AgentTooling.Basis.clarifying());
+            return new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.clarifying());
         }).perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("余杭", SESSION)))
             .andExpect(status().isOk())
@@ -222,7 +222,7 @@ class AgentRunApiTest {
         var seenJobs = new java.util.ArrayList<java.util.UUID>();
         mvc(state -> {
             state.session().jobsInOrder().forEach(job -> seenJobs.add(job.jobPostingId()));
-            return new PlannerStep.Finish("好的。", AgentTooling.Basis.clarifying());
+            return new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.clarifying());
         }).perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("第二个怎么样", SESSION)))
             .andExpect(status().isOk());
@@ -241,7 +241,7 @@ class AgentRunApiTest {
         var sessions = sessions(session());
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "余杭"), "收窄到余杭")
-            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)), sessions)
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)), sessions)
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("余杭", SESSION)))
             .andExpect(status().isOk());
@@ -266,7 +266,7 @@ class AgentRunApiTest {
      */
     @Test void aRunWithoutANewListingLeavesThePreviousOrderAlone() throws Exception {
         var sessions = sessions(session());
-        mvc(state -> new PlannerStep.AskUser("你想看哪个城市？", AgentTooling.Basis.clarifying()), sessions)
+        mvc(state -> new PlannerStep.AskUser("WHICH_LOCATION", AgentTooling.Basis.clarifying()), sessions)
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("再看看", SESSION)))
             .andExpect(status().isOk());
@@ -287,10 +287,80 @@ class AgentRunApiTest {
 
         mvc(state -> state.observations().isEmpty()
             ? new PlannerStep.CallTool(ToolCall.of("search_jobs"), "先查")
-            : new PlannerStep.Finish("下面按稳定性排序。", AgentTooling.Basis.on(1)), sessions)
+            : new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(1)), sessions)
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.sessionId").isNotEmpty());
+    }
+
+    /**
+     * 轨迹与观察的对位不能靠"数到第几个被接受的"。
+     *
+     * <p>被拒的调用同样会留下一条观察（失败的那条），所以只数接受过的条目会错位：
+     * 第一步请求了一个不存在的工具、第二步 search_jobs 成功，对位之后读到的是第一步那条失败观察，
+     * 于是这一轮被判成"没查出新列表"，范围和顺序都不会存回去——
+     * 用户明明看到了新列表，下一句"第二个"却指回上一轮。
+     */
+    @Test void aRejectedCallDoesNotMisalignTheSearchArguments() throws Exception {
+        var sessions = sessions(session());
+        mvc(state -> switch (state.observations().size()) {
+            case 0 -> new PlannerStep.CallTool(ToolCall.of("update_profile", "value", "X"), "先试着改资料");
+            case 1 -> new PlannerStep.CallTool(ToolCall.of("search_jobs", "location", "余杭"), "再查岗位");
+            default -> new PlannerStep.Finish("RANKED_LISTING", AgentTooling.Basis.on(2));
+        }, sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("余杭", SESSION)))
+            .andExpect(status().isOk());
+
+        var savedFilters = org.mockito.ArgumentCaptor.forClass(AgentSession.SessionFilters.class);
+        org.mockito.Mockito.verify(sessions).rememberRun(
+            org.mockito.ArgumentMatchers.eq(SESSION), org.mockito.ArgumentMatchers.eq(CANDIDATE),
+            savedFilters.capture(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertThat(savedFilters.getValue().location()).isEqualTo("余杭");
+    }
+
+    /**
+     * 一轮以追问收场时，要把"还没做完的事"和"问过什么"存下来。
+     *
+     * <p>不存的话，用户刷新之后只答一句"余杭"，系统既不知道他原本要办什么，
+     * 也不知道自己问过他什么——那一问等于白问，他得从头再说一遍。
+     */
+    @Test void aRunThatEndsInAQuestionSavesTheOpenTaskAndTheQuestion() throws Exception {
+        var sessions = sessions(session());
+        mvc(state -> new PlannerStep.AskUser("WHICH_LOCATION", AgentTooling.Basis.clarifying()),
+            sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("有什么合适的", SESSION)))
+            .andExpect(status().isOk());
+
+        org.mockito.Mockito.verify(sessions).rememberAsk(
+            org.mockito.ArgumentMatchers.eq(SESSION), org.mockito.ArgumentMatchers.eq(CANDIDATE),
+            org.mockito.ArgumentMatchers.eq("有什么合适的"),
+            org.mockito.ArgumentMatchers.contains("哪个城市"));
+    }
+
+    /**
+     * 第一轮就以追问收场时，也要开一轮会话。
+     *
+     * <p>否则最先问出去的那一句永远接不回来：用户刷新之后页面什么都没有，
+     * 他刚被问的那句话和他原本要办的事一起消失了。
+     */
+    @Test void aFirstRoundThatEndsInAQuestionOpensASessionSoItCanBeResumed() throws Exception {
+        var sessions = sessions(null);
+        org.mockito.Mockito.when(sessions.rememberAsk(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(session());
+
+        mvc(state -> new PlannerStep.AskUser("WHICH_LOCATION", AgentTooling.Basis.clarifying()), sessions)
+            .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("有什么合适的", null)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.sessionId").isNotEmpty());
+
+        org.mockito.Mockito.verify(sessions).rememberAsk(
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(CANDIDATE),
+            org.mockito.ArgumentMatchers.eq("有什么合适的"),
+            org.mockito.ArgumentMatchers.contains("哪个城市"));
     }
 }

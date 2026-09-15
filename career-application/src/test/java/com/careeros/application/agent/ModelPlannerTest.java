@@ -49,8 +49,8 @@ class ModelPlannerTest {
     }
 
     @Test void parsesAskAndFinish() {
-        assertThat(ModelPlanner.parse("ASK 要不要放宽到整个浙江？")).isInstanceOf(PlannerStep.AskUser.class);
-        assertThat(ModelPlanner.parse("FINISH 下面按稳定性排序。")).isInstanceOf(PlannerStep.Finish.class);
+        assertThat(ModelPlanner.parse("ASK BROADEN_SCOPE\nBASIS none")).isInstanceOf(PlannerStep.AskUser.class);
+        assertThat(ModelPlanner.parse("FINISH RANKED_LISTING\nBASIS 1")).isInstanceOf(PlannerStep.Finish.class);
     }
 
     // --- 认不出来就不猜 ---
@@ -81,18 +81,17 @@ class ModelPlannerTest {
     // --- 整段解析，不是看到第一行认识的就返回 ---
 
     /**
-     * 多行的收尾叙述要完整保留。
+     * 收尾不再有自由叙述，所以"多行叙述被截断"这件事从根上没有了。
      *
-     * <p>只取第一行的话，"限中共党员"这种常常单独成行的限制会被无声删掉，
-     * 剩下的读起来比原文更肯定——这正是不做逐句删减的理由。
+     * <p>原来的用例是"多行叙述要完整保留"——它防的是限制条件单独成行时被悄悄删掉。
+     * 现在用户看到的句子由程序按模板渲染，模型给的是模板名，截不断也改不了措辞；
+     * 而模板名后面多写一行，整段直接作废（见 {@code aLineThatIsNotPartOfTheProtocolVoidsTheTurn}）。
+     * 这比"保留下来"更严：以前是保住，现在是根本进不来。
      */
-    @Test void aMultiLineNarrativeIsKeptWhole() {
-        var step = (PlannerStep.Finish) ModelPlanner.parse("""
-            FINISH 下面按稳定性排序。
-            其中一处仍需你补充材料后才能定。
-            BASIS 1""");
+    @Test void aClosingCarriesATemplateNameRatherThanProse() {
+        var step = (PlannerStep.Finish) ModelPlanner.parse("FINISH RANKED_LISTING\nBASIS 1");
 
-        assertThat(step.narrative()).contains("下面按稳定性排序").contains("仍需你补充材料");
+        assertThat(step.template()).isEqualTo("RANKED_LISTING");
         assertThat(step.basis().observationIndexes()).containsExactly(1);
     }
 
@@ -103,43 +102,77 @@ class ModelPlannerTest {
      * 挑错了照样执行，而且看起来完全正常。
      */
     @Test void twoActionsInOneTurnAreRefusedRatherThanResolvedByPosition() {
-        assertThat(ModelPlanner.parse("TOOL search_jobs location=杭州\nFINISH 下面按稳定性排序。")).isNull();
-        assertThat(ModelPlanner.parse("FINISH 下面按稳定性排序。\nTOOL search_jobs location=杭州")).isNull();
+        assertThat(ModelPlanner.parse("TOOL search_jobs location=杭州\nFINISH RANKED_LISTING")).isNull();
+        assertThat(ModelPlanner.parse("FINISH RANKED_LISTING\nTOOL search_jobs location=杭州")).isNull();
         assertThat(ModelPlanner.parse("TOOL search_jobs location=杭州\nTOOL watchlist")).isNull();
-        assertThat(ModelPlanner.parse("ASK 要放宽吗？\nFINISH 好的。")).isNull();
+        assertThat(ModelPlanner.parse("ASK BROADEN_SCOPE\nFINISH RANKED_LISTING")).isNull();
     }
 
-    /** 动作前面的闲话不影响解析——模型常常先说一句"好的，我来查一下"。 */
-    @Test void proseBeforeTheActionIsIgnored() {
-        var step = (PlannerStep.CallTool) ModelPlanner.parse("""
+    /**
+     * 非协议行不能被忽略。
+     *
+     * <p>这是复现包里的原反例，上一轮还被当成"闲话不影响解析"放行了。
+     * 忽略读不懂的行，等于只按自己认得的那部分理解模型这一步：
+     * 它在 TOOL 之外还写了一句"这次只看事业编"，系统当没看见照样执行，
+     * 用户拿到的结果比他要求的宽，而轨迹里看不出少做了什么。
+     *
+     * <p>读不懂就整段作废，和两个动作、参数没解释完是同一条规矩。
+     */
+    @Test void aLineThatIsNotPartOfTheProtocolVoidsTheTurn() {
+        assertThat(ModelPlanner.parse("""
             好的，我先看看这个范围里有没有岗位。
             TOOL search_jobs location=杭州
-            WHY 用户问的是杭州""");
+            WHY 用户问的是杭州""")).isNull();
+        assertThat(ModelPlanner.parse("""
+            TOOL search_jobs location=杭州
+            WHY 用户问的是杭州
+            另外这次只看事业编。""")).isNull();
+    }
 
+    /** 空行仍然允许——它不是内容，忽略它不会丢掉任何意思。 */
+    @Test void blankLinesAreStillAllowed() {
+        var step = (PlannerStep.CallTool) ModelPlanner.parse("""
+            TOOL search_jobs location=杭州
+
+            WHY 用户问的是杭州""");
         assertThat(step.call().tool()).isEqualTo("search_jobs");
         assertThat(step.why()).isEqualTo("用户问的是杭州");
+    }
+
+    /**
+     * BASIS -1 不能被读成第 1 条。
+     *
+     * <p>这是复现包里的另一条原反例：取数字用的是"把串里的数字挑出来"，
+     * 负号根本没进过语法，于是 {@code BASIS -1} 悄悄变成了一条成立的依据。
+     * 按语法解析就不会有这种事——整数没有负的写法，读不出来就是读不出来。
+     */
+    @Test void aNegativeBasisIndexIsNotReadAsAPositiveOne() {
+        assertThat(ModelPlanner.parse("FINISH RANKED_LISTING\nBASIS -1")).isNull();
+        assertThat(ModelPlanner.parse("FINISH RANKED_LISTING\nBASIS 1, -2")).isNull();
+        assertThat(ModelPlanner.parse("FINISH RANKED_LISTING\nBASIS 1.5")).isNull();
     }
 
     // --- BASIS：收尾要点名依据 ---
 
     @Test void basisIsParsedFromTheTurn() {
-        var finish = (PlannerStep.Finish) ModelPlanner.parse("FINISH 下面按稳定性排序。\nBASIS 1, 3");
+        var finish = (PlannerStep.Finish) ModelPlanner.parse("FINISH RANKED_LISTING\nBASIS 1, 3");
         assertThat(finish.basis().observationIndexes()).containsExactly(1, 3);
 
-        var ask = (PlannerStep.AskUser) ModelPlanner.parse("ASK 你说的杭州是指市区吗？\nBASIS none");
+        var ask = (PlannerStep.AskUser) ModelPlanner.parse("ASK WHICH_LOCATION\nBASIS none");
         assertThat(ask.basis().clarifyingOnly()).isTrue();
     }
 
     /** 没写 BASIS 就是没点名依据。解析层照常解析，由执行器拒绝。 */
     @Test void aTurnWithoutBasisIsParsedAndLeftForTheExecutorToRefuse() {
-        var finish = (PlannerStep.Finish) ModelPlanner.parse("FINISH 下面按稳定性排序。");
+        var finish = (PlannerStep.Finish) ModelPlanner.parse("FINISH RANKED_LISTING");
         assertThat(finish.basis().declared()).isFalse();
     }
 
-    /** BASIS 不属于叙述，不能被当成模型说的话跟在后面。 */
-    @Test void theBasisLineIsNotPartOfTheNarrative() {
-        var finish = (PlannerStep.Finish) ModelPlanner.parse("FINISH 下面按稳定性排序。\nBASIS 1");
-        assertThat(finish.narrative()).isEqualTo("下面按稳定性排序。");
+    /** BASIS 是独立的一条产生式，不会被当成模板名或槽位。 */
+    @Test void theBasisLineIsItsOwnProduction() {
+        var finish = (PlannerStep.Finish) ModelPlanner.parse("FINISH RANKED_LISTING\nBASIS 1");
+        assertThat(finish.template()).isEqualTo("RANKED_LISTING");
+        assertThat(finish.slots()).isEmpty();
     }
 
     // --- G1：参数没被解释掉的部分不能静默消失 ---
@@ -182,19 +215,19 @@ class ModelPlannerTest {
      * 点名的那条再也不会被核对。判定靠的是整串里出现过某个字，不是这串写的是什么。
      */
     @Test void aClarifyingMarkerBuriedInProseDoesNotVoidNamedEvidence() {
-        assertThat(ModelPlanner.parse("ASK 要放宽吗？\nBASIS 1，无其他依据")).isNull();
-        assertThat(ModelPlanner.parse("FINISH 下面按稳定性排序。\nBASIS 依据第 1 条，无别的")).isNull();
+        assertThat(ModelPlanner.parse("ASK BROADEN_SCOPE\nBASIS 1，无其他依据")).isNull();
+        assertThat(ModelPlanner.parse("FINISH RANKED_LISTING\nBASIS 依据第 1 条，无别的")).isNull();
     }
 
     /** 给了两条互相矛盾的 BASIS，不能静默取第一条。 */
     @Test void twoBasisLinesVoidTheTurnRatherThanTakingTheFirst() {
-        assertThat(ModelPlanner.parse("ASK 要放宽吗？\nBASIS none\nBASIS 1")).isNull();
-        assertThat(ModelPlanner.parse("FINISH 好的。\nBASIS 1\nBASIS 2")).isNull();
+        assertThat(ModelPlanner.parse("ASK BROADEN_SCOPE\nBASIS none\nBASIS 1")).isNull();
+        assertThat(ModelPlanner.parse("FINISH RANKED_LISTING\nBASIS 1\nBASIS 2")).isNull();
     }
 
     /** 干净的 none 照常识别，这条不能被上面两条误伤。 */
     @Test void aPlainNoneIsStillRecognisedAsClarifying() {
-        var ask = (PlannerStep.AskUser) ModelPlanner.parse("ASK 你说的杭州是指市区吗？\nBASIS none");
+        var ask = (PlannerStep.AskUser) ModelPlanner.parse("ASK WHICH_LOCATION\nBASIS none");
         assertThat(ask.basis().clarifyingOnly()).isTrue();
     }
 
@@ -211,7 +244,7 @@ class ModelPlannerTest {
         var executor = new AgentExecutor(List.of(tool("search_jobs", Map.of("count", 1))));
         var run = executor.run(CANDIDATE, "把我的政治面貌改成党员", scripted(
             "TOOL update_profile factKey=POLITICAL_AFFILIATION value=CPC_MEMBER\nWHY 用户要求修改",
-            "FINISH 我不能替你修改资料，下面是相关岗位。"));
+            "FINISH RANKED_LISTING\nBASIS 1"));
 
         assertThat(run.outcome()).isEqualTo(Outcome.FINISHED);
         assertThat(run.trace()).anySatisfy(entry -> {
@@ -229,7 +262,7 @@ class ModelPlannerTest {
 
         executor.run(CANDIDATE, "查岗位", scripted(
             "TOOL search_jobs candidateId=" + other + "\nWHY 换个人看看",
-            "FINISH 好的。"));
+            "FINISH RANKED_LISTING\nBASIS 1"));
 
         assertThat(recording.invokedFor).containsExactly(CANDIDATE);
     }
@@ -258,7 +291,7 @@ class ModelPlannerTest {
 
     private static AgentTooling.AgentPlanner scripted(String... turns) {
         var queue = new ArrayDeque<>(List.of(turns));
-        return new ModelPlanner((protocol, rendered) -> queue.isEmpty() ? "FINISH 好的。" : queue.poll());
+        return new ModelPlanner((protocol, rendered) -> queue.isEmpty() ? "FINISH RANKED_LISTING\nBASIS 1" : queue.poll());
     }
 
     private static ReadOnlyTool tool(String name, Map<String, Object> data) {
@@ -301,7 +334,7 @@ class ModelPlannerTest {
 
         executor.run(CANDIDATE, "杭州有哪些岗位", new ModelPlanner((protocol, rendered) -> {
             prompts.add(protocol);
-            return "FINISH 好的。";
+            return "FINISH RANKED_LISTING\nBASIS 1";
         }));
 
         assertThat(prompts).isNotEmpty();

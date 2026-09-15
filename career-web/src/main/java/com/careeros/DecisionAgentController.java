@@ -78,6 +78,7 @@ class DecisionAgentController {
         String current = facts.profile().profileVersion();
         return new AgentSessionResponse(session.sessionId(), session.profileVersion(),
             !session.matchesProfileVersion(current),
+            session.openTask(), session.pendingQuestion(),
             session.lastJobIdsInOrder(),
             session.pendingConfirmations().stream()
                 .map(item -> new SessionPendingConfirmation(item.factKey(), item.question(), item.jobPostingId(),
@@ -89,8 +90,13 @@ class DecisionAgentController {
     record SessionPendingConfirmation(CandidateFactKey factKey, String question, UUID jobPostingId,
                                       boolean answered) {}
 
-    /** @param stale 资料已变，这份列表与这些问题不再对应当前结论 */
-    record AgentSessionResponse(UUID sessionId, String profileVersion, boolean stale, List<UUID> jobIdsInOrder,
+    /**
+     * @param stale           资料已变，这份列表与这些问题不再对应当前结论
+     * @param openTask        上一轮追问时用户原本要办的事；刷新之后页面据此说明他在回答什么
+     * @param pendingQuestion 系统当时问出去的那句话
+     */
+    record AgentSessionResponse(UUID sessionId, String profileVersion, boolean stale,
+                                String openTask, String pendingQuestion, List<UUID> jobIdsInOrder,
                                 List<SessionPendingConfirmation> pendingConfirmations) {}
 
     /**

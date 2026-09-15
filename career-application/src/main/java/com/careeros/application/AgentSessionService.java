@@ -83,6 +83,32 @@ public final class AgentSessionService {
     }
 
     /**
+     * 一轮以追问收场时，记下"还没做完的事"和"问过什么"。
+     *
+     * <p>不记的话，用户刷新之后只答一句"余杭"，系统既不知道他原本要办什么，
+     * 也不知道自己问过他什么——那一问等于白问，他得从头再说一遍。
+     *
+     * <p>刻意只动这两个字段：这一轮没有查出新列表，上一轮的范围、顺序和待确认项
+     * 还是用户屏幕上那一份，清掉它们下一句"第二个"就没有东西可指了。
+     */
+    public AgentSession rememberAsk(UUID sessionId, UUID candidateId, String openTask, String question) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        Objects.requireNonNull(candidateId, "candidateId");
+        var existing = find(candidateId, sessionId).orElse(null);
+        if (existing != null) {
+            return sessions.save(existing.withOpenTask(openTask, question, clock.instant()));
+        }
+        // 第一轮就以追问收场时也要开一轮会话，否则最先问出去的那一句永远接不回来：
+        // 用户刷新之后页面什么都没有，他刚被问的那句话和他原本要办的事一起消失了。
+        var profile = candidates.findById(candidateId).orElseThrow(() ->
+            new CandidateProfileService.CandidateProfileNotFoundException("Candidate not found: " + candidateId));
+        var opened = new AgentSession(sessionId, candidateId,
+            new SessionFilters(null, null, null, SessionFilters.DEFAULT_LIMIT),
+            List.of(), List.of(), profile.profileVersion(), clock.instant());
+        return sessions.save(opened.withOpenTask(openTask, question, clock.instant()));
+    }
+
+    /**
      * 把"第 N 个"解析回岗位。
      *
      * @return 解析结果。资料已变时返回 {@link Reference#staleListing()}——不重新排名，

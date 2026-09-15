@@ -83,6 +83,10 @@ class ModelPlannerLiveSampleTest {
 
     private static final AgentExecutor EXECUTOR = new AgentExecutor(TOOLS);
 
+    /** 模板清单从执行器取，和发给模型的那份同源——不另抄一份。 */
+    private static final List<String> CLOSING_TEMPLATES = EXECUTOR.closingTemplates();
+    private static final List<String> QUESTION_TEMPLATES = EXECUTOR.questionTemplates();
+
     /** 模型往返走与线上同一条有界通道，测试不会挂在一次不返回的调用上。 */
     private static final java.util.concurrent.ThreadPoolExecutor POOL =
         DecisionAgentConfiguration.boundedModelTurnPool();
@@ -158,27 +162,26 @@ class ModelPlannerLiveSampleTest {
     }
 
     /**
-     * 收尾文字的违规率。提示词与叙述校验器不一致时，回答会次次回落到事实块，
-     * 用户看到的东西变差，而测试全绿——所以这条要用真实模型量一次。
+     * 模型选的模板要和工具结果对得上。
+     *
+     * <p>原来这一条量的是"模型写的收尾有多少违规"。现在句子由程序按模板渲染，模型写不出句子，
+     * 那个比例量的就不再是模型的行为了——留着它只会给出一个恒为零的好看数字。
+     *
+     * <p>换成真正还由模型决定的那件事：一个岗位都没查到时，它不能选"下面是这个范围内的岗位"。
+     * 选错模板和写错句子一样会让用户看到一句不成立的话，只是这次错在选择上，可以直接核对。
      */
-    @Test void mostClosingTextsPassTheNarrativeRules() {
+    @Test void theModelPicksAClosingTemplateThatMatchesTheToolResult() {
         var planner = planner();
-        var texts = new ArrayList<String>();
-        for (PlanningState state : List.of(state(2, 5), state(0, 5), state(2, 1))) {
-            PlannerStep step = planner.next(state);
-            if (step instanceof PlannerStep.Finish finish) texts.add(finish.narrative());
-            if (step instanceof PlannerStep.AskUser ask) texts.add(ask.question());
+
+        PlannerStep empty = planner.next(state(0, 5));
+
+        report("无岗位", empty);
+        assertUsable("无岗位", empty, 1);
+        if (empty instanceof PlannerStep.Finish finish) {
+            assertThat(finish.template())
+                .as("一个岗位都没查到，却选了讲岗位列表的模板")
+                .isNotIn("RANKED_LISTING", "SINGLE_JOB", "WATCHLIST_STATE");
         }
-        assumeTrue(!texts.isEmpty(), "这批样本里模型一次都没有收尾，没有可量的文字");
-
-        long passing = texts.stream().filter(text -> NARRATIVE.validateNarrative(text).accepted()).count();
-        texts.forEach(text -> System.out.println("[frozen-sample] 收尾文字：" + text
-            + " -> " + NARRATIVE.validateNarrative(text).violations()));
-
-        // 名字说"大多数通过"，判据就得是大多数：过半。
-        assertThat(passing * 2)
-            .as("过半的收尾文字违规，说明提示词和叙述校验器已经对不上")
-            .isGreaterThan(texts.size());
     }
 
     /**
@@ -207,6 +210,9 @@ class ModelPlannerLiveSampleTest {
             return;
         }
         if (step instanceof PlannerStep.Finish finish) {
+            // 模板名必须在封闭清单里，否则这句话渲染不出来。
+            assertThat(CLOSING_TEMPLATES).as("%s：收尾用了不存在的模板 %s", label, finish.template())
+                .contains(finish.template());
             assertThat(finish.basis().observationIndexes())
                 .as("%s：收尾没有点名依据", label).isNotEmpty();
             assertThat(finish.basis().observationIndexes())
@@ -215,7 +221,8 @@ class ModelPlannerLiveSampleTest {
             return;
         }
         var ask = (PlannerStep.AskUser) step;
-        assertThat(ask.question()).as("%s：追问不是一个问句", label).containsAnyOf("？", "?");
+        assertThat(QUESTION_TEMPLATES).as("%s：追问用了不存在的模板 %s", label, ask.template())
+            .contains(ask.template());
         assertThat(ask.basis().declared()).as("%s：追问既没点名依据也没声明是纯澄清", label).isTrue();
     }
 
@@ -256,9 +263,12 @@ class ModelPlannerLiveSampleTest {
         if (step instanceof PlannerStep.CallTool call) {
             return "TOOL " + call.call().tool() + " " + new java.util.TreeMap<>(call.call().arguments());
         }
-        if (step instanceof PlannerStep.Finish finish) return "FINISH basis=" + finish.basis().observationIndexes();
+        if (step instanceof PlannerStep.Finish finish) {
+            return "FINISH " + finish.template() + " basis=" + finish.basis().observationIndexes();
+        }
         if (step instanceof PlannerStep.AskUser ask) {
-            return "ASK" + (ask.basis().clarifyingOnly() ? " clarifying" : " basis=" + ask.basis().observationIndexes());
+            return "ASK " + ask.template()
+                + (ask.basis().clarifyingOnly() ? " clarifying" : " basis=" + ask.basis().observationIndexes());
         }
         return "(none)";
     }

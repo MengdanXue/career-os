@@ -42,38 +42,50 @@ public final class ModelPlanner implements AgentPlanner {
 
         或者
 
-          ASK <要问用户的问题>
+          ASK <模板名> [槽位=值]
           BASIS <依据的结果序号，用逗号分隔；纯澄清写 none>
 
         或者
 
-          FINISH <一两句连接性叙述>
+          FINISH <模板名>
           BASIS <依据的结果序号，用逗号分隔>
 
         一次只给一个动作。同一段里同时出现 TOOL 和 FINISH（或给了两个 TOOL）会被整段作废，
-        因为无法判断你要做哪一个。叙述可以写多行，会完整保留。
+        因为无法判断你要做哪一个。**每一行都必须是上面这几种之一**：多写一句解释、
+        多加一段说明，整段都会作废——不是被忽略，是整个这一步都不算数。
 
         只能调下面列出的工具，参数也只能用下面列出的键；工具名或参数名不在表里会被直接拒绝，
         取值不在允许范围里也会被拒绝，不会退化成"不加这个筛选"。
-        ASK 必须是一个问句。
-        FINISH 必须用 BASIS 点名它依据的是上面第几条结果，而且那几条必须是成功的结果；
-        点不出来就说明这段收尾没有依据，会被整段丢弃。
-        ASK 依据某条结果时同样要点名；只是问清楚用户想要什么、不依据任何结果时写 BASIS none。
 
-        FINISH 和 ASK 的文字里都不准出现任何数字（含中文数字），不准出现"可报／不可报／条件可报／
-        待确认／T1／T2／T3"这类判定词，不准把指数说成录取概率或上岸率。
-        资格、分数、限制条件由程序渲染并附在你这段话后面，你改不了也删不掉；
-        写进去只会导致你这段话被整段丢弃。""";
+        FINISH 和 ASK 不写自由句子，只写模板名。用户看到的那句话由程序按模板渲染，
+        你改不了它的措辞——资格、材料、把握这类判断只能来自程序算出来的事实块。
+        FINISH 必须用 BASIS 点名它依据的是上面第几条结果，而且那几条必须是成功的结果。
+        ASK 只是问清楚用户想要什么时写 BASIS none；依据某条结果时同样要点名。
+        BASIS 只接受 none 或正整数序号，负数、小数都读不出来，整段会作废。
+
+        资格、分数、限制条件由程序渲染并附在这句话后面，你改不了也删不掉。""";
+
+    // --- 完整的行语法。每一行都要落在某条产生式上，落不上就整段作废。 ---
 
     private static final Pattern TOOL_LINE = Pattern.compile("^\\s*TOOL\\s+(\\S+)\\s*(.*)$");
-    private static final Pattern ASK_LINE = Pattern.compile("^\\s*ASK\\s+(.+)$");
-    private static final Pattern FINISH_LINE = Pattern.compile("^\\s*FINISH\\s+(.+)$");
+    private static final Pattern ASK_LINE = Pattern.compile("^\\s*ASK\\s+(\\S+)\\s*(.*)$");
+    private static final Pattern FINISH_LINE = Pattern.compile("^\\s*FINISH\\s+(\\S+)\\s*(.*)$");
     private static final Pattern WHY_LINE = Pattern.compile("^\\s*WHY\\s+(.+)$");
     private static final Pattern BASIS_LINE = Pattern.compile("^\\s*BASIS\\s+(.+)$");
+
+    /** 一个参数记号：{@code 键=值}，值可以用引号包住以容纳空格。参数段必须整段由它组成。 */
     private static final Pattern ARGUMENT = Pattern.compile("([A-Za-z_][A-Za-z0-9_]*)=(\"[^\"]*\"|\\S+)");
 
-    /** BASIS 里表示"纯澄清，不依据任何结果"的写法。 */
-    private static final List<String> CLARIFYING_MARKERS = List.of("none", "NONE", "无", "澄清");
+    /**
+     * BASIS 的取值语法：要么是"没有依据"这个词本身，要么是一串正整数。
+     *
+     * <p>写成语法而不是"串里出现过某个字"。此前靠 {@code contains} 判断，
+     * {@code BASIS 1，无其他依据} 就被读成"不依据任何结果"；取数字靠"把数字挑出来"，
+     * {@code BASIS -1} 于是变成了第 1 条。负号和小数点根本没进过语法——
+     * 按语法解析就不会有这种事：读不出来就是读不出来，不会读成别的东西。
+     */
+    private static final Pattern BASIS_CLARIFYING = Pattern.compile("^(?:none|NONE|无|澄清)$");
+    private static final Pattern BASIS_INDEXES = Pattern.compile("^\\d+(?:[\\s,，、]+\\d+)*$");
 
     private final ModelTurn model;
 
@@ -97,24 +109,36 @@ public final class ModelPlanner implements AgentPlanner {
         if (state.tools().isEmpty()) {
             // 说清楚"一个都没有"，不是省略不提：省略会让模型以为目录只是没写出来，继续猜工具名。
             text.append("（本次运行没有注册任何工具。不要提出 TOOL 调用。）\n");
-            return text.toString();
-        }
-        for (AgentTooling.ToolSpec tool : state.tools()) {
-            text.append("\n- ").append(tool.name()).append("：").append(tool.description()).append('\n');
-            if (tool.parameters().isEmpty()) {
-                text.append("  参数：无\n");
-                continue;
-            }
-            text.append("  参数：\n");
-            for (AgentTooling.ToolParameter parameter : tool.parameters()) {
-                text.append("    - ").append(parameter.name())
-                    .append(parameter.required() ? "（必填）" : "（可选）")
-                    .append("：").append(parameter.description());
-                if (!parameter.allowedValues().isEmpty()) {
-                    text.append("；只能取 ").append(String.join("、", parameter.allowedValues()));
+        } else {
+            for (AgentTooling.ToolSpec tool : state.tools()) {
+                text.append("\n- ").append(tool.name()).append("：").append(tool.description()).append('\n');
+                if (tool.parameters().isEmpty()) {
+                    text.append("  参数：无\n");
+                    continue;
                 }
-                text.append('\n');
+                text.append("  参数：\n");
+                for (AgentTooling.ToolParameter parameter : tool.parameters()) {
+                    text.append("    - ").append(parameter.name())
+                        .append(parameter.required() ? "（必填）" : "（可选）")
+                        .append("：").append(parameter.description());
+                    if (!parameter.allowedValues().isEmpty()) {
+                        text.append("；只能取 ").append(String.join("、", parameter.allowedValues()));
+                    }
+                    text.append('\n');
+                }
             }
+        }
+        text.append("\nFINISH 只能用下面这些模板名：\n");
+        for (AnswerTemplates.Closing template : AnswerTemplates.Closing.values()) {
+            text.append("  - ").append(template.name()).append('\n');
+        }
+        text.append("ASK 只能用下面这些模板名：\n");
+        for (AnswerTemplates.Question template : AnswerTemplates.Question.values()) {
+            text.append("  - ").append(template.name());
+            if (!template.slots().isEmpty()) {
+                text.append("（需要 ").append(String.join("、", template.slots())).append("=…）");
+            }
+            text.append('\n');
         }
         return text.toString();
     }
@@ -122,124 +146,73 @@ public final class ModelPlanner implements AgentPlanner {
     /**
      * 把模型的一段输出整段解析成一步计划。
      *
-     * <p><b>整段看，不是看到第一行认识的就返回。</b> 逐行扫描有三处会静默出错：
-     * 多行的 FINISH 叙述被截成第一行（限制条件常常正好在第二行）；
-     * 同时出现 TOOL 和 FINISH 时按出现顺序选一个，等于替模型做了决定；
-     * 重复的 TOOL 只执行第一个，其余无声消失。这些都看不出异常。
+     * <p><b>整段看，每一行都要落在语法上。</b> 此前是"扫到认得的行就用，其余忽略"，
+     * 三处会静默出错：非协议行被忽略——模型在 TOOL 之外还写了一句"这次只看事业编"，
+     * 系统当没看见照样执行，用户拿到的结果比他要求的宽；同时出现 TOOL 和 FINISH 时按位置挑一个，
+     * 等于替模型决定它要做哪件事；重复的 TOOL 只执行第一个。
      *
-     * <p>所以：收集整段里出现的全部动作；出现<b>不止一个动作</b>就整段作废，
-     * 交给执行器按"没给出下一步"处理。宁可这一步没有计划，也不替它猜。
-     * FINISH / ASK 的文字一直取到下一个动作行或结尾，多行叙述完整保留。
+     * <p>现在的规矩只有一条：<b>读不懂就整段作废</b>，交给执行器按"没给出下一步"处理。
+     * 宁可这一步没有计划，也不按自己认得的那部分去理解它。
      *
-     * @return 认不出来、或同时给了多个动作时返回 {@code null}——执行器会结束运行，
-     *         而不是凑一个工具调用出来。
+     * @return 认不出来、给了多个动作、或有任何一行落不到语法上时返回 {@code null}
      */
     public static PlannerStep parse(String raw) {
         if (raw == null || raw.isBlank()) return null;
-        String[] lines = raw.split("\\R");
 
-        var actions = new ArrayList<Integer>();
-        for (int index = 0; index < lines.length; index++) {
-            if (isAction(lines[index])) actions.add(index);
+        String action = null;
+        String why = null;
+        String basisValue = null;
+        for (String line : raw.split("\\R")) {
+            if (line.isBlank()) continue;
+            if (TOOL_LINE.matcher(line).matches()
+                || ASK_LINE.matcher(line).matches()
+                || FINISH_LINE.matcher(line).matches()) {
+                // 两个动作，两种读法都说得通，所以哪种都不能选。
+                if (action != null) return null;
+                action = line;
+                continue;
+            }
+            Matcher whyLine = WHY_LINE.matcher(line);
+            if (whyLine.matches()) {
+                if (why != null) return null;
+                why = whyLine.group(1).strip();
+                continue;
+            }
+            Matcher basisLine = BASIS_LINE.matcher(line);
+            if (basisLine.matches()) {
+                if (basisValue != null) return null;
+                basisValue = basisLine.group(1).strip();
+                continue;
+            }
+            // 落不到任何一条产生式上。忽略它等于只按自己认得的那部分理解模型这一步。
+            return null;
         }
-        // 一个动作都没有，或给了不止一个动作：两种都不是"这一步要做什么"的答案。
-        if (actions.size() != 1) return null;
+        if (action == null) return null;
 
-        int at = actions.get(0);
-        String line = lines[at];
-        // 动作行之后、下一个动作行之前的所有内容都属于这一个动作。
-        String trailing = String.join("\n", java.util.Arrays.copyOfRange(lines, at + 1, lines.length));
+        var basis = basis(basisValue);
+        if (basis == null) return null;
 
-        Matcher finish = FINISH_LINE.matcher(line);
+        Matcher finish = FINISH_LINE.matcher(action);
         if (finish.matches()) {
-            var basis = basis(trailing);
-            return basis == null ? null : new PlannerStep.Finish(continued(finish.group(1), trailing), basis);
+            var slots = arguments(finish.group(2));
+            return slots == null ? null : new PlannerStep.Finish(finish.group(1).strip(), slots, basis);
         }
-        Matcher ask = ASK_LINE.matcher(line);
+        Matcher ask = ASK_LINE.matcher(action);
         if (ask.matches()) {
-            var basis = basis(trailing);
-            return basis == null ? null : new PlannerStep.AskUser(continued(ask.group(1), trailing), basis);
+            var slots = arguments(ask.group(2));
+            return slots == null ? null : new PlannerStep.AskUser(ask.group(1).strip(), slots, basis);
         }
-        Matcher tool = TOOL_LINE.matcher(line);
-        if (tool.matches()) {
-            String name = tool.group(1).strip();
-            if (name.isEmpty()) return null;
-            var arguments = arguments(tool.group(2));
-            if (arguments == null) return null;
-            return new PlannerStep.CallTool(new ToolCall(name, arguments), why(trailing));
-        }
-        return null;
-    }
-
-    private static boolean isAction(String line) {
-        return TOOL_LINE.matcher(line).matches()
-            || ASK_LINE.matcher(line).matches()
-            || FINISH_LINE.matcher(line).matches();
+        Matcher tool = TOOL_LINE.matcher(action);
+        String name = tool.matches() ? tool.group(1).strip() : "";
+        if (name.isEmpty()) return null;
+        var arguments = arguments(tool.group(2));
+        if (arguments == null) return null;
+        return new PlannerStep.CallTool(new ToolCall(name, arguments),
+            why == null ? "(模型未说明原因)" : why);
     }
 
     /**
-     * 把动作行之后的续行接回叙述。
-     *
-     * <p>WHY / BASIS 是协议自己的字段，不属于叙述；其余非空行都是模型接着说的话。
-     * 只取第一行的话，"限中共党员"这种常常单独成行的限制会被无声删掉，
-     * 剩下的读起来比原文更肯定。
-     */
-    private static String continued(String head, String trailing) {
-        var text = new StringBuilder(head.strip());
-        for (String line : trailing.split("\\R")) {
-            if (line.isBlank() || WHY_LINE.matcher(line).matches() || BASIS_LINE.matcher(line).matches()) continue;
-            text.append('\n').append(line.strip());
-        }
-        return text.toString().strip();
-    }
-
-    private static String why(String trailing) {
-        for (String line : trailing.split("\\R")) {
-            Matcher matcher = WHY_LINE.matcher(line);
-            if (matcher.matches()) return matcher.group(1).strip();
-        }
-        return "(模型未说明原因)";
-    }
-
-    /**
-     * 解析 BASIS：收尾这段话依据的是第几条观察，或者明说它只是澄清。
-     *
-     * <p>两处此前是静默解释的：
-     *
-     * <p><b>一、"无"出现在任何位置都会把整条依据翻成纯澄清。</b>
-     * {@code BASIS 1，无其他依据} 本意是"依据第 1 条"，却被当成"不依据任何结果"——
-     * 点名的那条再也不会被核对。现在只有整串就是那个词才算澄清；
-     * 既点了名又带着澄清词，是自相矛盾的声明，整段作废。
-     *
-     * <p><b>二、给了两条 BASIS 时取第一条。</b> 那同样是替模型做决定。现在也整段作废。
-     *
-     * @return 解析结果；{@code null} 表示声明自相矛盾或重复，整段作废
-     */
-    private static AgentTooling.Basis basis(String trailing) {
-        String value = null;
-        for (String line : trailing.split("\\R")) {
-            Matcher matcher = BASIS_LINE.matcher(line);
-            if (!matcher.matches()) continue;
-            if (value != null) return null;
-            value = matcher.group(1).strip();
-        }
-        if (value == null) return AgentTooling.Basis.none();
-
-        String declared = value;
-        boolean exactlyClarifying = CLARIFYING_MARKERS.stream().anyMatch(declared::equalsIgnoreCase);
-        boolean mentionsClarifying = CLARIFYING_MARKERS.stream().anyMatch(declared::contains);
-        var indexes = new ArrayList<Integer>();
-        Matcher number = Pattern.compile("\\d+").matcher(value);
-        while (number.find()) indexes.add(Integer.parseInt(number.group()));
-
-        if (exactlyClarifying && indexes.isEmpty()) return AgentTooling.Basis.clarifying();
-        // 又点名又说"无依据"，两种读法都说得通，所以哪种都不能选。
-        if (mentionsClarifying) return null;
-        return new AgentTooling.Basis(indexes, false);
-    }
-
-    /**
-     * 解析 TOOL 行上的参数。
+     * 解析 TOOL / ASK / FINISH 行上的参数段。
      *
      * <p><b>没被解释掉的部分不能静默消失。</b> 此前这里是"把认得的记号挑出来，其余忽略"：
      * {@code TOOL search_jobs 杭州} 于是变成一次没有任何筛选的全量查询，
@@ -248,7 +221,7 @@ public final class ModelPlanner implements AgentPlanner {
      * <p>同一个键给两个值也不再取最后一个：模型自相矛盾的一步被悄悄解释成其中一种，
      * 用户拿到的答复对应的是他从没要求过的范围。
      *
-     * @return 整行都是合法记号且键不重复时返回参数表；否则返回 {@code null}，整段作废
+     * @return 整段都是合法记号且键不重复时返回参数表；否则返回 {@code null}，整段作废
      */
     private static Map<String, String> arguments(String rest) {
         var arguments = new LinkedHashMap<String, String>();
@@ -256,7 +229,7 @@ public final class ModelPlanner implements AgentPlanner {
         Matcher matcher = ARGUMENT.matcher(rest);
         int consumedTo = 0;
         while (matcher.find()) {
-            // 记号之间只允许空白。别的东西说明这一行有没被解释的内容。
+            // 记号之间只允许空白。别的东西说明这一段有没被解释的内容。
             if (!rest.substring(consumedTo, matcher.start()).isBlank()) return null;
             consumedTo = matcher.end();
             String value = matcher.group(2);
@@ -266,6 +239,21 @@ public final class ModelPlanner implements AgentPlanner {
             if (arguments.put(matcher.group(1), value) != null) return null;
         }
         return rest.substring(consumedTo).isBlank() ? arguments : null;
+    }
+
+    /**
+     * 解析 BASIS 的取值。
+     *
+     * @return 解析结果；{@code null} 表示这串落不到语法上，整段作废
+     */
+    private static AgentTooling.Basis basis(String value) {
+        if (value == null) return AgentTooling.Basis.none();
+        if (BASIS_CLARIFYING.matcher(value).matches()) return AgentTooling.Basis.clarifying();
+        if (!BASIS_INDEXES.matcher(value).matches()) return null;
+        var indexes = new ArrayList<Integer>();
+        Matcher number = Pattern.compile("\\d+").matcher(value);
+        while (number.find()) indexes.add(Integer.parseInt(number.group()));
+        return new AgentTooling.Basis(indexes, false);
     }
 
     /**
@@ -319,6 +307,15 @@ public final class ModelPlanner implements AgentPlanner {
                 text.append('\n');
             }
             text.append("  要它们的标题和结论，用 job_facts（可以直接给 ordinal）。\n");
+        }
+        if (session.hasOpenTask()) {
+            // 用户这一句常常只是个残句（"余杭"）。不把原来那件事摆出来，
+            // 模型只能把它当成一个孤立的新问题，用户就得从头再说一遍。
+            text.append("上一轮还没办完的事：").append(session.openTask()).append('\n');
+            if (session.pendingQuestion() != null && !session.pendingQuestion().isBlank()) {
+                text.append("系统当时问他：").append(session.pendingQuestion())
+                    .append("（用户这一句多半是在回答它）\n");
+            }
         }
         if (!session.pending().isEmpty()) {
             text.append("上一轮问过、用户还没答的资料项：\n");

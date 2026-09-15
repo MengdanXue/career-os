@@ -72,6 +72,10 @@ export type AgentSessionView = {
   profileVersion: string
   /** 资料已变，这份列表与这些问题不再对应当前结论。 */
   stale: boolean
+  /** 上一轮追问时用户原本要办的那件事；刷新之后据此说明他在回答什么。 */
+  openTask: string | null
+  /** 系统当时问出去的那句话。 */
+  pendingQuestion: string | null
   jobIdsInOrder: string[]
   pendingConfirmations: (PendingConfirmation & { answered: boolean })[]
 }
