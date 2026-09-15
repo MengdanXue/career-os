@@ -33,7 +33,7 @@ CROSS JOIN (VALUES
 ('PREFERRED_ORGANIZATION_TYPES', 'CONFIRMED',
  '6522ff594982301b89a1317a7339c27fd498d9263879605314d48930b91a4941', 'USER_CONFIRMED', now(), now()),
 ('EDUCATION_RECORDS', 'CONFIRMED',
- '756d61df398ef78d14459e99b2b8d0b426aedc3ae959b87227593724a86ee87d', 'USER_CONFIRMED', now(), now())
+ '40f14ae3696e318e0a807cb4b126270bdd9791a144ceedc794c80ad7ace9f306', 'USER_CONFIRMED', now(), now())
 ) AS values(fact_key, status, value_fingerprint, source, ignored_confirmed_at, ignored_updated_at)
 WHERE seed.id = '01992f09-0000-7000-8000-000000000001'
   AND seed.profile_version = 'profile-v18-real-education'

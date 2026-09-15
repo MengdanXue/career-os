@@ -48,7 +48,7 @@ INSERT INTO candidate_fact_confirmation (
 ) VALUES
 (
     '01992f09-0000-7000-8000-000000000001', 'BIRTH_DATE', 'CONFIRMED',
-    '4f545c6c9542c13471d0eddf2b58d136f506c260fef0bf1975b8f2c49e18c525',
+    '07669bec3754ffe16a8bdc5cf5756c7793e4137904f27a444ea525ab88fb0d0a',
     'USER_CONFIRMED', now(), now()
 ),
 (
