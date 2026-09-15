@@ -70,7 +70,7 @@ class EligibilityEngineTest {
 
     private CandidateProfile profile(FactStatus studyStatus, String politicalStatus) {
         return new CandidateProfile(
-                "test", new PartialDate(1992, 9, null, FactStatus.CONFIRMED, null),
+                "test", new PartialDate(1992, 12, null, FactStatus.CONFIRMED, null),
                 new Fact("硕士研究生", studyStatus, LocalDate.of(2027, 6, 30), null),
                 new Fact("硕士", studyStatus, LocalDate.of(2027, 6, 30), null),
                 new Fact("计算机科学与技术", studyStatus, LocalDate.of(2027, 6, 30), null),

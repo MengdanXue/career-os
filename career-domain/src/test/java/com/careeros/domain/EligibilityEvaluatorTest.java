@@ -44,18 +44,18 @@ class EligibilityEvaluatorTest {
     }
 
     @Test void ageIsEligibleBeforeAllPossibleBirthdays() {
-        var result = evaluator.evaluate(candidate(PartialDate.month(1992, 12), EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5), job(32, LocalDate.of(2025, 8, 31), EducationLevel.MASTER, Set.of(), Set.of(), null));
+        var result = evaluator.evaluate(candidate(PartialDate.month(1992, 12), EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5), job(32, LocalDate.of(2025, 11, 30), EducationLevel.MASTER, Set.of(), Set.of(), null));
         assertRule(result, RuleType.AGE, EligibilityStatus.ELIGIBLE);
     }
 
     @Test void partialBirthMonthIsUncertainInsideAgeBoundary() {
-        var result = evaluator.evaluate(candidate(PartialDate.month(1992, 12), EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5), job(32, LocalDate.of(2025, 9, 1), EducationLevel.MASTER, Set.of(), Set.of(), null));
+        var result = evaluator.evaluate(candidate(PartialDate.month(1992, 12), EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5), job(32, LocalDate.of(2025, 12, 1), EducationLevel.MASTER, Set.of(), Set.of(), null));
         assertRule(result, RuleType.AGE, EligibilityStatus.NEEDS_CONFIRMATION);
         assertThat(result.status()).isEqualTo(EligibilityStatus.NEEDS_CONFIRMATION);
     }
 
     @Test void ageIsIneligibleAfterAllPossibleBirthdays() {
-        var result = evaluator.evaluate(candidate(PartialDate.month(1992, 12), EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5), job(32, LocalDate.of(2025, 10, 1), EducationLevel.MASTER, Set.of(), Set.of(), null));
+        var result = evaluator.evaluate(candidate(PartialDate.month(1992, 12), EducationLevel.MASTER, Set.of("计算机科学与技术"), 2020, 5), job(32, LocalDate.of(2026, 1, 1), EducationLevel.MASTER, Set.of(), Set.of(), null));
         assertRule(result, RuleType.AGE, EligibilityStatus.INELIGIBLE);
     }
 

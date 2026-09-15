@@ -32,7 +32,7 @@ class CandidatePlanningProfileApiTest {
         var candidate = request.toDomain(UUID.fromString("01992f09-0000-7000-8000-000000000001"));
         var json = new ObjectMapper().registerModule(new JavaTimeModule()).writeValueAsString(candidate);
 
-        assertThat(candidate.birthDate().day()).isEqualTo(29);
+        assertThat(candidate.birthDate().day()).isEqualTo(31);
         assertThat(candidate.gender()).isEqualTo(Gender.FEMALE);
         assertThat(candidate.employmentRecords()).containsExactly(employment);
         assertThat(json).contains("\"gender\":\"FEMALE\"", "\"verificationStatus\":\"VERIFIED\"");
