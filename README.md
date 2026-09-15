@@ -129,3 +129,34 @@ java -jar career-web\target\career-web-0.1.0-SNAPSHOT.jar
 个人行动接口为 `GET /api/v1/candidates/{candidateId}/personal-actions?asOf=YYYY-MM-DD`，画像证据任务接口为 `GET /api/v1/candidates/{candidateId}/evidence-tasks?asOf=YYYY-MM-DD`。画像保存并确认后，前端调用 `POST /api/v1/candidates/{candidateId}/decision-change-summaries/{previousProfileVersion}?asOf=YYYY-MM-DD` 重算旧版本所覆盖的同一批岗位。三者都由确定性规则生成；规划页和任意已分析岗位详情已统一展示历史实际条件、2027 类比结果和十二阶段招考流程。后续体检、考察、公示等独立公告已具备保守自动关联、未匹配/歧义留存和来源健康统计；扩大到其余杭州来源以及完整申请跟踪仍属于后续工作。
 
 接口说明见 [Phase 1 API](docs/PHASE1_API.md)、[Phase 2 API](docs/PHASE2_API.md)、[Phase 3 增量采集 API](docs/PHASE3_API.md)、[Phase 4A 决策智能与 Agent API](docs/PHASE4A_API.md)、[Phase 4B 决策工作台](docs/PHASE4B_WORKBENCH.md) 和 [Phase 5A 半体制职业规划](docs/PHASE5A_CAREER_PLANNER.md)。完整产品边界见 [产品需求基线](docs/product-requirements.md)。
+
+## 参与与许可
+
+- 想提 issue 或 PR：先读 [CONTRIBUTING.md](CONTRIBUTING.md)。提交需要 `git commit -s` 的 DCO 签署行，CI 会校验。
+- 社区行为准则：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
+- 安全问题**不要开公开 issue**，走仓库 Security 标签页的私密报告通道：[SECURITY.md](SECURITY.md)。
+
+本项目以 [Apache License 2.0](LICENSE) 发布，第三方组件的归属见 [NOTICE](NOTICE)。
+
+```
+Copyright 2026 Career OS contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+### 用它之前请知道
+
+- 仓库里的候选人资料、雇主和学校**全是虚构占位**，不对应任何真人。
+- 岗位资格、分层和时间线由确定性规则算出，**不是**法律或职业建议；报考与否请以官方公告为准。
+- 当前版本**没有按候选人的授权**：任何通过认证的账号都能读取任意候选人的资料。
+  它假定部署在单人可信环境里，不要直接拿去做多租户服务。
