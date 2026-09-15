@@ -76,8 +76,9 @@ class ModelPlannerLiveSampleTest {
     private static final List<ReadOnlyTool> TOOLS = List.of(
         ReadOnlyTools.searchJobs((candidateId, query, now, budget) ->
             new DecisionRankingService.RankingPage(List.of(), 0, 5, 0), CLOCK),
+        // 专用异常，不是随便一个 RuntimeException：判据只容忍这一种，别的一律算失败。
         ReadOnlyTools.jobFacts((candidateId, jobId, now) -> {
-            throw new IllegalStateException("样本只检查参数是否有效，不需要真的评估");
+            throw new FrozenSampleChecks.SampleStop("样本只检查参数是否有效，不需要真的评估");
         }, CLOCK),
         ReadOnlyTools.pendingConfirmations((candidateId, budget) ->
             new ReadOnlyTools.PendingList(List.of(), true)),
@@ -103,7 +104,7 @@ class ModelPlannerLiveSampleTest {
             public JobWatchlistPorts.WatchedJob save(JobWatchlistPorts.WatchedJob entry) { return entry; }
             public void remove(UUID candidateId, UUID jobPostingId) {}
         }, (candidateId, jobId, now) -> {
-            throw new IllegalStateException("样本只检查参数是否有效，不需要真的评估");
+            throw new FrozenSampleChecks.SampleStop("样本只检查参数是否有效，不需要真的评估");
         }, CLOCK);
     }
 
@@ -115,9 +116,8 @@ class ModelPlannerLiveSampleTest {
      */
     static List<String> toolNamesForFixtureCheck() { return EXECUTOR.registeredTools(); }
 
-    /** 模板清单从执行器取，和发给模型的那份同源——不另抄一份。 */
-    private static final List<String> CLOSING_TEMPLATES = EXECUTOR.closingTemplates();
-    private static final List<String> QUESTION_TEMPLATES = EXECUTOR.questionTemplates();
+    /** 同上：判据的用例要拿线上这批工具去验，不另造一批。 */
+    static List<ReadOnlyTool> toolsForFixtureCheck() { return TOOLS; }
 
     /** 模型往返走与线上同一条有界通道，测试不会挂在一次不返回的调用上。 */
     private static final java.util.concurrent.ThreadPoolExecutor POOL =
@@ -150,13 +150,15 @@ class ModelPlannerLiveSampleTest {
     @Test void theModelTakesADifferentNextStepWhenTheToolResultDiffers() {
         var planner = planner();
 
-        PlannerStep withJobs = planner.next(state(2, 5));
-        PlannerStep empty = planner.next(state(0, 5));
+        var withJobsState = state(2, 5);
+        var emptyState = state(0, 5);
+        PlannerStep withJobs = planner.next(withJobsState);
+        PlannerStep empty = planner.next(emptyState);
 
         report("有岗位", withJobs);
         report("无岗位", empty);
-        assertUsable("有岗位", withJobs, 1);
-        assertUsable("无岗位", empty, 1);
+        assertUsable("有岗位", withJobs, withJobsState);
+        assertUsable("无岗位", empty, emptyState);
         assertThat(describe(withJobs))
             .as("两种工具结果得到同一个下一步，那就是在走固定流程")
             .isNotEqualTo(describe(empty));
@@ -172,25 +174,27 @@ class ModelPlannerLiveSampleTest {
         var refused = Observation.failed("search_jobs",
             "参数「tier」的取值「T9」不在允许的范围里。可选：T1、T2、T3、EXCLUDED。");
 
-        PlannerStep next = planner.next(new PlanningState(QUESTION, List.of(refused), 5,
-            EXECUTOR.toolCatalogue(), SessionContext.none()));
+        var refusedState = new PlanningState(QUESTION, List.of(refused), 5,
+            EXECUTOR.toolCatalogue(), SessionContext.none());
+        PlannerStep next = planner.next(refusedState);
 
         report("被拒之后", next);
         // 有效性检查本身就覆盖了"又报了一次 T9"：那样的调用过不了工具的参数校验。
-        assertUsable("被拒之后", next, 0);
+        assertUsable("被拒之后", next, refusedState);
     }
 
     /** 预算将尽时要自己收敛，而不是一直要求调工具直到撞上限。 */
     @Test void theModelConvergesWhenTheBudgetIsNearlyGone() {
         var planner = planner();
 
-        PlannerStep next = planner.next(state(2, 1));
+        var tightState = state(2, 1);
+        PlannerStep next = planner.next(tightState);
 
         report("预算剩一个", next);
         assertThat(next)
             .as("剩余预算只够一次调用时仍要求调工具")
             .isNotInstanceOf(PlannerStep.CallTool.class);
-        assertUsable("预算剩一个", next, 1);
+        assertUsable("预算剩一个", next, tightState);
     }
 
     /**
@@ -205,10 +209,11 @@ class ModelPlannerLiveSampleTest {
     @Test void theModelPicksAClosingTemplateThatMatchesTheToolResult() {
         var planner = planner();
 
-        PlannerStep empty = planner.next(state(0, 5));
+        var emptyState = state(0, 5);
+        PlannerStep empty = planner.next(emptyState);
 
         report("无岗位", empty);
-        assertUsable("无岗位", empty, 1);
+        assertUsable("无岗位", empty, emptyState);
         if (empty instanceof PlannerStep.Finish finish) {
             assertThat(finish.template())
                 .as("一个岗位都没查到，却选了讲岗位列表的模板")
@@ -216,46 +221,9 @@ class ModelPlannerLiveSampleTest {
         }
     }
 
-    /**
-     * 这一步必须是能真的执行的：工具在注册表里、参数过得了工具自己的校验；
-     * 收尾要点名依据，而且点到的必须是成功的观察。
-     *
-     * @param successfulObservations 这份冻结状态里有几条成功的观察，用来核对 BASIS 的范围
-     */
-    private static void assertUsable(String label, PlannerStep step, int successfulObservations) {
-        assertThat(step).as("%s：模型没有给出可解析的一步", label).isNotNull();
-        if (step instanceof PlannerStep.CallTool call) {
-            String name = call.call().tool();
-            assertThat(EXECUTOR.registeredTools())
-                .as("%s：选了一个不存在的工具 %s", label, name).contains(name);
-            var tool = TOOLS.stream().filter(candidate -> candidate.name().equals(name)).findFirst().orElseThrow();
-            Observation observation;
-            try {
-                observation = tool.invoke(new ToolContext(CANDIDATE, call.call(),
-                    ToolCallBudget.standard(), session()));
-            } catch (RuntimeException blewUp) {
-                // 下游被这里刻意打断（job_facts 的假评估器），参数本身没问题。
-                return;
-            }
-            assertThat(observation.ok())
-                .as("%s：参数过不了工具自己的校验——%s", label, observation.summary()).isTrue();
-            return;
-        }
-        if (step instanceof PlannerStep.Finish finish) {
-            // 模板名必须在封闭清单里，否则这句话渲染不出来。
-            assertThat(CLOSING_TEMPLATES).as("%s：收尾用了不存在的模板 %s", label, finish.template())
-                .contains(finish.template());
-            assertThat(finish.basis().observationIndexes())
-                .as("%s：收尾没有点名依据", label).isNotEmpty();
-            assertThat(finish.basis().observationIndexes())
-                .as("%s：收尾点名的依据超出了这份状态里的成功结果", label)
-                .allMatch(index -> index >= 1 && index <= successfulObservations);
-            return;
-        }
-        var ask = (PlannerStep.AskUser) step;
-        assertThat(QUESTION_TEMPLATES).as("%s：追问用了不存在的模板 %s", label, ask.template())
-            .contains(ask.template());
-        assertThat(ask.basis().declared()).as("%s：追问既没点名依据也没声明是纯澄清", label).isTrue();
+    /** 这一步必须是能真的执行的。判据抽在 {@link FrozenSampleChecks} 里，它自己也有测试。 */
+    private static void assertUsable(String label, PlannerStep step, PlanningState state) {
+        FrozenSampleChecks.assertUsable(label, step, state, TOOLS, EXECUTOR, CANDIDATE);
     }
 
     private static void report(String label, PlannerStep step) {
