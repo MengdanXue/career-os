@@ -1,0 +1,22 @@
+-------------------------------------------------------------------------------
+Test set: com.careeros.PlannerConfigurationTest
+-------------------------------------------------------------------------------
+Tests run: 5, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.454 s <<< FAILURE! -- in com.careeros.PlannerConfigurationTest
+com.careeros.PlannerConfigurationTest.theScriptedPlannerRefusesToStartWhenTheRealModelIsAlsoEnabled -- Time elapsed: 0.076 s <<< FAILURE!
+java.lang.AssertionError: 
+
+Expecting code to raise a throwable.
+	at com.careeros.PlannerConfigurationTest.theScriptedPlannerRefusesToStartWhenTheRealModelIsAlsoEnabled(PlannerConfigurationTest.java:59)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+com.careeros.PlannerConfigurationTest.theReplayPlannerRefusesToStartWhenTheRealModelIsAlsoEnabled -- Time elapsed: 0.003 s <<< FAILURE!
+java.lang.AssertionError: 
+
+Expecting code to raise a throwable.
+	at com.careeros.PlannerConfigurationTest.theReplayPlannerRefusesToStartWhenTheRealModelIsAlsoEnabled(PlannerConfigurationTest.java:49)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+

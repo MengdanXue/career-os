@@ -5,6 +5,7 @@ import com.careeros.application.agent.AgentTooling.Basis;
 import com.careeros.application.agent.AgentTooling.PlannerStep;
 import com.careeros.application.agent.AgentTooling.ToolCall;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.env.Environment;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -23,7 +24,8 @@ import org.springframework.context.annotation.Configuration;
 class ScriptedPlannerConfiguration {
 
     @Bean
-    AgentPlanner scriptedAcceptancePlanner() {
+    AgentPlanner scriptedAcceptancePlanner(Environment environment) {
+        AcceptancePlanners.refuseWhenTheRealModelIsEnabled(environment, "scripted");
         return state -> {
             var last = state.last();
             int seen = state.observations().size();
