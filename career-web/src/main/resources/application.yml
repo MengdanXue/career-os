@@ -96,4 +96,20 @@ career-os:
     live-smoke-enabled: ${CAREER_OS_ACQUISITION_LIVE_SMOKE_ENABLED:false}
   agent:
     llm:
+      # 打开之后由真实模型决定查什么、问什么（DecisionAgentConfiguration.modelAgentPlanner）。
+      #
+      # 要真的接上模型，三样都得给，缺一不可：
+      #   CAREER_OS_AI_CHAT_MODEL=openai   上面 spring.ai.model.chat 默认是 none，
+      #                                    不改它 ChatModel 根本不会被创建，应用直接启动失败
+      #   OPENAI_API_KEY=...               任何 OpenAI 兼容端点的 key
+      #   CAREER_OS_AGENT_LLM_ENABLED=true 这一项
+      #
+      # 只开这一项而不改 spring.ai.model.chat：应用**启动失败**，报缺 ChatModel。
+      # 三样都给但 key 是错的：应用正常启动，运行接口返回 200 且 outcome=PLANNER_FAILED
+      # （模型往返超时或报错 → 解析成"这一步没有计划" → 干净结束，不是 500，也不编答案）。
       enabled: ${CAREER_OS_AGENT_LLM_ENABLED:false}
+    # 验收专用的替身规划器，默认不启用；取值 recorded 或 scripted。
+    # 它们都不是模型：输出写死，换个问题回同一串。
+    # 不能和上面的 llm.enabled=true 同时开——两者各注册一个 AgentPlanner，
+    # 容器里有两个时运行接口取 bean 会失败。同时开着会在启动时直接报错说明该关哪个。
+    planner: ${CAREER_OS_AGENT_PLANNER:}

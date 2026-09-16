@@ -60,6 +60,20 @@ OPENAI_API_KEY=... CAREER_OS_AI_BASE_URL=... CAREER_OS_AI_MODEL=... \
 **没有 key 时它是 `Tests run: 4, Skipped: 4` 加 BUILD SUCCESS。** 判断"确实跑了"
 只看 `Skipped: 0`，不看 BUILD 结果。
 
+### 让运行中的应用真的用模型
+
+三个开关缺一不可，详见 `application.yml` 里 `career-os.agent.llm` 的注释：
+
+```bash
+CAREER_OS_AI_CHAT_MODEL=openai      # spring.ai.model.chat 默认 none，不改这项应用起不来
+OPENAI_API_KEY=...
+CAREER_OS_AGENT_LLM_ENABLED=true
+```
+
+`career-os.agent.planner=recorded|scripted` 是验收用的替身，**不能和上面同时开**——
+两者各注册一个 `AgentPlanner`，容器里有两个时运行接口取 bean 会失败。同时开着会在启动时
+直接报错说明该关哪个，而不是等第一个请求 500。
+
 ## 三、这个项目对"通过"的定义
 
 三条，都是被真实故障教出来的：

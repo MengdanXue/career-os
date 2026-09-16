@@ -27,6 +27,7 @@ class RecordedPlannerConfiguration {
 
     @Bean
     AgentPlanner recordedAcceptancePlanner(org.springframework.core.env.Environment environment) {
+        AcceptancePlanners.refuseWhenTheRealModelIsEnabled(environment, "recorded");
         // 用 Binder 而不是 @Value：@Value 对 List 是按逗号切一个字符串，
         // YAML 里的多行列表根本绑不上，结果是"配了却没生效"——静默空队列，看起来像模型不回话。
         var turns = org.springframework.boot.context.properties.bind.Binder.get(environment)
