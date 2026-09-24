@@ -40,7 +40,15 @@ public final class AnswerTemplates {
         /** 还有资料项没确认，结论要等确认之后才会变。 */
         PENDING_FIRST("还有资料项没有确认，确认之后这些岗位的结论才会更新。", Evidence.PENDING_ITEMS_LISTED),
         /** 关注清单及其变化。 */
-        WATCHLIST_STATE("下面是你关注的岗位，以及自上次查看以来的变化。", Evidence.WATCHLIST_READ);
+        WATCHLIST_STATE("下面是你关注的岗位，以及自上次查看以来的变化。", Evidence.WATCHLIST_READ),
+        /**
+         * 并排比较几个岗位。
+         *
+         * <p>"哪个更值得先准备"是用户要的决策辅助，但判断不能由这句话下：它只把几个岗位的事实并排摆出来，
+         * 分层、资格、限制条件、适配与稳定指数都在事实块里，由程序渲染。
+         */
+        JOB_COMPARISON("下面把这几个岗位并排列出；分层、资格、限制条件和截止日的差别见下方事实块。",
+            Evidence.JOBS_COMPARED);
 
         private final String text;
         private final Evidence requires;
@@ -151,6 +159,20 @@ public final class AnswerTemplates {
             "依据里要有一份列出了待确认项的 pending_confirmations") {
             boolean satisfiedBy(List<Observation> cited) {
                 return cited.stream().anyMatch(o -> PENDING_CONFIRMATIONS.equals(o.tool()) && count(o) > 0);
+            }
+        },
+        /**
+         * 断言"下面把这几个岗位并排列出"。
+         *
+         * <p>至少要读过<b>两个不同岗位</b>的结论。同一个岗位读两遍、或只读了一份列表，都撑不起"比较"——
+         * 列表只有分层和资格状态，没有逐条限制条件，并排摆出来的只是名字。
+         */
+        JOBS_COMPARED("点名的结果里没有至少两个不同岗位的结论",
+            "依据里要有至少两次针对不同岗位的 job_facts") {
+            boolean satisfiedBy(List<Observation> cited) {
+                return cited.stream().filter(o -> JOB_FACTS.equals(o.tool()))
+                    .map(o -> o.data().get("jobPostingId")).filter(java.util.Objects::nonNull)
+                    .map(String::valueOf).distinct().count() >= 2;
             }
         },
         /** 断言"下面是你关注的岗位"。 */

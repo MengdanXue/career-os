@@ -304,6 +304,10 @@ public final class ReadOnlyTools {
         row.put("organizationName", bundle.jobContext().organization().name());
         row.put("eligibilityStatus", decision.eligibilityStatus().name());
         row.put("tier", decision.tier().name());
+        // 比较与决策辅助要有可以并排的事实：建议状态、适配指数、稳定指数都是程序算的，不是概率。
+        row.put("recommendationStatus", decision.recommendationStatus().name());
+        row.put("fitScore", decision.fitScore());
+        row.put("stabilityScore", decision.stabilityScore());
         row.put("applicationEndsOn", String.valueOf(bundle.jobContext().event().applicationEndsOn()));
         // 每一行都带它所在的官方文件：有岗位表附件时是附件，否则是公告页（决策上下文就是这样取的）。
         // 列表里的每个岗位都要能追到出处。

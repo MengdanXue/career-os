@@ -6,7 +6,9 @@ It checks the v1.0 definition of done (docs/plans/2026-09-24-v1.0-closeout.md):
 
   1. trusted pool >= 10 jobs from >= 2 official sources
   2. >= 10 recommendation cases, each with per-rule eligibility and an official excerpt
-  3. >= 10 agent runs by a real model, every step and its evidence in the run ledger
+  3. three real agent scenarios by a real model -- job discovery, eligibility explanation and
+     job comparison -- each recorded with the user input, the tool chain, the data used, the
+     evidence sources and the final output
 
 The script never admits jobs into the trusted pool: that is a reviewer decision made in
 the UI (机会池 → 官网岗位初筛 → 纳入可信机会池). It reports how many jobs are ready for review.
@@ -35,18 +37,16 @@ import urllib.request
 SEED_CANDIDATE = "01992f09-0000-7000-8000-000000000001"
 P0_SOURCES = ("ZJ_HRSS_INSTITUTION", "HZ_HRSS_INSTITUTION", "HZ_XIHU_GOV", "HZ_FIRST_HOSPITAL", "HZ_DATA_GROUP")
 
-# Ten fixed user tasks. A value of ("follow", n) continues the session opened by task n (1-based).
-TASKS = (
-    ("杭州有哪些值得我现在关注的稳定技术岗位？", None),
-    ("第二个岗位怎么样？", ("follow", 1)),
-    ("只看 T1 的岗位有哪些？", None),
-    ("哪些岗位还需要我先确认资料？", None),
-    ("我关注的岗位有没有变化？", None),
-    ("信息系统类的岗位有哪些？", None),
-    ("第一个岗位的限制条件是什么？", ("follow", 6)),
-    ("西湖区有没有合适的岗位？", None),
-    ("宁波有什么合适的？", None),
-    ("数据类岗位里哪个最稳定？", None),
+# The three v1.0 acceptance scenarios. The later two continue the discovery session, so "第一个"
+# and "第二个" refer to the list the user actually saw. If the model asks a clarifying question,
+# the scenario answers it once with `reply` and records both turns.
+SCENARIOS = (
+    {"key": "discovery", "name": "岗位发现", "follows": None,
+     "input": "杭州有哪些适合我的稳定技术岗位？", "reply": "杭州市区和各区县都可以，职位类别不限。"},
+    {"key": "eligibility", "name": "资格解释", "follows": "discovery",
+     "input": "第一个岗位我能报吗？具体卡在哪几条，依据是什么？", "reply": "就是你上面列出来的第一个。"},
+    {"key": "comparison", "name": "岗位比较与决策辅助", "follows": "discovery",
+     "input": "把第一个和第二个岗位比较一下，哪个更值得我先准备？", "reply": "就是你上面列出来的第一个和第二个。"},
 )
 
 RULE_LABELS = {
@@ -160,53 +160,106 @@ def cases(decisions: list[dict], matches: dict[str, dict], top: int) -> list[dic
     return result
 
 
-def agent_runs(api: Api, candidate: str) -> list[dict]:
-    runs: list[dict] = []
-    for index, (question, follow) in enumerate(TASKS, start=1):
-        body = {"question": question}
-        if follow:
-            opened = runs[follow[1] - 1]
-            if opened.get("sessionId"):
-                body["sessionId"] = opened["sessionId"]
-        status, response = api.call("POST", f"/api/v1/candidates/{candidate}/agent-runs", body)
-        response = response if isinstance(response, dict) else {}
-        entry = {"task": index, "question": question, "httpStatus": status,
-                 "outcome": response.get("outcome"), "plannerIdentity": response.get("plannerIdentity"),
-                 "runId": response.get("runId"), "sessionId": response.get("sessionId"),
-                 "narrative": response.get("narrative"), "askedQuestion": response.get("question"),
-                 "violations": response.get("violations", []), "error": response.get("code")}
-        if status == 503:
-            entry["error"] = response.get("code", "PLANNER_UNAVAILABLE")
-            runs.append(entry)
-            print(f"  任务 {index}: 规划器不可用（{entry['error']}），停止 Agent 阶段", flush=True)
-            break
-        if entry["runId"]:
-            record = api.get(f"/api/v1/candidates/{candidate}/agent-runs/{entry['runId']}")
-            entry["steps"] = [{"tool": step["tool"], "arguments": step.get("arguments"),
-                               "accepted": step["accepted"], "reason": step.get("reason"),
-                               "evidence": len(step.get("evidence", []))} for step in record.get("steps", [])]
-            entry["evidenceCount"] = sum(step["evidence"] for step in entry["steps"])
-            entry["modelTurns"] = len(record.get("modelTurns", []))
-        runs.append(entry)
-        print(f"  任务 {index}: {entry['outcome']} · {entry.get('plannerIdentity')} · "
-              f"{len(entry.get('steps', []))} 步 · 证据 {entry.get('evidenceCount', 0)}", flush=True)
-    return runs
+def ok_steps(turn: dict, tool: str) -> list[dict]:
+    return [step for step in turn.get("toolChain", []) if step["tool"] == tool and step["accepted"] and step["ok"]]
 
 
-def definition_of_done(pool: list[dict], built: list[dict], runs: list[dict]) -> list[tuple[str, bool, str]]:
+def scenario_checks(key: str, turns: list[dict]) -> list[tuple[str, bool]]:
+    """What a scenario has to show. Only the last turn counts: an earlier turn may be the clarifying one."""
+    last = turns[-1] if turns else {}
+    checks = [
+        ("真实模型规划", (last.get("plannerIdentity") or "").startswith("model:")),
+        ("收尾通过执行器校验", last.get("outcome") == "FINISHED" and bool(last.get("narrative"))),
+        ("引用了官方证据", bool(last.get("evidence"))),
+    ]
+    if key == "discovery":
+        found = [step for step in ok_steps(last, "search_jobs") if (step.get("data") or {}).get("count", 0) > 0]
+        checks.append(("search_jobs 查到了可信岗位", bool(found)))
+    elif key == "eligibility":
+        read = [step for step in ok_steps(last, "job_facts") if (step.get("data") or {}).get("rules")]
+        checks.append(("job_facts 给出了逐条资格结论", bool(read)))
+        checks.append(("引用了字段原文", any(ref.get("kind") == "FIELD" for ref in last.get("evidence", []))))
+    elif key == "comparison":
+        jobs = {(step.get("data") or {}).get("jobPostingId") for step in ok_steps(last, "job_facts")} - {None}
+        checks.append(("job_facts 读了至少两个不同岗位", len(jobs) >= 2))
+    return checks
+
+
+def data_used(tool: str, data: dict) -> dict:
+    """The part of a tool result the answer rests on, in a form a reviewer can read."""
+    if tool == "search_jobs":
+        return {"count": data.get("count"), "totalAvailable": data.get("totalAvailable"),
+                "complete": data.get("complete"),
+                "jobs": [{key: job.get(key) for key in ("jobPostingId", "jobTitle", "organizationName", "tier",
+                                                         "eligibilityStatus", "recommendationStatus", "fitScore",
+                                                         "stabilityScore", "applicationEndsOn")}
+                         for job in data.get("jobs", [])]}
+    if tool == "job_facts":
+        return {key: data.get(key) for key in ("jobPostingId", "jobTitle", "organizationName", "tier",
+                                               "eligibilityStatus", "recommendationStatus", "fitScore",
+                                               "stabilityScore", "applicationEndsOn", "restrictions", "rules")}
+    return {key: value for key, value in data.items() if key in ("count", "changedCount", "items")}
+
+
+def one_turn(api: Api, candidate: str, text: str, session: str | None) -> dict:
+    body = {"question": text}
+    if session:
+        body["sessionId"] = session
+    status, response = api.call("POST", f"/api/v1/candidates/{candidate}/agent-runs", body)
+    response = response if isinstance(response, dict) else {}
+    turn = {"userInput": text, "httpStatus": status, "runId": response.get("runId"),
+            "plannerIdentity": response.get("plannerIdentity"), "sessionId": response.get("sessionId"),
+            "outcome": response.get("outcome"), "narrative": response.get("narrative"),
+            "askedQuestion": response.get("question"), "violations": response.get("violations", []),
+            "renderedJobs": response.get("jobs", []), "error": None if status == 200 else response.get("code")}
+    if turn["runId"]:
+        record = api.get(f"/api/v1/candidates/{candidate}/agent-runs/{turn['runId']}")
+        turn["toolChain"] = [{"tool": step["tool"], "arguments": step.get("arguments"), "why": step.get("why"),
+                              "accepted": step["accepted"], "reason": step.get("reason"),
+                              "ok": bool(step.get("observationOk")), "summary": step.get("observationSummary"),
+                              "data": step.get("observationData") or {}} for step in record.get("steps", [])]
+        turn["dataUsed"] = [{"tool": step["tool"], **data_used(step["tool"], step["data"])}
+                            for step in turn["toolChain"] if step["accepted"] and step["ok"]]
+        turn["evidence"] = record.get("evidence") or [ref for step in record.get("steps", [])
+                                                     for ref in step.get("evidence", [])]
+        turn["modelTurns"] = record.get("modelTurns", [])
+    return turn
+
+
+def run_scenarios(api: Api, candidate: str) -> list[dict]:
+    results: dict[str, dict] = {}
+    for scenario in SCENARIOS:
+        opened = results.get(scenario["follows"]) if scenario["follows"] else None
+        session = opened["turns"][-1].get("sessionId") if opened and opened["turns"] else None
+        turns = [one_turn(api, candidate, scenario["input"], session)]
+        if turns[0]["httpStatus"] == 503:
+            print(f"  {scenario['name']}：规划器不可用（{turns[0]['error']}）", flush=True)
+        elif turns[0]["outcome"] == "ASKED_USER" and turns[0]["askedQuestion"]:
+            turns.append(one_turn(api, candidate, scenario["reply"], turns[0].get("sessionId") or session))
+        checks = scenario_checks(scenario["key"], turns)
+        results[scenario["key"]] = {"key": scenario["key"], "name": scenario["name"], "turns": turns,
+                                    "checks": checks, "passed": all(ok for _, ok in checks)}
+        last = turns[-1]
+        print(f"  {scenario['name']}：{'通过' if results[scenario['key']]['passed'] else '未通过'} · "
+              f"{last.get('outcome') or last.get('error')} · {last.get('plannerIdentity')} · "
+              f"{' → '.join(step['tool'] for step in last.get('toolChain', [])) or '无工具调用'}", flush=True)
+    return list(results.values())
+
+
+def definition_of_done(pool: list[dict], built: list[dict], scenarios: list[dict]) -> list[tuple[str, bool, str]]:
     source_hosts = {host(item.get("officialSourceUrl")) for item in pool} - {None}
     complete_cases = [case for case in built if case["rules"] and case["excerpts"] and case["officialSourceUrl"]]
-    model_runs = [run for run in runs if (run.get("plannerIdentity") or "").startswith("model:")]
-    recorded = [run for run in model_runs if run.get("runId") and run.get("steps") is not None]
+    passed = [scenario["name"] for scenario in scenarios if scenario["passed"]]
+    planners = sorted({turn.get("plannerIdentity") or "无" for scenario in scenarios for turn in scenario["turns"]})
     return [
         ("可信池 ≥ 10 个岗位", len(pool) >= 10, f"实际 {len(pool)}"),
         ("可信池来自 ≥ 2 个官方来源（按官方文件域名）", len(source_hosts) >= 2,
          f"实际 {len(source_hosts)}：{', '.join(sorted(source_hosts)) or '无'}"),
         ("≥ 10 个完整推荐案例（逐条资格 + 官方原文 + 官方链接）", len(complete_cases) >= 10,
          f"实际 {len(complete_cases)} / {len(built)}"),
-        ("真实模型运行 ≥ 10 次且全部在台账里", len(recorded) >= 10,
-         f"模型运行 {len(model_runs)}，已入台账 {len(recorded)}；"
-         f"规划器：{', '.join(sorted({run.get('plannerIdentity') or '无' for run in runs})) or '未运行'}"),
+        ("3 个真实 Agent 场景（发现、资格解释、比较）全部通过", len(scenarios) == len(SCENARIOS)
+         and len(passed) == len(SCENARIOS),
+         f"通过 {len(passed)} / {len(SCENARIOS)}：{', '.join(passed) or '无'}；规划器：{', '.join(planners) or '未运行'}"),
     ]
 
 
@@ -261,13 +314,58 @@ def markdown(report: dict) -> str:
             # 每条原文单独成段：连续的引用行会被 Markdown 合并成一段，分不清哪句对应哪个字段。
             lines += [f"> **{ref['fieldName']}**：{ref['excerpt']}  ",
                       f"> {locator(ref.get('locator'))} · {ref['sourceUrl']}", ""]
-    lines += ["## Agent 运行", "", "| # | 问题 | 结局 | 规划器 | 步骤 | 证据 | 运行编号 |", "|---:|---|---|---|---|---:|---|"]
-    for run in report["agentRuns"]:
-        steps = " → ".join(("" if step["accepted"] else "✗") + step["tool"] for step in run.get("steps", [])) or "—"
-        lines.append(f"| {run['task']} | {run['question']} | {run.get('outcome') or run.get('error')} | "
-                     f"{run.get('plannerIdentity') or '—'} | {steps} | {run.get('evidenceCount', 0)} | "
-                     f"`{run.get('runId') or '—'}` |")
-    lines += ["", "完整步骤、每一步的证据与模型原文：`GET /api/v1/candidates/{candidateId}/agent-runs/{runId}`。", ""]
+    lines += ["## Agent 场景验收案例", ""]
+    if not report["scenarios"]:
+        lines += ["未运行（--skip-agent）。", ""]
+    for scenario in report["scenarios"]:
+        lines += [f"### {scenario['name']}（{'通过' if scenario['passed'] else '未通过'}）", ""]
+        lines += [f"- [{'x' if ok else ' '}] {name}" for name, ok in scenario["checks"]] + [""]
+        for number, turn in enumerate(scenario["turns"], start=1):
+            lines += [f"**第 {number} 轮 · 用户输入**：{turn['userInput']}", "",
+                      f"- 规划器：`{turn.get('plannerIdentity') or '—'}` · 结局：{turn.get('outcome') or turn.get('error')}"
+                      f" · 运行编号：`{turn.get('runId') or '—'}` · 模型往返 {len(turn.get('modelTurns', []))} 轮", "",
+                      "**工具调用链**", "", "| # | 工具 | 参数 | 理由 | 结果 |", "|---:|---|---|---|---|"]
+            for index, step in enumerate(turn.get("toolChain", []), start=1):
+                arguments = ", ".join(f"{k}={v}" for k, v in (step.get("arguments") or {}).items()) or "—"
+                result = step.get("summary") if step["accepted"] else f"被拒：{step.get('reason')}"
+                lines.append(f"| {index} | {step['tool']} | {arguments} | {step.get('why') or '—'} | {result} |")
+            lines += ["", "**使用的数据**", "", "```json",
+                      json.dumps(turn.get("dataUsed", []), ensure_ascii=False, indent=2), "```", "",
+                      "**证据来源**", ""]
+            # 按岗位分组：比较两个岗位时，第二个岗位的证据不能被第一个的挤掉。
+            titles = {job.get("jobPostingId"): job.get("jobTitle") for job in turn.get("renderedJobs", [])}
+            grouped: dict[str, list[dict]] = {}
+            for ref in turn.get("evidence", []):
+                grouped.setdefault(ref.get("jobPostingId") or "—", []).append(ref)
+            for job_id, refs in grouped.items():
+                lines.append(f"- {titles.get(job_id) or job_id}")
+                for ref in refs[:8]:
+                    detail = f"{ref.get('field') or ''} {ref.get('excerpt') or ''}".strip()
+                    lines.append(f"  - {ref.get('kind')} · {detail + ' · ' if detail else ''}"
+                                 f"{locator(ref.get('locator')) + ' · ' if ref.get('locator') else ''}"
+                                 f"{ref.get('sourceUrl') or ref.get('evidenceFragmentId')}")
+                if len(refs) > 8:
+                    lines.append(f"  - 另有 {len(refs) - 8} 条，见 JSON 报告")
+            if not turn.get("evidence"):
+                lines.append("- 无")
+            lines += ["", "**最终输出**", ""]
+            if turn.get("narrative"):
+                lines.append(f"> {turn['narrative']}")
+            if turn.get("askedQuestion"):
+                lines.append(f"> 追问：{turn['askedQuestion']}")
+            if turn.get("violations"):
+                lines.append(f"> 收尾被执行器拒绝：{'；'.join(turn['violations'])}")
+            for job in turn.get("renderedJobs", []):
+                facts = " · ".join(str(value) for value in (
+                    job.get("organizationName"), job.get("tier") and f"分层 {job['tier']}",
+                    STATUS_LABELS.get(job.get("eligibilityStatus"), job.get("eligibilityStatus")),
+                    job.get("fitScore") is not None and f"适配指数 {job['fitScore']}",
+                    job.get("stabilityScore") is not None and f"稳定指数 {job['stabilityScore']}",
+                    job.get("applicationEndsOn") and f"截止 {job['applicationEndsOn']}") if value)
+                lines.append(f"- **{job.get('jobTitle')}** —— {facts}")
+                lines += [f"  - 限制：{reason}" for reason in job.get("restrictions", [])]
+            lines.append("")
+    lines += ["完整记录（含每一轮模型原文）：`GET /api/v1/candidates/{candidateId}/agent-runs/{runId}`。", ""]
     return "\n".join(lines)
 
 
@@ -278,7 +376,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--run-sources", action="store_true", help="先对 5 个 P0 来源各跑一次增量采集")
     parser.add_argument("--reclassify", action="store_true",
                         help="按当前规则重新评估全部在招岗位的自动准入（人工决定保留），刷新初筛队列")
-    parser.add_argument("--skip-agent", action="store_true", help="不跑 Agent 任务（完成定义第 3 项会记为未完成）")
+    parser.add_argument("--skip-agent", action="store_true", help="不跑 Agent 场景（完成定义第 4 项会记为未完成）")
     parser.add_argument("--top", type=int, default=10)
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--out", default=str(pathlib.Path(__file__).resolve().parent.parent / "docs" / "audits" / "v1"))
@@ -314,8 +412,10 @@ def main(argv: list[str]) -> int:
           f"其中可纳入待复核 {report['reviewQueue']['readyForReview']} 个", flush=True)
     report["cases"] = cases(pool, {match["jobId"]: match for match in matches}, args.top)
 
-    report["agentRuns"] = [] if args.skip_agent else agent_runs(api, args.candidate)
-    report["definitionOfDone"] = definition_of_done(pool, report["cases"], report["agentRuns"])
+    if not args.skip_agent:
+        print("Agent 场景：", flush=True)
+    report["scenarios"] = [] if args.skip_agent else run_scenarios(api, args.candidate)
+    report["definitionOfDone"] = definition_of_done(pool, report["cases"], report["scenarios"])
 
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)

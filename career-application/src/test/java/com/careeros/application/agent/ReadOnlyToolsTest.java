@@ -421,6 +421,18 @@ class ReadOnlyToolsTest {
         });
     }
 
+    /** 比较要有能并排的事实：建议状态、适配与稳定指数由程序算出，跟着每一行走。 */
+    @Test void everyRowCarriesComparableFacts() {
+        var tool = searchWith(List.of(bundle(EligibilityStatus.ELIGIBLE)));
+
+        List<Map<String, Object>> jobs = tool.invoke(context("search_jobs")).value("jobs", List.of());
+
+        assertThat(jobs).singleElement().satisfies(row -> {
+            assertThat(row.get("recommendationStatus")).isEqualTo("REVIEW");
+            assertThat(row).containsKeys("fitScore", "stabilityScore");
+        });
+    }
+
     @Test void everySearchRowNamesTheAnnouncementItCameFrom() {
         var tool = searchWith(List.of(bundle(EligibilityStatus.ELIGIBLE)));
 

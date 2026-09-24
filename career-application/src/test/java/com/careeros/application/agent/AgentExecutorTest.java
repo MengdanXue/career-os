@@ -589,6 +589,7 @@ class AgentExecutorTest {
                 List.of(Map.of("factKey", "GENDER", "question", "性别尚未确认",
                     "jobPostingId", FIRST_JOB.toString())))),
             "WATCHLIST_STATE", new RecordingTool("watchlist", Map.of("count", 1, "changedCount", 0L)));
+        if ("JOB_COMPARISON".equals(template)) return comparedRun(template);
         var tool = support.get(template);
         var slots = "CONFIRM_FACT".equals(template)
             ? Map.of("fact", "POLITICAL_AFFILIATION") : Map.<String, String>of();
@@ -601,6 +602,41 @@ class AgentExecutorTest {
             return question ? new PlannerStep.AskUser(template, slots, basis)
                 : new PlannerStep.Finish(template, slots, basis);
         }, hangzhouSession());
+    }
+
+    /** 比较要读过两个岗位：同一个工具按 jobId 各读一次。 */
+    private static AgentExecutor.AgentRun comparedRun(String template) {
+        return comparison(List.of(FIRST_JOB.toString(), SECOND_JOB.toString()), template, AgentTooling.Basis.on(1, 2));
+    }
+
+    private static AgentExecutor.AgentRun comparison(List<String> jobIds, String template, AgentTooling.Basis basis) {
+        var facts = new ReadOnlyTool() {
+            public String name() { return "job_facts"; }
+            public String description() { return "job_facts"; }
+            public List<AgentTooling.ToolParameter> parameters() { return List.of(AgentTooling.ToolParameter.optional("jobId", "岗位")); }
+            public Observation invoke(AgentTooling.ToolContext context) {
+                return Observation.ok(name(), "取到", Map.of("jobPostingId", context.argument("jobId")));
+            }
+        };
+        var queue = new java.util.ArrayDeque<>(jobIds);
+        return new AgentExecutor(List.of(facts)).run(CANDIDATE, "比较一下", state -> queue.isEmpty()
+            ? new PlannerStep.Finish(template, basis)
+            : new PlannerStep.CallTool(ToolCall.of("job_facts", "jobId", queue.poll()), "逐个读"));
+    }
+
+    /** 比较两个不同岗位才成立；同一个岗位读两遍、或只读了一个，都撑不起"并排列出"。 */
+    @Test void aComparisonNeedsTwoDifferentJobsRead() {
+        var two = comparison(List.of(FIRST_JOB.toString(), SECOND_JOB.toString()), "JOB_COMPARISON",
+            AgentTooling.Basis.on(1, 2));
+        var same = comparison(List.of(FIRST_JOB.toString(), FIRST_JOB.toString()), "JOB_COMPARISON",
+            AgentTooling.Basis.on(1, 2));
+        var one = comparison(List.of(FIRST_JOB.toString()), "JOB_COMPARISON", AgentTooling.Basis.on(1));
+
+        assertThat(two.narrative()).isNotNull();
+        assertThat(two.violations()).isEmpty();
+        assertThat(same.narrative()).isNull();
+        assertThat(same.violations()).anyMatch(reason -> reason.contains("至少两个不同岗位"));
+        assertThat(one.narrative()).isNull();
     }
 
     /** 模板名不在清单里就没有这句话——模型报一个看起来合理的名字也不行。 */

@@ -43,6 +43,12 @@ export type AgentRunJob = {
   tier: string | null
   applicationEndsOn: string | null
   restrictions: string[]
+  /** 程序算出的建议状态与指数，用于并排比较；不是录取概率。 */
+  recommendationStatus?: string | null
+  fitScore?: number | null
+  stabilityScore?: number | null
+  /** 岗位所在的官方文件。 */
+  officialSourceUrl?: string | null
 }
 
 export type AgentRunResponse = {

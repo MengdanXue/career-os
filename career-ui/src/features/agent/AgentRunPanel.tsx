@@ -77,6 +77,10 @@ const outcomeLabels: Record<AgentRunResponse['outcome'], string> = {
   PLANNER_FAILED: '这一步没有给出计划',
 }
 
+const recommendationLabels: Record<string, string> = {
+  RECOMMENDED: '建议关注', REVIEW: '需要复核', NOT_RECOMMENDED: '暂不建议', EXCLUDED: '已排除',
+}
+
 function plannerLabel(identity: string) {
   if (identity.startsWith('model:')) return `规划器：真实模型 ${identity.slice('model:'.length)}`
   if (identity === 'recorded-replay') return '规划器：录制回放（不是模型现场选的）'
@@ -108,6 +112,13 @@ function RunResult({ result, candidateId }: { result: AgentRunResponse; candidat
           job.eligibilityStatus && statusLabels[job.eligibilityStatus as EligibilityStatus] ]
           .filter(Boolean).join(' · ')}</small>
         {job.applicationEndsOn && <small>报名截止 {job.applicationEndsOn}</small>}
+        {/* 并排比较要看得到同一组事实；指数由程序计算，不是录取概率。 */}
+        {(job.fitScore != null || job.stabilityScore != null) && <small className="agent-run-scores">
+          {[job.recommendationStatus && `建议 ${recommendationLabels[job.recommendationStatus] ?? job.recommendationStatus}`,
+            job.fitScore != null && `适配指数 ${job.fitScore}`,
+            job.stabilityScore != null && `稳定指数 ${job.stabilityScore}`].filter(Boolean).join(' · ')}
+        </small>}
+        {job.officialSourceUrl && <a href={job.officialSourceUrl} target="_blank" rel="noreferrer">官方文件</a>}
         {job.restrictions.length > 0 && <ul className="agent-run-restrictions">
           {job.restrictions.map(reason => <li key={reason}>{reason}</li>)}
         </ul>}

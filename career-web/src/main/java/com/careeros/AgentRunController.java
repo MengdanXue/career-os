@@ -332,7 +332,8 @@ class AgentRunController {
 
     /** 程序渲染的岗位结果。模型改不了这里的任何一个字段。 */
     record JobView(String jobPostingId, String jobTitle, String organizationName, String eligibilityStatus,
-                   String tier, String applicationEndsOn, List<String> restrictions) {
+                   String tier, String applicationEndsOn, List<String> restrictions,
+                   String recommendationStatus, Integer fitScore, Integer stabilityScore, String officialSourceUrl) {
         @SuppressWarnings("unchecked")
         static JobView from(Map<String, Object> row) {
             Object id = row.get("jobPostingId");
@@ -340,9 +341,12 @@ class AgentRunController {
             Object restrictions = row.get("restrictions");
             return new JobView(String.valueOf(id), text(row.get("jobTitle")), text(row.get("organizationName")),
                 text(row.get("eligibilityStatus")), text(row.get("tier")), text(row.get("applicationEndsOn")),
-                restrictions instanceof List<?> list ? list.stream().map(String::valueOf).toList() : List.of());
+                restrictions instanceof List<?> list ? list.stream().map(String::valueOf).toList() : List.of(),
+                text(row.get("recommendationStatus")), number(row.get("fitScore")), number(row.get("stabilityScore")),
+                text(row.get("officialSourceUrl")));
         }
         private static String text(Object value) { return value == null ? null : String.valueOf(value); }
+        private static Integer number(Object value) { return value instanceof Number n ? n.intValue() : null; }
     }
 
     /** @param jobPostingId 是哪个岗位提出的这个问题。页面要显示它，否则用户不知道在为什么而答 */

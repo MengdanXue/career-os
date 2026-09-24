@@ -21,23 +21,51 @@ def case(complete: bool = True) -> dict:
             "excerpts": [{"fieldName": "title", "excerpt": "信息中心", "sourceUrl": "https://example.gov.cn/a.xlsx"}]}
 
 
-def run(identity: str, recorded: bool = True) -> dict:
-    return {"plannerIdentity": identity, "runId": "r" if recorded else None, "steps": [] if recorded else None}
+def step(tool: str, data: dict, accepted: bool = True, ok: bool = True) -> dict:
+    return {"tool": tool, "arguments": {}, "why": "", "accepted": accepted, "reason": "ok", "ok": ok,
+            "summary": "", "data": data}
+
+
+def turn(identity: str = "model:deepseek-chat@api.deepseek.com", outcome: str = "FINISHED",
+         narrative: str | None = "下面是这个岗位的情况。", chain: list[dict] | None = None,
+         evidence: list[dict] | None = None) -> dict:
+    return {"plannerIdentity": identity, "outcome": outcome, "narrative": narrative, "toolChain": chain or [],
+            "evidence": [{"kind": "OFFICIAL_SOURCE", "sourceUrl": "https://example.gov.cn/a.xlsx"}]
+            if evidence is None else evidence}
+
+
+FIELD = {"kind": "FIELD", "field": "majorRequirementText", "excerpt": "计算机科学与技术",
+         "sourceUrl": "https://example.gov.cn/a.xlsx"}
+
+
+def passing_scenarios(identity: str = "model:deepseek-chat@api.deepseek.com") -> list[dict]:
+    turns = {
+        "discovery": turn(identity, chain=[step("search_jobs", {"count": 3})]),
+        "eligibility": turn(identity, chain=[step("job_facts", {"jobPostingId": "a", "rules": [{"rule": "AGE"}]})],
+                            evidence=[FIELD]),
+        "comparison": turn(identity, chain=[step("job_facts", {"jobPostingId": "a"}),
+                                            step("job_facts", {"jobPostingId": "b"})]),
+    }
+    result = []
+    for key, value in turns.items():
+        checks = v1.scenario_checks(key, [value])
+        result.append({"key": key, "name": key, "turns": [value], "checks": checks,
+                       "passed": all(ok for _, ok in checks)})
+    return result
 
 
 class DefinitionOfDoneTest(unittest.TestCase):
     def test_everything_holds_with_a_real_model(self):
-        checks = v1.definition_of_done(pool(12), [case()] * 10, [run("model:deepseek-chat@api.deepseek.com")] * 10)
+        checks = v1.definition_of_done(pool(12), [case()] * 10, passing_scenarios())
         self.assertTrue(all(ok for _, ok, _ in checks), checks)
 
     def test_replayed_or_scripted_planners_never_count_as_a_real_model(self):
         for identity in ("recorded-replay", "scripted", "unlabelled"):
-            checks = v1.definition_of_done(pool(12), [case()] * 10, [run(identity)] * 10)
+            checks = v1.definition_of_done(pool(12), [case()] * 10, passing_scenarios(identity))
             self.assertFalse(checks[3][1], identity)
 
-    def test_a_run_missing_from_the_ledger_does_not_count(self):
-        runs = [run("model:m@h")] * 9 + [run("model:m@h", recorded=False)]
-        self.assertFalse(v1.definition_of_done(pool(12), [case()] * 10, runs)[3][1])
+    def test_skipping_the_agent_stage_is_not_done(self):
+        self.assertFalse(v1.definition_of_done(pool(12), [case()] * 10, [])[3][1])
 
     def test_a_single_source_pool_fails_the_source_check(self):
         checks = v1.definition_of_done(pool(12, hosts=("hrss.hangzhou.gov.cn",)), [case()] * 10, [])
@@ -52,6 +80,36 @@ class DefinitionOfDoneTest(unittest.TestCase):
         checks = v1.definition_of_done([], [], [])
         self.assertFalse(any(ok for _, ok, _ in checks))
         self.assertIn("实际 0", checks[0][2])
+
+
+class ScenarioChecksTest(unittest.TestCase):
+    def failed(self, key: str, turns: list[dict]) -> list[str]:
+        return [name for name, ok in v1.scenario_checks(key, turns) if not ok]
+
+    def test_a_rejected_closing_does_not_pass(self):
+        rejected = turn(narrative=None, chain=[step("search_jobs", {"count": 3})])
+        self.assertIn("收尾通过执行器校验", self.failed("discovery", [rejected]))
+
+    def test_discovery_needs_a_search_that_found_jobs(self):
+        empty = turn(chain=[step("search_jobs", {"count": 0})])
+        refused = turn(chain=[step("search_jobs", {"count": 3}, accepted=False)])
+        self.assertIn("search_jobs 查到了可信岗位", self.failed("discovery", [empty]))
+        self.assertIn("search_jobs 查到了可信岗位", self.failed("discovery", [refused]))
+
+    def test_eligibility_needs_rules_and_a_field_excerpt(self):
+        no_rules = turn(chain=[step("job_facts", {"jobPostingId": "a"})], evidence=[FIELD])
+        no_excerpt = turn(chain=[step("job_facts", {"jobPostingId": "a", "rules": [{"rule": "AGE"}]})])
+        self.assertIn("job_facts 给出了逐条资格结论", self.failed("eligibility", [no_rules]))
+        self.assertIn("引用了字段原文", self.failed("eligibility", [no_excerpt]))
+
+    def test_comparison_needs_two_different_jobs(self):
+        same = turn(chain=[step("job_facts", {"jobPostingId": "a"}), step("job_facts", {"jobPostingId": "a"})])
+        self.assertIn("job_facts 读了至少两个不同岗位", self.failed("comparison", [same]))
+
+    def test_only_the_last_turn_counts_after_a_clarifying_question(self):
+        asked = turn(outcome="ASKED_USER", narrative=None, evidence=[])
+        answered = turn(chain=[step("search_jobs", {"count": 2})])
+        self.assertEqual(self.failed("discovery", [asked, answered]), [])
 
 
 class ReviewQueueTest(unittest.TestCase):
