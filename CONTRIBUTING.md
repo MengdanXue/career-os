@@ -25,7 +25,7 @@ Signed-off-by: 你的名字 <你的邮箱>
 
 ## 二、把它跑起来
 
-前置：**JDK 21**、**Maven 3.9+**、**Node 20+**、**Docker**（跑数据库集成测试要用）。
+前置：**JDK 21**、**Maven 3.9+**、**Node 24+**（`career-ui/package.json` 的 engines；`mvn verify` 会自己装 v24）、**Docker**（跑数据库集成测试要用）。
 
 ```bash
 mvn clean verify          # 全部 Java 模块 + 前端构建与单测
