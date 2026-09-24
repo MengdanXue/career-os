@@ -17,18 +17,25 @@ final class DecisionApiModels {
         static DimensionResponse from(AssessmentDimension value) { return new DimensionResponse(value.type(),value.achievedPoints(),value.maximumPoints(),value.factStatus(),value.reasonCode(),value.explanation(),value.evidenceIds()); }
     }
     record ScoreResponse(int score,int coveragePercent,List<DimensionResponse> dimensions) {}
+    /** 一条硬资格规则的结论与它引用的证据片段。推荐必须逐条说得出"为什么"，而不只是一个总状态。 */
+    record RuleResponse(RuleType rule,EligibilityStatus status,String explanation,List<UUID> evidenceIds) {}
     record DecisionResponse(
         UUID decisionId,UUID candidateId,UUID jobId,String jobTitle,String organizationName,String location,
         EligibilityStatus eligibilityStatus,OpportunityTier tier,RecommendationStatus recommendationStatus,
         ScoreResponse fit,ScoreResponse stability,String explanation,List<String> warnings,List<UUID> evidenceIds,
-        String evaluatorVersion,String profileVersion,String jobContentFingerprint,Instant assessedAt,String disclaimer
+        String evaluatorVersion,String profileVersion,String jobContentFingerprint,Instant assessedAt,String disclaimer,
+        List<RuleResponse> eligibilityRules,String officialSourceUrl
     ) {
         static DecisionResponse from(DecisionBundle bundle, Explanation explanation) {
             var decision=bundle.decision();
             return new DecisionResponse(decision.id(),decision.candidateProfileId(),decision.jobPostingId(),bundle.jobContext().job().title(),bundle.jobContext().organization().name(),bundle.jobContext().job().location(),decision.eligibilityStatus(),decision.tier(),decision.recommendationStatus(),
                 new ScoreResponse(decision.fitScore(),bundle.fit().coveragePercent(),bundle.fit().dimensions().stream().map(DimensionResponse::from).toList()),
                 new ScoreResponse(decision.stabilityScore(),bundle.stability().coveragePercent(),bundle.stability().dimensions().stream().map(DimensionResponse::from).toList()),
-                explanation.text(),explanation.warnings(),explanation.evidenceIds(),decision.evaluatorVersion(),decision.profileVersion(),decision.jobContentFingerprint(),decision.assessedAt(),DISCLAIMER);
+                explanation.text(),explanation.warnings(),explanation.evidenceIds(),decision.evaluatorVersion(),decision.profileVersion(),decision.jobContentFingerprint(),decision.assessedAt(),DISCLAIMER,
+                bundle.eligibility().ruleResults().entrySet().stream().sorted(java.util.Map.Entry.comparingByKey())
+                    .map(entry -> new RuleResponse(entry.getKey(),entry.getValue().status(),entry.getValue().explanation(),entry.getValue().evidenceIds())).toList(),
+                // 岗位所在的官方文件：有岗位表附件时是附件，否则是公告页。
+                bundle.jobContext().event().sourceUrl());
         }
     }
     record DecisionPage(List<DecisionResponse> items,int page,int size,long total,String disclaimer) { DecisionPage { items=List.copyOf(items); } }

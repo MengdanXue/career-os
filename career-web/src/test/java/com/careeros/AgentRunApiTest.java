@@ -28,6 +28,23 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class AgentRunApiTest {
     private static final UUID CANDIDATE = UUID.randomUUID();
+
+    /** 台账的内存替身。每一次运行都必须落在这里，少一条就是有一次运行没被记录。 */
+    static final class MemoryLedger implements com.careeros.application.agent.AgentRunLedger {
+        final List<RunRecord> runs = new java.util.concurrent.CopyOnWriteArrayList<>();
+        public void record(RunRecord run) { runs.add(run); }
+        public List<RunSummary> recent(UUID candidateId, int limit) {
+            return runs.stream().filter(run -> run.candidateId().equals(candidateId)).limit(limit)
+                .map(run -> new RunSummary(run.runId(), run.sessionId(), run.userQuestion(), run.plannerIdentity(),
+                    run.outcome(), run.steps().size(), run.evidence().size(), run.startedAt())).toList();
+        }
+        public Optional<RunRecord> find(UUID candidateId, UUID runId) {
+            return runs.stream().filter(run -> run.runId().equals(runId) && run.candidateId().equals(candidateId))
+                .findFirst();
+        }
+    }
+
+    private static final MemoryLedger LEDGER = new MemoryLedger();
     private static final UUID SESSION = UUID.randomUUID();
 
     private static ReadOnlyTool tool(String name, Map<String, Object> data) {
@@ -93,7 +110,7 @@ class AgentRunApiTest {
         org.mockito.Mockito.lenient().when(profile.profileVersion()).thenReturn("profile-7");
         org.mockito.Mockito.lenient().when(profiles.facts(any())).thenReturn(
             new CandidateProfileService.CandidateProfileFacts(profile, Map.of(), 0, 0, 0, false));
-        return MockMvcBuilders.standaloneSetup(new AgentRunController(executor, provider(planner), s, profiles))
+        return MockMvcBuilders.standaloneSetup(new AgentRunController(executor, provider(planner), s, profiles, LEDGER))
             .setControllerAdvice(new ApiExceptionHandler()).build();
     }
 
@@ -111,7 +128,7 @@ class AgentRunApiTest {
         org.mockito.Mockito.lenient().when(profile.profileVersion()).thenReturn("profile-7");
         org.mockito.Mockito.lenient().when(profiles.facts(any())).thenReturn(
             new CandidateProfileService.CandidateProfileFacts(profile, Map.of(), 0, 0, 0, false));
-        return MockMvcBuilders.standaloneSetup(new AgentRunController(executor, provider(planner), s, profiles))
+        return MockMvcBuilders.standaloneSetup(new AgentRunController(executor, provider(planner), s, profiles, LEDGER))
             .setControllerAdvice(new ApiExceptionHandler()).build();
     }
 
@@ -501,7 +518,7 @@ class AgentRunApiTest {
             : new PlannerStep.AskUser("CONFIRM_FACT", Map.of("fact", "GENDER"), AgentTooling.Basis.on(1));
 
         MockMvcBuilders.standaloneSetup(
-                new AgentRunController(executor, provider(planner), sessions, profiles))
+                new AgentRunController(executor, provider(planner), sessions, profiles, LEDGER))
             .setControllerAdvice(new ApiExceptionHandler()).build()
             .perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
                 .contentType(MediaType.APPLICATION_JSON).content(body("还差什么", null)))
@@ -533,5 +550,63 @@ class AgentRunApiTest {
             .andExpect(jsonPath("$.violations").isNotEmpty());
         // 工具那句摘要本身不能把话说死，那一条在 ReadOnlyToolsTest 里验——
         // 这里的工具是替身，摘要是写死的，在这儿断言它等于什么都没验。
+    }
+
+    // --- 运行台账 ---
+
+    /**
+     * 每一次运行都落台账，响应里给出编号；按编号取回的是同一份：规划器身份、每一步、每一步的结果。
+     */
+    @Test void everyRunIsRecordedAndCanBeReadBackByItsId() throws Exception {
+        var planner = com.careeros.application.agent.AgentTooling.labelled("scripted", state -> state.observations().isEmpty()
+            ? new PlannerStep.CallTool(ToolCall.of("search_jobs", "tier", "T3"), "先查")
+            : new PlannerStep.Finish("RANKED_LISTING", com.careeros.application.agent.AgentTooling.Basis.on(1)));
+        var mvc = mvc(planner);
+
+        var body = mvc.perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.plannerIdentity").value("scripted"))
+            .andExpect(jsonPath("$.runId").isNotEmpty())
+            .andReturn().getResponse().getContentAsString();
+        String runId = com.jayway.jsonpath.JsonPath.read(body, "$.runId");
+
+        var recorded = LEDGER.find(CANDIDATE, UUID.fromString(runId)).orElseThrow();
+        assertThat(recorded.plannerIdentity()).isEqualTo("scripted");
+        assertThat(recorded.userQuestion()).isEqualTo("杭州有哪些岗位");
+        assertThat(recorded.steps()).singleElement().satisfies(step -> {
+            assertThat(step.tool()).isEqualTo("search_jobs");
+            assertThat(step.arguments()).containsEntry("tier", "T3");
+            assertThat(step.observationOk()).isTrue();
+        });
+
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .get("/api/v1/candidates/{id}/agent-runs/{runId}", CANDIDATE, runId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.steps[0].tool").value("search_jobs"));
+        // 别的候选人拿同一个编号取不到。
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .get("/api/v1/candidates/{id}/agent-runs/{runId}", UUID.randomUUID(), runId))
+            .andExpect(status().isNotFound());
+    }
+
+    /** 模型规划器的每一轮原文按运行录下；共享的单例不会把两次运行混在一起。 */
+    @Test void aModelPlannersRawOutputIsRecordedWithTheRun() throws Exception {
+        var outputs = new java.util.ArrayDeque<>(List.of("TOOL search_jobs tier=T3\nWHY 先查",
+            "FINISH RANKED_LISTING\nBASIS 1"));
+        var planner = new com.careeros.application.agent.ModelPlanner((protocol, state) -> outputs.poll(),
+            "model:test-model@example.invalid");
+
+        var body = mvc(planner).perform(post("/api/v1/candidates/{id}/agent-runs", CANDIDATE)
+                .contentType(MediaType.APPLICATION_JSON).content(body("杭州有哪些岗位", null)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.outcome").value("FINISHED"))
+            .andReturn().getResponse().getContentAsString();
+        String runId = com.jayway.jsonpath.JsonPath.read(body, "$.runId");
+
+        var recorded = LEDGER.find(CANDIDATE, UUID.fromString(runId)).orElseThrow();
+        assertThat(recorded.plannerIdentity()).isEqualTo("model:test-model@example.invalid");
+        assertThat(recorded.modelTurns()).extracting(com.careeros.application.agent.AgentRunLedger.ModelTurnRecord::response)
+            .containsExactly("TOOL search_jobs tier=T3\nWHY 先查", "FINISH RANKED_LISTING\nBASIS 1");
     }
 }

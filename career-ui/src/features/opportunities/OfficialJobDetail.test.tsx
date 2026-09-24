@@ -1,7 +1,14 @@
-import { render, screen } from '@testing-library/react'
+import { render as renderBare, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
+import { AppProviders } from '../../app/AppProviders'
 import { describe, expect, it, vi } from 'vitest'
 import type { CandidateMatch } from './candidateMatchApi'
 import { OfficialJobDetail } from './OfficialJobDetail'
+
+/** 详情页里有纳入可信池的面板，它要 QueryClient。 */
+function render(ui: ReactElement) {
+  return renderBare(<AppProviders>{ui}</AppProviders>)
+}
 
 function match(overrides: Partial<CandidateMatch> = {}): CandidateMatch {
   return {

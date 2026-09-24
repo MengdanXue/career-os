@@ -77,9 +77,20 @@ const outcomeLabels: Record<AgentRunResponse['outcome'], string> = {
   PLANNER_FAILED: '这一步没有给出计划',
 }
 
+function plannerLabel(identity: string) {
+  if (identity.startsWith('model:')) return `规划器：真实模型 ${identity.slice('model:'.length)}`
+  if (identity === 'recorded-replay') return '规划器：录制回放（不是模型现场选的）'
+  if (identity === 'scripted') return '规划器：脚本替身（固定流程，不是模型）'
+  return `规划器：${identity}`
+}
+
 function RunResult({ result, candidateId }: { result: AgentRunResponse; candidateId: string }) {
   return <div className="agent-run-result" aria-live="polite">
     <p className="agent-run-outcome">{outcomeLabels[result.outcome]}</p>
+    {/* 先说清是谁在选工具：回放和脚本替身走的是同一条路径，只有这个名字能把它们和真实模型分开。 */}
+    {result.plannerIdentity && <p className="agent-run-planner">
+      {plannerLabel(result.plannerIdentity)}{result.runId && <small>运行编号 {result.runId}（已记入台账）</small>}
+    </p>}
 
     {result.narrative && <p className="answer-text">{result.narrative}</p>}
     {result.question && <p className="agent-run-question">{result.question}</p>}

@@ -1,5 +1,6 @@
 import type { Ref } from 'react'
 import type { CandidateMatch, EducationLevel, EmploymentType, JobFamily } from './candidateMatchApi'
+import { ScopeDecisionPanel } from './ScopeDecisionPanel'
 
 const employmentLabels: Record<EmploymentType, string> = {
   ESTABLISHMENT: '事业编制',
@@ -176,6 +177,8 @@ export function OfficialJobDetail({ match, onClose, detailRef }: {
         <small>{evidence.locator ?? evidence.sourceTitle ?? '官网来源'}</small>
       </li>)}</ul>
     </section>}
+
+    <ScopeDecisionPanel match={match} />
 
     <footer>
       <div>

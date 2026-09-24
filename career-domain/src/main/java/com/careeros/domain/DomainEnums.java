@@ -53,7 +53,14 @@ public final class DomainEnums {
         NON_TECHNICAL_ROLE, AMBIGUOUS_DUTIES, EMPLOYMENT_IDENTITY_UNKNOWN,
         OFFICIAL_WORKBOOK_PARSED, OFFICIAL_FACTS_INCOMPLETE, MISSING_FIELD_EVIDENCE,
         /** 官方来源在某个字段上互相矛盾。此前只体现为 REVIEW_REQUIRED，读不出原因。 */
-        CONFLICTING_FIELD_EVIDENCE
+        CONFLICTING_FIELD_EVIDENCE,
+        /**
+         * 复核人确认它属于目标范围，纳入可信机会池。自动分类对目标技术岗只给到 NEEDS_REVIEW——
+         * "是不是我要找的那类岗位"是人的判断，程序只负责确认证据是否齐全。
+         */
+        HUMAN_SCOPE_INCLUDED,
+        /** 复核人确认它不属于目标范围。 */
+        HUMAN_SCOPE_EXCLUDED
     }
     public enum ParserQuality { ACCEPTABLE, LOW_TEXT_QUALITY }
     public enum FactStatus { EXPLICIT, INTERPRETED, UNKNOWN }

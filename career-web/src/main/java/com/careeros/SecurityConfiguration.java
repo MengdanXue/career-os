@@ -74,6 +74,9 @@ class SecurityConfiguration {
                 .requestMatchers(HttpMethod.DELETE, "/api/**").hasRole(ADMIN)
                 // 复核动作会把提案写进正式岗位库，必须是复核人或管理员。
                 .requestMatchers(HttpMethod.POST, "/api/v1/reviews/*/actions").hasAnyRole(REVIEWER, ADMIN)
+                // 纳入可信机会池是另一道把关：岗位从"采到了"变成"可以推荐"，同样只给复核人。
+                .requestMatchers(HttpMethod.POST, "/api/v1/job-admissions/*/scope-decisions").hasAnyRole(REVIEWER, ADMIN)
+                .requestMatchers(HttpMethod.POST, "/api/v1/job-admissions/reclassifications").hasAnyRole(REVIEWER, ADMIN)
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().authenticated())
             .build();

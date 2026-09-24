@@ -26,7 +26,8 @@ class ScriptedPlannerConfiguration {
     @Bean
     AgentPlanner scriptedAcceptancePlanner(Environment environment) {
         AcceptancePlanners.refuseWhenTheRealModelIsEnabled(environment, "scripted");
-        return state -> {
+        // 台账里要看得出这一轮是脚本替身，不是模型选的。
+        return com.careeros.application.agent.AgentTooling.labelled("scripted", state -> {
             var last = state.last();
             int seen = state.observations().size();
             if (last == null) {
@@ -47,6 +48,6 @@ class ScriptedPlannerConfiguration {
                     : new PlannerStep.Finish("RANKED_LISTING", Basis.on(seen - 1, seen));
             }
             return new PlannerStep.Finish("PENDING_FIRST", Basis.on(seen - 1, seen));
-        };
+        });
     }
 }

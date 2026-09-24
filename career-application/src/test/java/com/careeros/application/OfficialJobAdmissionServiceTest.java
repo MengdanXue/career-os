@@ -131,6 +131,32 @@ class OfficialJobAdmissionServiceTest {
             .doesNotContain(JobAdmissionReason.TARGET_TECHNICAL_ROLE);
     }
 
+    /** 旧版本结论要能按当前规则重算；人工做过的决定不被覆盖，也单独计数。 */
+    @Test
+    void reclassifyingActiveJobsRefreshesAutomatedAdmissionsAndKeepsHumanDecisions() {
+        JobContext ready = context("信息中心工作人员", JobFamily.INFORMATION_SYSTEMS,
+            EmploymentType.PUBLIC_INSTITUTION_FORMAL, EducationLevel.MASTER, "负责医院信息系统建设",
+            List.of(UUID.randomUUID()));
+        JobContext incomplete = context("数据治理岗", JobFamily.DATA,
+            EmploymentType.UNKNOWN, EducationLevel.MASTER, "负责数据治理");
+        JobContext decided = context("网络安全岗", JobFamily.CYBERSECURITY,
+            EmploymentType.ESTABLISHMENT, EducationLevel.BACHELOR, "负责网络安全", List.of(UUID.randomUUID()));
+        MemoryAdmissions admissions = new MemoryAdmissions();
+        admissions.save(JobAdmission.raw(ready.job().id(), NOW.minusSeconds(3600), JobAdmissionReason.LEGACY_UNVERIFIED));
+        JobAdmission human = new JobAdmission(decided.job().id(), DataQualityStatus.VERIFIED, TargetScopeStatus.INCLUDED,
+            Set.of(JobAdmissionReason.HUMAN_SCOPE_INCLUDED), "admission-human-scope-v1", NOW.minusSeconds(60), true);
+        admissions.save(human);
+
+        var summary = service(contexts(ready, incomplete, decided), admissions, ready, incomplete, decided)
+            .reclassifyActive(NOW, 2);
+
+        assertThat(summary.processed()).isEqualTo(3);
+        assertThat(summary.humanVerified()).isEqualTo(1);
+        assertThat(summary.readyForReview()).isEqualTo(1);
+        assertThat(admissions.values.get(ready.job().id()).dataQualityStatus()).isEqualTo(DataQualityStatus.VERIFIED);
+        assertThat(admissions.values.get(decided.job().id())).isEqualTo(human);
+    }
+
     private static JobContexts contexts(JobContext... values) {
         Map<UUID, JobContext> byId = new LinkedHashMap<>();
         Arrays.stream(values).forEach(value -> byId.put(value.job().id(), value));

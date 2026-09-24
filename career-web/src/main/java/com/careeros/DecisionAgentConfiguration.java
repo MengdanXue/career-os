@@ -7,6 +7,7 @@ import com.careeros.application.DecisionRankingService;
 import java.util.Optional;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,8 +16,10 @@ import org.springframework.context.annotation.Configuration;
 class DecisionAgentConfiguration {
     @Bean
     @ConditionalOnProperty(prefix="career-os.agent.llm",name="enabled",havingValue="true")
-    AgentQueryService.AgentPhraser decisionAgentPhraser(ChatClient.Builder builder) {
-        ChatClient client=builder.build();
+    AgentQueryService.AgentPhraser decisionAgentPhraser(ChatClient.Builder builder,
+            @Value("${career-os.agent.llm.model:gpt-5-mini}") String model,
+            @Value("${career-os.agent.llm.temperature:}") Double temperature) {
+        ChatClient client=modelClient(builder, model, temperature);
         return context->client.prompt()
             // 这段提示词必须与 AnswerNarrativeValidator 的规则一致。此前它写的是"润色确定性答案"，
             // 那是旧契约——模型的返回值曾经会**替换**整段答案。现在事实块由程序渲染并逐字附在后面，
@@ -61,12 +64,47 @@ class DecisionAgentConfiguration {
 
     @Bean
     @ConditionalOnProperty(prefix="career-os.agent.llm",name="enabled",havingValue="true")
-    com.careeros.application.agent.AgentTooling.AgentPlanner modelAgentPlanner(ChatClient.Builder builder) {
-        ChatClient client=builder.build();
+    com.careeros.application.agent.AgentTooling.AgentPlanner modelAgentPlanner(ChatClient.Builder builder,
+            @Value("${career-os.agent.llm.model:gpt-5-mini}") String model,
+            @Value("${career-os.agent.llm.temperature:}") Double temperature,
+            @Value("${spring.ai.openai.base-url:https://api.openai.com}") String baseUrl) {
+        ChatClient client=modelClient(builder, model, temperature);
         var pool=boundedModelTurnPool();
+        String identity=modelIdentity(model, baseUrl);
+        org.slf4j.LoggerFactory.getLogger(DecisionAgentConfiguration.class)
+            .info("Agent planner uses {} (temperature {})", identity, temperature == null ? "provider default" : temperature);
         return new com.careeros.application.agent.ModelPlanner((protocol,state)->
             boundedTurn(pool, MODEL_TURN_DEADLINE,
-                ()->client.prompt().system(protocol).user(state).call().content()));
+                ()->client.prompt().system(protocol).user(state).call().content()), identity);
+    }
+
+    /**
+     * 规划器与叙述助手实际调用的模型客户端。
+     *
+     * <p>模型名必须写进默认选项。此前这里是 {@code builder.build()}：配置的模型名从没传下去，
+     * 每次请求用的都是 Spring AI 自带的默认模型名。接 DeepSeek、通义这类 OpenAI 兼容端点时，
+     * 端点不认那个名字，第一步就报错，运行退化成 PLANNER_FAILED——看起来像"模型不会用工具"。
+     *
+     * <p>温度只在配置了时才发：部分推理模型只接受默认温度，硬发一个 0 会被拒。
+     */
+    static ChatClient modelClient(ChatClient.Builder builder, String model, Double temperature) {
+        if (model == null || model.isBlank()) {
+            throw new IllegalStateException("career-os.agent.llm.model 未配置：不知道该调用哪个模型");
+        }
+        var options=org.springframework.ai.chat.prompt.ChatOptions.builder().model(model.strip());
+        if (temperature != null) options.temperature(temperature);
+        return builder.defaultOptions(options.build()).build();
+    }
+
+    /** 写进运行台账的规划器身份：模型名 + 端点主机。不含 key，也不含路径参数。 */
+    static String modelIdentity(String model, String baseUrl) {
+        String host;
+        try {
+            host=java.net.URI.create(baseUrl.strip()).getHost();
+        } catch (RuntimeException invalid) {
+            host=null;
+        }
+        return "model:" + model.strip() + "@" + (host == null ? "unknown-endpoint" : host);
     }
 
     /**

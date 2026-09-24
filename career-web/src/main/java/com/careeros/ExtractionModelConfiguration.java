@@ -28,8 +28,12 @@ public class ExtractionModelConfiguration {
         @Value("${career-os.extraction.llm.prompt-version:1.0.0}") String promptVersion,
         @Value("${career-os.extraction.llm.max-prompt-characters:40000}") int maxPromptCharacters
     ) {
+        // 描述符里写的模型名必须就是实际调用的那个：此前只写进了描述符，请求用的是 Spring AI 的默认模型名，
+        // 抽取记录里的"modelName"因此对不上真实调用。
+        var client = builder.defaultOptions(
+            org.springframework.ai.chat.prompt.ChatOptions.builder().model(modelName).build()).build();
         return new OpenAiStructuredExtractor(
-            builder.build(), objectMapper, validator, modelName, promptVersion, maxPromptCharacters);
+            client, objectMapper, validator, modelName, promptVersion, maxPromptCharacters);
     }
 
     @Bean
