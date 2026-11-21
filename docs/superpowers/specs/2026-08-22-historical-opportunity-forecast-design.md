@@ -12,7 +12,7 @@
 
 - [**Data Liberation**](https://github.com/CUPIDS-Lab/data-liberation-skill)：采用“调查 → 提取 → 整理 → 审计”的可重放政府数据管线、不可变原件、来源清单、数据字典和跨年度概念映射；
 - [**Analyze Data Quality**](https://github.com/openai/role-specific-plugins/blob/main/plugins/data-analytics/skills/analyze-data-quality/SKILL.md)：在解释历史规律前检查完整性、唯一性、有效性、一致性、完整引用、时效性和数据形状，并按年度与来源展示比率；
-- [**Reference Class Forecasting**](https://github.com/lyndonkl/claude/blob/main/skills/reference-class-forecasting/SKILL.md)：先定义可比历史样本，再做外部基准判断；样本过少时扩大参考类或明确不确定性，不用故事替代频率；
+- **Reference Class Forecasting**：先定义可比历史样本，再做外部基准判断；样本过少时扩大参考类或明确不确定性，不用故事替代频率；
 - [**Design KPIs**](https://github.com/openai/role-specific-plugins/blob/main/plugins/data-analytics/skills/design-kpis/SKILL.md) / [**Dashboard Building**](https://github.com/openai/role-specific-plugins/blob/main/plugins/data-analytics/skills/build-dashboard/SKILL.md) / [**Data Visualization**](https://github.com/openai/plugins/blob/main/plugins/build-web-data-visualization/skills/data-visualization/SKILL.md)：首页围绕用户决策组织，采用“结论 → 趋势 → 原因 → 明细 → 行动”的阅读路径，图表必须可下钻到原始岗位与官方证据；
 - [**Scribe**](https://github.com/simota/agent-skills/blob/main/scribe/SKILL.md)：核心需求使用稳定 ID、二元可验收条件和 Given-When-Then 场景，形成需求、实现和测试之间的追踪关系。
 
