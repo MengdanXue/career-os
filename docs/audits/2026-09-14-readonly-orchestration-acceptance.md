@@ -163,8 +163,7 @@ stage 从 `WRITTEN` 推进到 `RECOMPUTED`，资料版本只推高了一次
 
 凭据这次拿到了（OpenAI 兼容的 DeepSeek key）。**跑不了的原因不是 key，是出网策略**：
 本会话的 egress 代理对 `api.deepseek.com:443` 与 `api.openai.com:443` 都返回
-`connect_rejected`（组织策略拒绝 CONNECT），只有 `api.anthropic.com` 可达——
-那是本会话自己的凭据通道，不是用户为这个应用授权的凭据，不拿它跑应用流量。
+`connect_rejected`（组织策略拒绝 CONNECT），因此未运行应用的联网验收。
 
 已经落地的、等出网放开就能跑的东西：
 

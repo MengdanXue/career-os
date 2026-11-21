@@ -13,12 +13,10 @@
 ```
 HEAD                                   6dc7f69810307947b086d5c731b62d0f86168e2b
 main                                   6dc7f69810307947b086d5c731b62d0f86168e2b
-claude/loving-hopper-mggl1c            6dc7f69810307947b086d5c731b62d0f86168e2b
 origin/main                            6dc7f69810307947b086d5c731b62d0f86168e2b
-origin/claude/loving-hopper-mggl1c     6dc7f69810307947b086d5c731b62d0f86168e2b
 ```
 
-`git status --porcelain` 为空；`git diff origin/main HEAD` 为空。四个引用同一个完整 SHA，
+`git status --porcelain` 为空；`git diff origin/main HEAD` 为空。以上引用同一个完整 SHA，
 与用户指定的冻结版本逐字符一致。
 
 ### 依赖与剖面
