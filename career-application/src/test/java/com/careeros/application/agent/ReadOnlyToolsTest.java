@@ -388,6 +388,61 @@ class ReadOnlyToolsTest {
         assertThat(observation.summary()).contains("没有待确认");
     }
 
+    // --- 证据跟着观测走 ---
+
+    /** 运行台账要能回答"这一步凭哪段官方原文"：公告链接、字段片段、规则引用的片段 ID 都在观测里。 */
+    @Test void jobFactsCarryTheOfficialEvidenceBehindEachRule() {
+        UUID fragment = UUID.randomUUID();
+        var tool = ReadOnlyTools.jobFacts((candidateId, jobId, now) -> bundle(EligibilityStatus.NEEDS_CONFIRMATION),
+            jobId -> List.of(
+                new com.careeros.application.JobAdmissionPorts.EvidenceReference("otherRequirements", "EXPLICIT",
+                    "2026 年公开招聘岗位表", "https://example.gov.cn/jobs.xlsx", "Sheet1!H12",
+                    "中共党员（含预备党员）" + "，".repeat(200), fragment),
+                // 没有官方链接的"证据"核对不了，不带进观测。
+                new com.careeros.application.JobAdmissionPorts.EvidenceReference("headcount", "EXPLICIT",
+                    null, null, null, "1", null)),
+            CLOCK);
+
+        var observation = tool.invoke(context("job_facts", "jobId", JOB.toString()));
+
+        assertThat(observation.ok()).isTrue();
+        List<Map<String, Object>> evidence = observation.value("evidence", List.of());
+        assertThat(evidence).singleElement().satisfies(row -> {
+            assertThat(row.get("sourceUrl")).isEqualTo("https://example.gov.cn/jobs.xlsx");
+            assertThat(row.get("locator")).isEqualTo("Sheet1!H12");
+            assertThat(row.get("evidenceFragmentId")).isEqualTo(fragment.toString());
+            assertThat((String) row.get("excerpt")).startsWith("中共党员").hasSizeLessThanOrEqualTo(
+                ReadOnlyTools.MAX_EXCERPT_CHARACTERS + 1);
+        });
+        List<Map<String, Object>> rules = observation.value("rules", List.of());
+        assertThat(rules).singleElement().satisfies(row -> {
+            assertThat(row.get("rule")).isEqualTo("POLITICAL_AFFILIATION");
+            assertThat(row.get("status")).isEqualTo("NEEDS_CONFIRMATION");
+        });
+    }
+
+    /** 比较要有能并排的事实：建议状态、适配与稳定指数由程序算出，跟着每一行走。 */
+    @Test void everyRowCarriesComparableFacts() {
+        var tool = searchWith(List.of(bundle(EligibilityStatus.ELIGIBLE)));
+
+        List<Map<String, Object>> jobs = tool.invoke(context("search_jobs")).value("jobs", List.of());
+
+        assertThat(jobs).singleElement().satisfies(row -> {
+            assertThat(row.get("recommendationStatus")).isEqualTo("REVIEW");
+            assertThat(row).containsKeys("fitScore", "stabilityScore");
+        });
+    }
+
+    @Test void everySearchRowNamesTheAnnouncementItCameFrom() {
+        var tool = searchWith(List.of(bundle(EligibilityStatus.ELIGIBLE)));
+
+        var observation = tool.invoke(context("search_jobs"));
+
+        List<Map<String, Object>> jobs = observation.value("jobs", List.of());
+        assertThat(jobs).singleElement().extracting(row -> row.get("officialSourceUrl"))
+            .isEqualTo("https://example.gov.cn/job");
+    }
+
     private static DecisionBundle bundle(EligibilityStatus status) {
         UUID organizationId = UUID.randomUUID();
         UUID eventId = UUID.randomUUID();

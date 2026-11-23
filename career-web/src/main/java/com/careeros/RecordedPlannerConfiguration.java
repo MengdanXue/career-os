@@ -44,6 +44,6 @@ class RecordedPlannerConfiguration {
             String next = queue.isEmpty() ? "" : queue.poll();
             log.info("[recorded-planner] 本轮回放：<<<{}>>>", next);
             return next;
-        });
+        }, "recorded-replay");
     }
 }

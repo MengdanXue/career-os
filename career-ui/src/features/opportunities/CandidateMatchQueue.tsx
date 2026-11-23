@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CandidateMatch } from './candidateMatchApi'
+import { includedByReviewer, type CandidateMatch } from './candidateMatchApi'
 import { OfficialJobDetail } from './OfficialJobDetail'
 
 const eligibilityLabels: Record<string, string> = {
@@ -49,6 +49,7 @@ export function CandidateMatchQueue({ matches, total }: { matches: CandidateMatc
         {!match.employmentIdentityConfirmed
           ? <p className="identity-warning">用工身份待确认</p>
           : <p className="identity-confirmed">用工身份已核验</p>}
+        {includedByReviewer(match) && <p className="scope-admitted-badge">已纳入可信机会池</p>}
         <button type="button" className="candidate-detail-button"
           ref={node => { if (node) triggerRefs.current.set(match.jobId, node); else triggerRefs.current.delete(match.jobId) }}
           onClick={() => setSelectedJobId(match.jobId)} aria-label={`查看 ${match.jobTitle} 完整详情`}

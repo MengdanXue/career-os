@@ -88,13 +88,50 @@ public final class ModelPlanner implements AgentPlanner {
     private static final Pattern BASIS_INDEXES = Pattern.compile("^\\d+(?:[\\s,，、]+\\d+)*$");
 
     private final ModelTurn model;
+    private final String identity;
 
-    public ModelPlanner(ModelTurn model) { this.model = Objects.requireNonNull(model, "model"); }
+    public ModelPlanner(ModelTurn model) { this(model, "model"); }
+
+    /**
+     * @param identity 写进运行台账的规划器身份，例如 {@code model:deepseek-chat@api.deepseek.com}
+     *        或 {@code recorded-replay}。回放和真实模型走的是同一个解析器，只有这个名字能把两者分开。
+     */
+    public ModelPlanner(ModelTurn model, String identity) {
+        this.model = Objects.requireNonNull(model, "model");
+        if (identity == null || identity.isBlank()) throw new IllegalArgumentException("identity is required");
+        this.identity = identity;
+    }
 
     @Override
     public PlannerStep next(PlanningState state) {
         String raw = model.respond(protocol(state), render(state));
         return parse(raw);
+    }
+
+    @Override
+    public String identity() { return identity; }
+
+    /**
+     * 同一个规划器，但把每一轮发给模型的状态和模型原样返回的文字交给 {@code sink}。
+     *
+     * <p>规划器是全进程共享的单例，录制必须按运行分开：调用方每次运行各拿一个录制副本。
+     * 录下来的是原文，不是解析结果——解析器本身出错时，只有原文能说明模型到底说了什么。
+     */
+    public ModelPlanner recording(TurnSink sink) {
+        Objects.requireNonNull(sink, "sink");
+        return new ModelPlanner((protocol, state) -> {
+            String raw = model.respond(protocol, state);
+            sink.accept(new RecordedTurn(protocol, state, raw));
+            return raw;
+        }, identity);
+    }
+
+    /** 一轮模型往返的原样记录。{@code response} 为 null 表示这一轮模型没有返回任何东西。 */
+    public record RecordedTurn(String protocol, String state, String response) {}
+
+    @FunctionalInterface
+    public interface TurnSink {
+        void accept(RecordedTurn turn);
     }
 
     /**

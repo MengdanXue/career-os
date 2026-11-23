@@ -80,6 +80,21 @@ class ApiExceptionHandler {
     ResponseEntity<ProblemDetail> planCandidateMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "CANDIDATE_NOT_FOUND", "Candidate not found", exception.getMessage());
     }
+    @ExceptionHandler(com.careeros.application.AdmissionScopeReviewService.StaleContentException.class)
+    ResponseEntity<ProblemDetail> staleScopeDecision(RuntimeException exception) {
+        return problem(HttpStatus.CONFLICT, "JOB_CONTENT_CHANGED", "Job content changed", exception.getMessage());
+    }
+
+    @ExceptionHandler(com.careeros.application.AdmissionScopeReviewService.NotAdmissibleException.class)
+    ResponseEntity<ProblemDetail> notAdmissible(
+        com.careeros.application.AdmissionScopeReviewService.NotAdmissibleException exception) {
+        var response = problem(HttpStatus.UNPROCESSABLE_ENTITY, "JOB_NOT_ADMISSIBLE", "Job not admissible",
+            exception.getMessage());
+        // 逐条原因单独给出，前端按条展示，不必再从一整句话里拆。
+        response.getBody().setProperty("blockers", exception.blockers());
+        return response;
+    }
+
     @ExceptionHandler(DecisionExceptions.JobNotFoundException.class)
     ResponseEntity<ProblemDetail> jobMissing(RuntimeException exception) {
         return problem(HttpStatus.NOT_FOUND, "JOB_NOT_FOUND", "Job not found", exception.getMessage());

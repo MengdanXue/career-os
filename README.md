@@ -4,6 +4,11 @@
 
 ## 当前状态
 
+> **v1.0 收口中（2026-09-24 起）。** 新增 source 接入已冻结，当前目标是跑通一个真实用户任务闭环：
+> 非空可信机会池 → 资格与推荐 → 证据展示 → 真实 LLM Agent，且每一步工具调用与证据来源落库。
+> 范围、延期事项和完成定义见 [v1.0 收口计划](docs/plans/2026-09-24-v1.0-closeout.md)。
+> 下文的阶段描述和 2026-08-24 的数字是历史记录，v1.0 的实测数字会在收口时统一更新。
+
 工程基础与个人半体制规划工作台已经可以运行，但官方历史来源仍在持续补采，不能把当前岗位数量理解为完整市场总量。当前版本首先保证结论正确：采集到的记录只是“原始岗位”，只有经过解析、证据核验、目标范围确认并明确准入后，才会成为可排名、可推送的“可信机会”。因此，原始岗位数量不会再被当作 T1/T2/T3 机会数量。
 
 当前主干具备：
@@ -100,7 +105,7 @@ mvn -Pacquisition-live "-Dcareer-os.acquisition.live-smoke-enabled=true" "-Dtest
 
 ```powershell
 $env:CAREER_OS_SECURITY_USERS_0_USERNAME='zhang'
-$env:CAREER_OS_SECURITY_USERS_0_PASSWORDHASH='$2y$12$...'   # htpasswd -nbBC 12 "" '<password>' | cut -d: -f2
+$env:CAREER_OS_SECURITY_USERS_0_PASSWORD_HASH='$2y$12$...'  # htpasswd -nbBC 12 "" '<password>' | cut -d: -f2
 $env:CAREER_OS_SECURITY_USERS_0_ROLES_0='REVIEWER'
 ```
 

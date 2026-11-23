@@ -57,6 +57,34 @@ async function open(fetchImpl: ReturnType<typeof vi.fn>) {
 describe('AgentRunPanel', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  /** 比较与决策辅助：每个岗位的建议状态和两个指数由程序渲染，并指回官方文件。 */
+  it('shows the comparable facts for each job next to the official file', async () => {
+    await open(vi.fn().mockResolvedValue(json({ ...run, jobs: [{ ...run.jobs[0],
+      recommendationStatus: 'REVIEW', fitScore: 40, stabilityScore: 32,
+      officialSourceUrl: 'https://hrss.hangzhou.gov.cn/jobs.xlsx' }] })))
+
+    await userEvent.type(screen.getByLabelText('交给它去查'), '比较一下')
+    await userEvent.click(screen.getByRole('button', { name: '运行' }))
+
+    expect(await screen.findByText('建议 需要复核 · 适配指数 40 · 稳定指数 32')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '官方文件' })).toHaveAttribute('href', 'https://hrss.hangzhou.gov.cn/jobs.xlsx')
+  })
+
+  /** 回放和脚本替身不能被读成"模型选的"：页面先说清是谁在规划，并给出台账编号。 */
+  it.each([
+    ['model:deepseek-chat@api.deepseek.com', '规划器：真实模型 deepseek-chat@api.deepseek.com'],
+    ['recorded-replay', '规划器：录制回放（不是模型现场选的）'],
+    ['scripted', '规划器：脚本替身（固定流程，不是模型）'],
+  ])('names the planner %s and the ledger entry', async (plannerIdentity, label) => {
+    await open(vi.fn().mockResolvedValue(json({ ...run, plannerIdentity, runId: 'run-1' })))
+
+    await userEvent.type(screen.getByLabelText('交给它去查'), '杭州有哪些岗位')
+    await userEvent.click(screen.getByRole('button', { name: '运行' }))
+
+    expect(await screen.findByText(label)).toBeInTheDocument()
+    expect(screen.getByText('运行编号 run-1（已记入台账）')).toBeInTheDocument()
+  })
+
   /**
    * 模型没启用时明说，不拿一个写死的固定流程冒充。
    *

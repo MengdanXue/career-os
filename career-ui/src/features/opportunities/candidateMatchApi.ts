@@ -87,3 +87,39 @@ export function listCandidateMatches(candidateId: string, page = 0) {
   const parameters = new URLSearchParams({ page: String(page), size: '20' })
   return requestJson<PageResponse<CandidateMatch>>(`/api/v1/candidates/${candidateId}/job-matches?${parameters}`)
 }
+
+export type ScopeDecision = 'INCLUDE' | 'EXCLUDE'
+
+export type ScopeDecisionResponse = {
+  jobId: string
+  decisionId: string
+  decision: ScopeDecision
+  /** 这次决定之后它是否真的在可信机会池里。 */
+  admitted: boolean
+  dataQualityStatus: DataQualityStatus
+  targetScopeStatus: 'INCLUDED' | 'EXCLUDED' | 'NEEDS_REVIEW'
+  reasonCodes: string[]
+  reviewer: string
+  decidedAt: string
+}
+
+/**
+ * 复核人确认岗位在不在目标范围内。带上看到的那一版内容指纹：
+ * 岗位在此之后变了，后端返回 409，而不是把决定记到新内容上。
+ */
+export function decideScope(jobId: string, decision: ScopeDecision, contentFingerprint: string, note?: string) {
+  return requestJson<ScopeDecisionResponse>(`/api/v1/job-admissions/${jobId}/scope-decisions`, {
+    method: 'POST',
+    body: JSON.stringify({ decision, contentFingerprint, note: note?.trim() || undefined }),
+  })
+}
+
+/** 已经由复核人纳入可信机会池。 */
+export function includedByReviewer(match: Pick<CandidateMatch, 'admissionReasons'>) {
+  return match.admissionReasons.includes('HUMAN_SCOPE_INCLUDED')
+}
+
+/** 证据齐全、用工身份已知——只有这样的岗位才能被纳入。与后端的判断同源于数据质量。 */
+export function canBeIncluded(match: Pick<CandidateMatch, 'dataQualityStatus' | 'employmentIdentityConfirmed'>) {
+  return match.dataQualityStatus === 'VERIFIED' && match.employmentIdentityConfirmed
+}

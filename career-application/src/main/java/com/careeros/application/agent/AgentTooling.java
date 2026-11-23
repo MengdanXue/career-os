@@ -255,6 +255,24 @@ public final class AgentTooling {
     @FunctionalInterface
     public interface AgentPlanner {
         PlannerStep next(PlanningState state);
+
+        /**
+         * 这是哪个规划器：真实模型（模型名与端点）、录制回放，还是脚本替身。
+         *
+         * <p>写进运行台账。事后看一次运行，第一件要知道的就是"这一步是模型选的，还是写死的"——
+         * 不然回放样本会被当成模型能力的证据。
+         */
+        default String identity() { return "unlabelled"; }
+    }
+
+    /** 给没有自带身份的规划器（脚本替身、测试里的 lambda）贴一个名字。 */
+    public static AgentPlanner labelled(String identity, AgentPlanner planner) {
+        java.util.Objects.requireNonNull(planner, "planner");
+        if (identity == null || identity.isBlank()) throw new IllegalArgumentException("identity is required");
+        return new AgentPlanner() {
+            public PlannerStep next(PlanningState state) { return planner.next(state); }
+            public String identity() { return identity; }
+        };
     }
 
     /**

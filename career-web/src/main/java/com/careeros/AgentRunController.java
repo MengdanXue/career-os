@@ -4,6 +4,8 @@ import com.careeros.application.AgentSession;
 import com.careeros.application.AgentSessionService;
 import com.careeros.application.CandidateProfileService;
 import com.careeros.application.agent.AgentExecutor;
+import com.careeros.application.agent.AgentRunLedger;
+import com.careeros.application.agent.ModelPlanner;
 import com.careeros.application.agent.AgentTooling;
 import com.careeros.application.agent.AgentTooling.AgentPlanner;
 import com.careeros.application.agent.AgentTooling.JobRef;
@@ -42,21 +44,45 @@ class AgentRunController {
     private final ObjectProvider<AgentPlanner> planner;
     private final AgentSessionService sessions;
     private final CandidateProfileService profiles;
+    private final AgentRunLedger ledger;
 
     AgentRunController(AgentExecutor executor, ObjectProvider<AgentPlanner> planner,
-                       AgentSessionService sessions, CandidateProfileService profiles) {
+                       AgentSessionService sessions, CandidateProfileService profiles, AgentRunLedger ledger) {
         this.executor = executor;
         this.planner = planner;
         this.sessions = sessions;
         this.profiles = profiles;
+        this.ledger = ledger;
+    }
+
+    /**
+     * 最近的运行。每一条都能点进去看完整的步骤、证据与模型原文。
+     */
+    @GetMapping
+    List<AgentRunLedger.RunSummary> recent(@PathVariable("candidateId") UUID candidateId,
+                                           @RequestParam(name = "limit", defaultValue = "20") int limit) {
+        return ledger.recent(candidateId, limit);
+    }
+
+    /** 一次运行的完整台账：规划器身份、每一步、每一步引用的证据、模型每一轮的原文。 */
+    @GetMapping("/{runId}")
+    AgentRunLedger.RunRecord record(@PathVariable("candidateId") UUID candidateId,
+                                    @PathVariable("runId") UUID runId) {
+        // 不属于这个候选人的运行一律 404，不泄露"存在但不是你的"。
+        return ledger.find(candidateId, runId).orElseThrow(() ->
+            new java.util.NoSuchElementException("没有这次运行，或它不属于当前候选人。"));
     }
 
     @PostMapping
     AgentRunResponse run(@PathVariable("candidateId") UUID candidateId, @RequestBody AgentRunRequest request) {
-        var active = planner.getIfAvailable();
-        if (active == null) {
+        var shared = planner.getIfAvailable();
+        if (shared == null) {
             throw new PlannerUnavailableException("没有可用的规划器：模型未启用，且不提供写死的替代流程。");
         }
+        // 模型规划器是全进程共享的单例；这一轮的往返要录进这一轮自己的记录里。
+        var turns = new ArrayList<ModelPlanner.RecordedTurn>();
+        AgentPlanner active = shared instanceof ModelPlanner model ? model.recording(turns::add) : shared;
+        var startedAt = java.time.Instant.now();
         // 续跑同一轮会话时先核对归属；不存在或不是本人的一律 404，不泄露"存在但不是你的"。
         var session = request.sessionId() == null ? null
             : sessions.find(candidateId, request.sessionId()).orElseThrow(() ->
@@ -71,7 +97,16 @@ class AgentRunController {
         // 用户看到的是新列表，下一句"第二个"却解析回上一轮那一份。
         var saved = save(candidateId, request.sessionId(), session, run, jobs, pending, request.question());
 
+        // 整份运行落台账。写不进去就让这次请求失败：v1.0 承诺每一次运行都可审计，
+        // 悄悄丢掉一条记录比让用户重试一次更糟。
+        UUID runId = UUID.randomUUID();
+        UUID sessionId = saved == null ? (session == null ? null : session.sessionId()) : saved.sessionId();
+        ledger.record(AgentRunLedger.RunRecord.of(runId, candidateId, sessionId, request.question(),
+            shared.identity(), run, startedAt, java.time.Instant.now(), turns));
+
         return new AgentRunResponse(
+            runId,
+            shared.identity(),
             run.outcome().name(),
             run.narrative(),
             run.question(),
@@ -81,7 +116,7 @@ class AgentRunController {
                 run.confirming().jobPostingId().toString(), run.confirming().profileVersion()),
             run.budgetSpent(),
             run.budgetLimit(),
-            saved == null ? (session == null ? null : session.sessionId()) : saved.sessionId(),
+            sessionId,
             saved == null ? (session == null ? null : session.profileVersion()) : saved.profileVersion(),
             jobs,
             pending,
@@ -297,7 +332,8 @@ class AgentRunController {
 
     /** 程序渲染的岗位结果。模型改不了这里的任何一个字段。 */
     record JobView(String jobPostingId, String jobTitle, String organizationName, String eligibilityStatus,
-                   String tier, String applicationEndsOn, List<String> restrictions) {
+                   String tier, String applicationEndsOn, List<String> restrictions,
+                   String recommendationStatus, Integer fitScore, Integer stabilityScore, String officialSourceUrl) {
         @SuppressWarnings("unchecked")
         static JobView from(Map<String, Object> row) {
             Object id = row.get("jobPostingId");
@@ -305,9 +341,12 @@ class AgentRunController {
             Object restrictions = row.get("restrictions");
             return new JobView(String.valueOf(id), text(row.get("jobTitle")), text(row.get("organizationName")),
                 text(row.get("eligibilityStatus")), text(row.get("tier")), text(row.get("applicationEndsOn")),
-                restrictions instanceof List<?> list ? list.stream().map(String::valueOf).toList() : List.of());
+                restrictions instanceof List<?> list ? list.stream().map(String::valueOf).toList() : List.of(),
+                text(row.get("recommendationStatus")), number(row.get("fitScore")), number(row.get("stabilityScore")),
+                text(row.get("officialSourceUrl")));
         }
         private static String text(Object value) { return value == null ? null : String.valueOf(value); }
+        private static Integer number(Object value) { return value instanceof Number n ? n.intValue() : null; }
     }
 
     /** @param jobPostingId 是哪个岗位提出的这个问题。页面要显示它，否则用户不知道在为什么而答 */
@@ -334,8 +373,11 @@ class AgentRunController {
      * @param confirming  这一轮的确认追问绑定到的那一项、提出它的岗位与资料版本；不是确认追问时为空
      * @param budgetSpent 消耗的预算单位：工具调用次数 + 内部逐岗评估次数
      * @param jobs        程序渲染的岗位结果，取自工具的结构化数据，不是模型那段话
+     * @param runId       这次运行在台账里的编号；用 GET .../agent-runs/{runId} 取完整记录
+     * @param plannerIdentity 真实模型（模型名与端点）、录制回放还是脚本替身
      */
-    record AgentRunResponse(String outcome, String narrative, String question, List<String> violations,
+    record AgentRunResponse(UUID runId, String plannerIdentity,
+                            String outcome, String narrative, String question, List<String> violations,
                             List<Integer> groundedOn, ConfirmationBinding confirming,
                             int budgetSpent, int budgetLimit,
                             UUID sessionId, String profileVersion, List<JobView> jobs,

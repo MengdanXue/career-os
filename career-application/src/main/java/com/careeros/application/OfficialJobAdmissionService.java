@@ -58,6 +58,58 @@ public class OfficialJobAdmissionService {
         return List.copyOf(result);
     }
 
+    /**
+     * 按当前规则把全部在招岗位重新评估一遍，分批进行。
+     *
+     * <p>自动准入只在导入时运行。规则或证据读取更新之后，早先导入的岗位还停在旧版本的结论上——
+     * 初筛队列因此是不完整的，证据其实已经齐全的岗位不会出现在复核人面前。
+     * 人工做过的决定照旧保留（{@link #classify} 不覆盖 {@code humanVerified} 的行）。
+     */
+    public Reclassification reclassifyActive(Instant now, int batchSize) {
+        Objects.requireNonNull(now, "now");
+        if (batchSize < 1 || batchSize > 2000) throw new IllegalArgumentException("batchSize must be between 1 and 2000");
+        var ids = jobs.findActive().stream().map(context -> context.job().id()).toList();
+        var results = new ArrayList<JobAdmission>();
+        for (int from = 0; from < ids.size(); from += batchSize) {
+            results.addAll(classify(ids.subList(from, Math.min(from + batchSize, ids.size())), now));
+        }
+        return Reclassification.of(results);
+    }
+
+    /**
+     * @param readyForReview 证据齐全、用工身份已知、目标技术岗、还没有人工决定——复核人可以直接纳入的数量
+     */
+    public record Reclassification(int processed, int humanVerified,
+                                   java.util.Map<DataQualityStatus, Long> byQuality,
+                                   java.util.Map<TargetScopeStatus, Long> byScope, int readyForReview) {
+        static Reclassification of(List<JobAdmission> results) {
+            var byQuality = new java.util.EnumMap<DataQualityStatus, Long>(DataQualityStatus.class);
+            var byScope = new java.util.EnumMap<TargetScopeStatus, Long>(TargetScopeStatus.class);
+            int human = 0, ready = 0;
+            for (JobAdmission value : results) {
+                byQuality.merge(value.dataQualityStatus(), 1L, Long::sum);
+                byScope.merge(value.targetScopeStatus(), 1L, Long::sum);
+                if (value.humanVerified()) { human++; continue; }
+                if (value.dataQualityStatus() == DataQualityStatus.VERIFIED
+                    && value.targetScopeStatus() == TargetScopeStatus.NEEDS_REVIEW
+                    && value.reasonCodes().contains(JobAdmissionReason.TARGET_TECHNICAL_ROLE)
+                    && !value.reasonCodes().contains(JobAdmissionReason.EMPLOYMENT_IDENTITY_UNKNOWN)) ready++;
+            }
+            return new Reclassification(results.size(), human, java.util.Map.copyOf(byQuality),
+                java.util.Map.copyOf(byScope), ready);
+        }
+    }
+
+    /**
+     * 只按规则和证据给出的那一份自动结论，不看已有的人工决定。
+     *
+     * <p>人工确认范围时要拿它作底：数据质量、规则排除和原因码都来自这里，人只决定"在不在范围内"。
+     * 若另写一份判定，人工那一侧就可能在证据不全时放行，和自动准入各判各的。
+     */
+    public static JobAdmission automatedAssessment(JobPosting job, FieldEvidenceCoverage evidence, Instant now) {
+        return classify(job, evidence, now);
+    }
+
     private static JobAdmission classify(JobPosting job, FieldEvidenceCoverage evidence, Instant now) {
         Set<JobAdmissionReason> reasons = EnumSet.of(JobAdmissionReason.OFFICIAL_WORKBOOK_PARSED);
         TargetScopeStatus scope;

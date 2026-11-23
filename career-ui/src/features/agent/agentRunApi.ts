@@ -43,9 +43,19 @@ export type AgentRunJob = {
   tier: string | null
   applicationEndsOn: string | null
   restrictions: string[]
+  /** 程序算出的建议状态与指数，用于并排比较；不是录取概率。 */
+  recommendationStatus?: string | null
+  fitScore?: number | null
+  stabilityScore?: number | null
+  /** 岗位所在的官方文件。 */
+  officialSourceUrl?: string | null
 }
 
 export type AgentRunResponse = {
+  /** 这次运行在台账里的编号；完整步骤、证据与模型原文用它取。 */
+  runId?: string
+  /** 真实模型（model:名称@端点）、录制回放（recorded-replay）还是脚本替身（scripted）。 */
+  plannerIdentity?: string
   outcome: AgentRunOutcome
   /** 通过校验时才有值；被拒时为空，页面回落到确定性事实块。 */
   narrative: string | null

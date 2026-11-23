@@ -3,6 +3,7 @@ package com.careeros.application.agent;
 import com.careeros.application.AgentSession;
 import com.careeros.application.DecisionPorts.DecisionBundle;
 import com.careeros.application.DecisionRankingService;
+import com.careeros.application.JobAdmissionPorts;
 import com.careeros.application.ToolCallBudget;
 import com.careeros.application.agent.AgentTooling.Observation;
 import com.careeros.application.agent.AgentTooling.ReadOnlyTool;
@@ -98,9 +99,26 @@ public final class ReadOnlyTools {
         };
     }
 
-    /** 看一个岗位的完整结论与限制条件。规划器用它回答"第 N 个怎么样"。 */
+    /** 一次观测里最多带几条字段证据。证据会进模型提示，多了只是把预算花在复述原文上。 */
+    static final int MAX_EVIDENCE_REFERENCES = 12;
+
+    /** 原文片段截到多长。完整原文在证据库里，按片段 ID 取得到；这里只要足以核对。 */
+    static final int MAX_EXCERPT_CHARACTERS = 160;
+
+    /** 看一个岗位的完整结论与限制条件，不带字段证据。只给测试和旧调用方用。 */
     public static ReadOnlyTool jobFacts(DecisionPortsAssessor assessor, Clock clock) {
+        return jobFacts(assessor, jobId -> List.of(), clock);
+    }
+
+    /**
+     * 看一个岗位的完整结论、逐条规则与官方证据。规划器用它回答"第 N 个怎么样"。
+     *
+     * <p>证据跟着观测走：岗位所在的官方文件、每个字段的原文片段和定位、每条规则引用的片段 ID。
+     * 这样运行台账里每一步都能回答"这句话凭哪段官方原文"，而不是只留下一个岗位 ID。
+     */
+    public static ReadOnlyTool jobFacts(DecisionPortsAssessor assessor, EvidenceView evidence, Clock clock) {
         Objects.requireNonNull(assessor, "assessor");
+        Objects.requireNonNull(evidence, "evidence");
         var parameters = List.of(
             ToolParameter.optional("jobId", "岗位的 UUID，取自 search_jobs 或关注清单的结果"),
             ToolParameter.optional("ordinal",
@@ -132,6 +150,8 @@ public final class ReadOnlyTools {
                         .map(result -> result.explanation()).toList();
                 data.put("restrictions", restrictions);
                 data.put("restrictionCount", restrictions.size());
+                data.put("rules", rules(bundle));
+                data.put("evidence", evidenceRows(evidence.evidenceFor(jobId)));
                 return Observation.ok(name(), bundle.jobContext().job().title() + " 的结论已取到。", data);
             }
         };
@@ -284,8 +304,57 @@ public final class ReadOnlyTools {
         row.put("organizationName", bundle.jobContext().organization().name());
         row.put("eligibilityStatus", decision.eligibilityStatus().name());
         row.put("tier", decision.tier().name());
+        // 比较与决策辅助要有可以并排的事实：建议状态、适配指数、稳定指数都是程序算的，不是概率。
+        row.put("recommendationStatus", decision.recommendationStatus().name());
+        row.put("fitScore", decision.fitScore());
+        row.put("stabilityScore", decision.stabilityScore());
         row.put("applicationEndsOn", String.valueOf(bundle.jobContext().event().applicationEndsOn()));
+        // 每一行都带它所在的官方文件：有岗位表附件时是附件，否则是公告页（决策上下文就是这样取的）。
+        // 列表里的每个岗位都要能追到出处。
+        row.put("officialSourceUrl", bundle.jobContext().event().sourceUrl());
         return row;
+    }
+
+    /** 逐条规则：状态、说明、引用的证据片段。只给出规则引擎算出来的东西，不在这里改写。 */
+    private static List<Map<String, Object>> rules(DecisionBundle bundle) {
+        if (bundle.eligibility() == null) return List.of();
+        return bundle.eligibility().ruleResults().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .map(entry -> {
+                var row = new LinkedHashMap<String, Object>();
+                row.put("rule", entry.getKey().name());
+                row.put("status", entry.getValue().status().name());
+                row.put("explanation", entry.getValue().explanation());
+                row.put("evidenceFragmentIds", entry.getValue().evidenceIds().stream().map(UUID::toString).toList());
+                return (Map<String, Object>) row;
+            }).toList();
+    }
+
+    private static List<Map<String, Object>> evidenceRows(List<JobAdmissionPorts.EvidenceReference> references) {
+        if (references == null) return List.of();
+        return references.stream()
+            // 只带有官方来源的行：没有链接的"证据"核对不了，放进来只会让人误以为有出处。
+            .filter(reference -> reference.sourceUrl() != null && !reference.sourceUrl().isBlank())
+            .limit(MAX_EVIDENCE_REFERENCES)
+            .map(reference -> {
+                var row = new LinkedHashMap<String, Object>();
+                row.put("field", reference.fieldName());
+                row.put("factStatus", reference.factStatus());
+                row.put("sourceUrl", reference.sourceUrl());
+                row.put("sourceTitle", reference.sourceTitle());
+                row.put("locator", reference.locator());
+                row.put("excerpt", excerpt(reference.excerpt()));
+                row.put("evidenceFragmentId",
+                    reference.evidenceFragmentId() == null ? null : reference.evidenceFragmentId().toString());
+                return (Map<String, Object>) row;
+            }).toList();
+    }
+
+    private static String excerpt(String value) {
+        if (value == null) return null;
+        String compact = value.strip().replaceAll("\\s+", " ");
+        return compact.length() <= MAX_EXCERPT_CHARACTERS ? compact
+            : compact.substring(0, MAX_EXCERPT_CHARACTERS) + "…";
     }
 
     private static <E extends Enum<E>> List<String> names(E[] values) {
@@ -315,6 +384,12 @@ public final class ReadOnlyTools {
                 "参数「limit」的取值「" + parsed + "」超出范围，只能是 1 到 " + MAX_LIMIT + "。");
         }
         return parsed;
+    }
+
+    /** 一个岗位的官方字段证据：来源链接、定位、原文片段与片段 ID。 */
+    @FunctionalInterface
+    public interface EvidenceView {
+        List<JobAdmissionPorts.EvidenceReference> evidenceFor(UUID jobId);
     }
 
     /** 单岗位评估。与 {@code DecisionPorts.DecisionAssessor} 同形，这里另立一个名字避免把整包引进来。 */

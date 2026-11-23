@@ -113,7 +113,8 @@ class ApplicationConfiguration {
      */
     @Bean com.careeros.application.agent.AgentExecutor agentExecutor(
         DecisionRankingService rankings, DecisionIntelligenceService decisions,
-        JobWatchlistService watchlist, AgentSessionService sessions, Clock clock
+        JobWatchlistService watchlist, AgentSessionService sessions,
+        JobAdmissionPorts.JobFieldEvidence fieldEvidence, Clock clock
     ) {
         // 待确认清单背后是一次全量逐岗评估。预算不够扫完时 complete 为 false，
         // 工具据此拒绝给出清单——短了的"还差哪些确认"读起来就是"都齐了"。
@@ -124,12 +125,21 @@ class ApplicationConfiguration {
         };
         return new com.careeros.application.agent.AgentExecutor(java.util.List.of(
             com.careeros.application.agent.ReadOnlyTools.searchJobs(rankings::rank, clock),
-            com.careeros.application.agent.ReadOnlyTools.jobFacts(decisions::assess, clock),
+            // 字段证据跟着观测走，运行台账里每一步都能追到官方原文。
+            com.careeros.application.agent.ReadOnlyTools.jobFacts(decisions::assess,
+                jobId -> fieldEvidence.coverage(jobId).evidenceReferences(), clock),
             com.careeros.application.agent.ReadOnlyTools.pendingConfirmations(pending),
             com.careeros.application.agent.ReadOnlyTools.watchlist(watchlist, clock)));
     }
     @Bean DecisionExplanationService decisionExplanationService() { return new DecisionExplanationService(); }
     @Bean JobLibrarySummaryService jobLibrarySummaryService(JobAdmissionPorts.JobAdmissions admissions) { return new JobLibrarySummaryService(admissions); }
+    @Bean com.careeros.application.AdmissionScopeReviewService admissionScopeReviewService(
+        DecisionPorts.JobContexts jobContexts, JobAdmissionPorts.JobAdmissions admissions,
+        JobAdmissionPorts.JobFieldEvidence fieldEvidence,
+        com.careeros.application.AdmissionScopeReviewService.ScopeDecisionLedger ledger, Clock clock
+    ) {
+        return new com.careeros.application.AdmissionScopeReviewService(jobContexts, admissions, fieldEvidence, ledger, clock);
+    }
     @Bean OfficialJobAdmissionService officialJobAdmissionService(DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,JobAdmissionPorts.JobFieldEvidence fieldEvidence) { return new OfficialJobAdmissionService(jobContexts,admissions,fieldEvidence); }
     @Bean CandidateMatchService candidateMatchService(RepositoryPorts.CandidateProfiles candidates,RepositoryPorts.CandidateFactConfirmations facts,DecisionPorts.JobContexts jobContexts,JobAdmissionPorts.JobAdmissions admissions,EligibilityEvaluator eligibilityEvaluator,FitEvaluator fitEvaluator,JobAdmissionPorts.JobFieldEvidence fieldEvidence) { return new CandidateMatchService(candidates,facts,jobContexts,admissions,eligibilityEvaluator,fitEvaluator,fieldEvidence); }
     @Bean WorkbenchSummaryService workbenchSummaryService(
